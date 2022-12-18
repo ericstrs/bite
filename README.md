@@ -1,1 +1,3 @@
-# calories
+# Calories
+
+Calorie/weight tracker using R.
