@@ -24,4 +24,5 @@ Activity level:
   * If `person.Rdata` does not exist, then let the user know and exit program.
 * Handle trends that counter the aim of the user (gaining weight/ losing weight)
 * Using `menu()` to select micronutrient split. Then create a function to handle a CLI argument for when the user wants to know the split.
+* Plot TDEE overtime. This is an attempt to visualize data fit the true TDEE.
 
