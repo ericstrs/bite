@@ -36,15 +36,15 @@ mifflin = function (mass, height, age, sex) {
   mifflin = (10 * mass + 6.25 * height - 5 * age) + s
 }
 
-TDEE = function () {
-  mass = tail(data[,1], 1) # last recorded mass
+TDEE = function (mass) {
   mass = mass * 0.45359237 # convert lbs to kgs
   height = person$height
   age = person$age
 
   m = mifflin(mass, height, age, person$sex)
   level = scale(person$activity)
-  return(m * level)
+
+  m * level
 }
 
 log = function () {
@@ -60,6 +60,14 @@ log = function () {
     return()
 }
 
+macros = function (mass, fat_percent) {
+  protein = 1 * mass
+  fats = fat_percent * mass
+  remaining = (protein * 4) + (fats * 9)
+  carbs = remaining/4
+  return(list("protein" = protein, "fats" = fats, "carbs" = carbs))
+}
+
 check_args = function(args) {
     if (length(args) == 0) { # if no args
       return("Creating plots")
@@ -69,7 +77,18 @@ check_args = function(args) {
       return()
     }
     if (args[1] == "TDEE") { # prompt user
-      return(TDEE())
+      print("Day TDEE:")
+      mass = tail(data[,1], 1) # last recorded mass
+      print(TDEE(mass))
+
+      print("Mean TDEE:")
+      tdees = mean(TDEE(data[,1]))
+      print(mean(tdees))
+    }
+    if (args[1] == "macros") {
+      mass = head(data[,1], 1) # first recorded mass
+      mac = macros(mass, 0.4)
+      print(mac)
     }
 }
 
@@ -78,7 +97,6 @@ data = read.csv("data.csv")
 
 args = commandArgs(trailingOnly = TRUE)
 check = check_args(args)
-check
 
 vals = seq(1, length(data$mass))
 
