@@ -23,6 +23,6 @@ Activity level:
   * If CLI argument is `set` then call `generate()`.
   * If `person.Rdata` does not exist, then let the user know and exit program.
 * Handle trends that counter the aim of the user (gaining weight/ losing weight)
-* Using `menu()` to select micronutrient split. Then create a function to handle a CLI argument for when the user wants to know the split.
-* Plot TDEE overtime. This is an attempt to visualize data fit the true TDEE.
+* Implement macro nutrients
+  * Using `menu()` to select macro nutrient split. Then create a function to handle a CLI argument for when the user wants to know the split.
 
