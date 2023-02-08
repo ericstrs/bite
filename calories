@@ -104,3 +104,6 @@ library(ggplot2)
 
 ggplot(data, aes(vals, mass)) +geom_point(aes(colour = calories)) + scale_colour_gradient(trans = 'reverse') + ggtitle("Mass overtime") + xlab("days") + ylab("mass (lbs)")
 
+ggplot(data, aes(vals, mass)) + geom_line(aes(colour = calories)) + scale_colour_gradient(trans = 'reverse') + ggtitle("Mass overtime") + xlab("days") + ylab("mass (lbs)")
+
+ggplot(data, aes(calories, mass)) + geom_line() + ggtitle("Calories vs. Mass") + xlab("calories") + ylab("mass (lbs)")
