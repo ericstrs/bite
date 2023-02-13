@@ -58,7 +58,7 @@ func Log(s string) {
 	// get current date
 	d := time.Now()
 
-	// append user input to csv file
+	// append user calorie input to csv file
 	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	defer f.Close()
 
