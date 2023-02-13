@@ -76,7 +76,7 @@ check_args = function(args) {
       log()
       return()
     }
-    if (args[1] == "TDEE") { # prompt user
+    if (args[1] == "TDEE") {
       print("Day TDEE:")
       mass = tail(data[,1], 1) # last recorded mass
       print(TDEE(mass))
@@ -90,7 +90,7 @@ check_args = function(args) {
       mac = macros(mass, 0.4)
       print(mac)
     }
-}
+} 
 
 load(file = "person.Rdata")
 data = read.csv("data.csv")
