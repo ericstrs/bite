@@ -1,13 +1,20 @@
 # Calories
 
-Calorie/weight tracker using R.
+Calorie/weight tracker.
 
-* Uses data from a CSV file that includes information on weight.
-* If `log` CLI argument,
-  * prompt for yesterdays caloric intake
-  * prompt for weight that was measured in the morning.
-  * call `Sys.Date()`
-  * Append this data to csv file
+This program contains several parts:
+
+* Prompt user input for daily food and weight.
+  * What is the users weight for day?
+  * What was the total caloric intake for the previous day?
+  * What was macro split the previous day?
+  * Write to file.
+    * `cal log edit`
+    * `cal log print`
+* Print out feedback for the user. What feedback does the user need to know?
+  * Are they on track of the weight goal?
+  * What is the desired macro split?
+  * What is the current
 
 Activity level:
 
