@@ -26,10 +26,9 @@ Activity level:
 
 ## TODO
 
-* Add a `generate()` function to create the `person.Rdata` file. This will allow for state to be updated.
-  * If CLI argument is `set` then call `generate()`.
-  * If `person.Rdata` does not exist, then let the user know and exit program.
+* Add user info file
+  * How do you let the user know they don't have a info file?
+  * Think default is prompt user for the user info, but if they pass file then skip the prompt.
 * Handle trends that counter the aim of the user (gaining weight/ losing weight)
 * Implement macro nutrients
   * Using `menu()` to select macro nutrient split. Then create a function to handle a CLI argument for when the user wants to know the split.
-
