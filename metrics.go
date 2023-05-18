@@ -1,10 +1,27 @@
 // Calories package provides dietary insight.
 package calories
 
-// Mifflin calculates the Basal Metabolic Rate (BMR) which is based on
+import "fmt"
+
+// activity returns the scale based on the user's activity level.
+func activity(a string) (float64, error) {
+	activityMap := map[string]float64{
+		"sedentary":  1.2,
+		"lightly":    1.375,
+		"moderately": 1.725,
+		"active":     1.9,
+	}
+
+	value, f := activityMap[a]
+	if !f {
+		return -1, fmt.Errorf("unknown activity level: %s", a)
+	}
+
+	return value, nil
+}
+
+// Mifflin calculates and returnsthe Basal Metabolic Rate (BMR) which is based on
 // weight (kg), height (cm), age (years), and gender.
-//
-// It returns BMR.
 func Mifflin(weight, height float64, age int, gender string) float64 {
 
 	factor := 5
@@ -15,4 +32,27 @@ func Mifflin(weight, height float64, age int, gender string) float64 {
 	var bmr float64
 	bmr = (10 * weight) + (6.25 * height) - (5 * float64(age)) + float64(factor)
 	return bmr
+}
+
+// TDEE calcuates the Total Daily Energy Expenditure (TDEE) based on the
+// BMR and user's activity level.
+func TDEE(bmr float64, a string) float64 {
+	al, err := activity(a)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return -1
+	}
+
+	return bmr * al
+}
+
+// Macros calculates and returns the recommended macronutrients given
+// user weight and desired fat percentage.
+func Macros(weight string, fatPercent float64) (float64, float64, float64) {
+	protein := 1 * weight
+	fats := fatPercent * weight
+	remaining := (protein * 4) + (fats * 9)
+	carbs := remaining / 4
+
+	return protein, carbs, fats
 }
