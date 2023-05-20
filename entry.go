@@ -72,7 +72,7 @@ func Log(s string) {
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%s, %f, %f\n", d.Format("2006-01-02"), mass, calories)
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", mass, calories, d.Format("2006-01-02"))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
