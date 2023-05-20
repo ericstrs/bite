@@ -77,4 +77,6 @@ func Log(s string) {
 	if err != nil {
 		log.Println(err)
 	}
+
+	fmt.Println("Added entry.")
 }
