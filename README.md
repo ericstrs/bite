@@ -18,21 +18,17 @@ Activity level:
 |Active|\*1.725|
 |Very active|\*1.9|
 
-Sedentary|\*1.2|
-Lightly active|\*1.375|
-Moderately active|\*1.55|
-Active|\*1.725|
-Very active|\*1.9|
-
 ## TODO
 
-* Add user info file
-  * How do you let the user know they don't have a info file?
-  * Think default is prompt user for the user info, but if they pass file then skip the prompt.
+* Let user modify current diet:
+  [] Add user capability to stop a diet phase and begin a new one. They shouldn't have to be prompted for user details.
+  [] Add user ability to change macro ratio
 * Handle trends that counter the aim of the user (gaining weight/ losing weight)
-* Implement macro nutrients
-  * Using `menu()` to select macro nutrient split. Then create a function to handle a CLI argument for when the user wants to know the split.
-* Streak feature.
-* Monthly view of adherence.
-* Add summary feature
-  * Pie chart
+* Handle negative weight trends:
+  [] Work out how to deal with inconsistent user entries.
+  [] Work out how you measure whats a week/month.
+* Summary:
+  [] Streak feature.
+  [] Add Monthly view of adherence.
+  [] Add summary feature.
+    [] Add macros pie chart.
