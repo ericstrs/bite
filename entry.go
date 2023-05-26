@@ -1,12 +1,40 @@
 package calories
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/rocketlaunchr/dataframe-go"
+	"github.com/rocketlaunchr/dataframe-go/imports"
 )
+
+// ReadEntries reads user entries from CSV file into a dataframe.
+func ReadEntries(entriesFilePath string) (*dataframe.DataFrame, error) {
+	// Does entries file exist?
+	if _, err := os.Stat(entriesFilePath); os.IsNotExist(err) {
+		log.Println("ERROR: Entries file not found.")
+		return nil, err
+	}
+
+	// Open entries file
+	csvfile, err := os.Open(entriesFilePath)
+	if err != nil {
+		log.Printf("ERROR: Couldn't open %s\n", entriesFilePath)
+		return nil, err
+	}
+	defer csvfile.Close()
+
+	// Read entries from CSV into a dataframe.
+	ctx := context.TODO()
+	logs, err := imports.LoadFromCSV(ctx, csvfile)
+	fmt.Print(logs.Table())
+
+	return logs, nil
+}
 
 // checkInput checks if the user input is between 0 and 30,000.
 func checkInput(n float32) error {
@@ -33,8 +61,8 @@ func promptCals() (calories float32, err error) {
 	return calories, checkInput(calories)
 }
 
-// Prompt returns the mass and calorie user input.
-func Prompt() (mass float32, calories float32) {
+// promptMassCals prompts and returns user mass and caloric intake.
+func promptMassCals() (mass float32, cals float32) {
 	// TODO: replace if statements with switch statement
 	//fmt.Println("Press 'q' to quit")
 
@@ -45,20 +73,20 @@ func Prompt() (mass float32, calories float32) {
 			continue
 		}
 
-		calories, err := promptCals()
+		cals, err := promptCals()
 		if err != nil {
 			fmt.Printf("Couldn't read calories: %s\n\n", err)
 			continue
 		}
 
-		return mass, calories
+		return mass, cals
 	}
 }
 
 // Log appends a new entry to the csv file passed in as an agurment.
 func Log(s string) {
 	// Prompt the user for mass and calorie info.
-	mass, calories := Prompt()
+	mass, cals := promptMassCals()
 
 	// Get current date.
 	d := time.Now()
@@ -66,16 +94,17 @@ func Log(s string) {
 	// Open file for append.
 	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	defer f.Close()
-
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", mass, calories, d.Format("2006-01-02"))
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", mass, cals, d.Format("2006-01-02"))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
 	fmt.Println("Added entry.")
