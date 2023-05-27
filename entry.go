@@ -12,18 +12,21 @@ import (
 	"github.com/rocketlaunchr/dataframe-go/imports"
 )
 
+const ConfigFilePath = "./config.yaml"
+const EntriesFilePath = "./data.csv"
+
 // ReadEntries reads user entries from CSV file into a dataframe.
-func ReadEntries(entriesFilePath string) (*dataframe.DataFrame, error) {
+func ReadEntries() (*dataframe.DataFrame, error) {
 	// Does entries file exist?
-	if _, err := os.Stat(entriesFilePath); os.IsNotExist(err) {
+	if _, err := os.Stat(EntriesFilePath); os.IsNotExist(err) {
 		log.Println("ERROR: Entries file not found.")
 		return nil, err
 	}
 
 	// Open entries file
-	csvfile, err := os.Open(entriesFilePath)
+	csvfile, err := os.Open(EntriesFilePath)
 	if err != nil {
-		log.Printf("ERROR: Couldn't open %s\n", entriesFilePath)
+		log.Printf("ERROR: Couldn't open %s\n", EntriesFilePath)
 		return nil, err
 	}
 	defer csvfile.Close()

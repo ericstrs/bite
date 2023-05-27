@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/rocketlaunchr/dataframe-go"
 	"gopkg.in/yaml.v2"
 )
 
-const configFilePath = "./config.yaml"
-const entriesFilePath = "./data.csv"
+const ConfigFilePath = "./config.yaml"
+const EntriesFilePath = "./data.csv"
 
 type UserInfo struct {
 	Gender        string    `yaml:"gender"`
@@ -30,10 +32,11 @@ type PhaseInfo struct {
 	Name         string    `yaml:"name"`
 	GoalWeight   float64   `yaml:"goal_weight"`
 	WeeklyChange float64   `yaml:"weekly_change"`
-	StartDate    time.Date `yaml:"start_date"`
-	EndDate      time.Date `yaml:"end_date"`
+	StartDate    time.Time `yaml:"start_date"`
+	EndDate      time.Time `yaml:"end_date"`
 	Duration     float64   `yaml:"duration"`
-	Active       bool      `yaml:"active"`
+	MaxDuration  float64   `yaml:"max_duration"`
+	MinDuration  float64   `yaml:"min_duration"`
 }
 
 // activity returns the scale based on the user's activity level.
@@ -95,7 +98,7 @@ func Macros(weight, fatPercent float64) (float64, float64, float64) {
 
 // TODO:
 // * Deal with errors
-func Metrics() {
+func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
 	if logs.NRows() < 1 {
 		log.Printf("Error: Not enough entries to produce metrics.\n")
 		return
@@ -111,15 +114,15 @@ func Metrics() {
 	}
 
 	// Get BMR
-	bmr := c.Mifflin(weight, userInfo.Height, userInfo.Age, userInfo.Gender)
+	bmr := Mifflin(weight, userInfo.Height, userInfo.Age, userInfo.Gender)
 	fmt.Printf("BMR: %.2f\n", bmr)
 
 	// Get TDEE
-	t := c.TDEE(bmr, userInfo.ActivityLevel)
+	t := TDEE(bmr, userInfo.ActivityLevel)
 	fmt.Printf("TDEE: %.2f\n", t)
 
 	// Get suggested macro split
-	protein, carbs, fats := c.Macros(weight, 0.4)
+	protein, carbs, fats := Macros(weight, 0.4)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots
@@ -131,7 +134,7 @@ func saveUserInfo(u *UserInfo) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(configFilePath, data, 0644)
+	return ioutil.WriteFile(ConfigFilePath, data, 0644)
 }
 
 // promptUserType prompts the user to enter desired diet phase.
@@ -149,7 +152,7 @@ func promptDietType(u *UserInfo) {
 		fmt.Scanln(&u.Phase)
 
 		// Validate user response.
-		if u.Phase == "cut" || u.Phase == "maintain" || u.Phase == "bulk" {
+		if u.Phase.Name == "cut" || u.Phase.Name == "maintain" || u.Phase.Name == "bulk" {
 			return
 		}
 		fmt.Println("Invalid diet phase. Please try again.")
@@ -163,7 +166,7 @@ func promptDietOptions(u *UserInfo) string {
 
 	// Print to user recommended and custom diet goal options.
 	fmt.Println("Recomended:")
-	switch u.Phase {
+	switch u.Phase.Name {
 	case "cut":
 		fmt.Println("* Fat loss: 8 lbs in 8 weeks.")
 	case "maintain":
@@ -187,6 +190,7 @@ func promptDietOptions(u *UserInfo) string {
 }
 
 func validateStartDate(u *UserInfo) {
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		// Prompt user for diet start/stop date.
 		fmt.Printf("Enter diet start date (YYYY-MM-DD) [Press Enter for today's date]: ")
@@ -199,8 +203,9 @@ func validateStartDate(u *UserInfo) {
 		}
 
 		// Validate user response.
-		u.Phase.StartDate, err = time.Parse("2006-01-02", input)
+		d, err := time.Parse("2006-01-02", input)
 		if err == nil {
+			u.Phase.StartDate = d
 			return
 		}
 		fmt.Println("Invalid date. Please try again.")
@@ -208,25 +213,43 @@ func validateStartDate(u *UserInfo) {
 }
 
 func validateEndDate(u *UserInfo) {
-	// TODO: Find min and max diet duration
-
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		// Prompt user for diet start/stop date.
 		fmt.Printf("Enter diet end date (YYYY-MM-DD): ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
+		d, err := time.Parse("2006-01-02", input)
+		// Calculate diet duration given current end date.
+		dur := calculateDuration(u.Phase.StartDate, d).Hours() / 24 / 7
 
-		// TODO: Validate user response.
+		// Validate user response:
 		// * Does end date fall after start date?
-		// * Does end date fall under max diet duration?
-		// * Does end date fall over min diet duration?
+		// * Is diet duration less than max diet duration?
+		// * Is diet duration greater than min diet duration?
 		//
-		userInfo.Phase.EndDate, err = time.Parse("2006-01-02", input)
-		if err == nil {
+		if err == nil && d.Before(u.Phase.StartDate) && dur < u.Phase.MaxDuration && dur > u.Phase.MinDuration {
+			u.Phase.EndDate = d
+			u.Phase.Duration = dur
 			return
 		}
 		fmt.Println("Invalid date. Please try again.")
 	}
+}
+
+func calculateEndDate(d time.Time, duration float64) time.Time {
+	endDate := d.AddDate(0, 0, int(duration*7.0))
+	return endDate
+}
+
+func calculateDuration(start, end time.Time) time.Duration {
+	d := end.Sub(start)
+	return d
+}
+
+func calculateWeeklyChange(current, goal, duration float64) float64 {
+	weeklyChange := (current - goal) / duration
+	return weeklyChange
 }
 
 func promptDietGoal(u *UserInfo) {
@@ -239,14 +262,29 @@ func promptDietGoal(u *UserInfo) {
 	// follow the recommended pace or custom pace.
 	switch goal {
 	case "recommended":
-		reader := bufio.NewReader(os.Stdin)
 
 		validateStartDate(u)
 
-		// TODO: Find diet end date.
-		// TODO: Find diet duration.
-		// TODO: Calculate weekly weight change rate.
+		switch u.Phase.Name {
+		case "cut":
+			u.Phase.WeeklyChange = 1
+			u.Phase.Duration = 8
+			u.Phase.MaxDuration = 12
+			u.Phase.MinDuration = 6
+		case "maintain":
+			u.Phase.WeeklyChange = 0
+			u.Phase.Duration = 5
+			u.Phase.MaxDuration = math.Inf(1)
+			u.Phase.MinDuration = 4
+		case "bulk":
+			u.Phase.WeeklyChange = 0.25
+			u.Phase.Duration = 10
+			u.Phase.MaxDuration = 16
+			u.Phase.MinDuration = 6
+		}
 
+		// Calculate the end date
+		u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	case "custom":
 		var w float64
 
@@ -257,20 +295,23 @@ func promptDietGoal(u *UserInfo) {
 		validateStartDate(u)
 		validateEndDate(u)
 
-		// TODO: Calculate diet duration
-		// TODO: Calculate weekly weight change rate.
+		// Calculate diet duration
+		//u.Phase.Duration = calculateDuration(u.Phase.StartDate, u.Phase.EndDate).Hours() / 24 / 7
+		//fmt.Println("Custom diet duration:", u.Phase.Duration)
 
-		// TODO: Find diet duration
+		// Calculate weekly weight change rate.
+		u.Phase.WeeklyChange = calculateWeeklyChange(u.Weight, u.Phase.GoalWeight, u.Phase.Duration)
 	}
 }
 
 func promptConfirmation(u *UserInfo) {
 	// Find difference from goal and current weight.
 	diff := u.Phase.GoalWeight - u.Weight
+	// Find diet duration
 
 	// Display current information to the user.
 	fmt.Println("Summary:")
-	fmt.Println("Diet duration: %s-%s (%f weeks)", u.Phase.StartDate, u.Phase.EndDate, diff)
+	fmt.Println("Diet duration: %s-%s (%f weeks)", u.Phase.StartDate, u.Phase.EndDate, u.Phase.Duration)
 	fmt.Printf("Target weight %f (%f)\n", u.Weight+diff, diff)
 }
 
@@ -317,7 +358,7 @@ func validateHeight(u *UserInfo) {
 		fmt.Scanln(&heightStr)
 
 		// Validate user response.
-		h, err := strconv.ParseFloat(weightStr, 64)
+		h, err := strconv.ParseFloat(heightStr, 64)
 		if err == nil && h > 0 {
 			u.Height = h
 			return
@@ -332,12 +373,12 @@ func validateAge(u *UserInfo) {
 	for {
 		// Prompt user for age.
 		fmt.Print("Enter age: ")
-		fmt.Scanln(&heightStr)
+		fmt.Scanln(&ageStr)
 
 		// Validate user response.
 		a, err := strconv.Atoi(ageStr)
-		if err == nil && age > 0 {
-			u.UserInfo = a
+		if err == nil && a > 0 {
+			u.Age = a
 			return
 		}
 		fmt.Println("Invalid age. Please try again.")
@@ -372,38 +413,37 @@ func promptUserInfo(u *UserInfo) {
 }
 
 func ReadConfig() (*UserInfo, error) {
-	var userInfo UserInfo
+	var u UserInfo
 
 	// If the yaml config file doesn't exist
-	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		var userInfo UserInfo
+	if _, err := os.Stat(ConfigFilePath); os.IsNotExist(err) {
 		fmt.Println("Welcome! Please provide required information:")
 
 		// Prompt for user information
-		promptUserInfo(userInfo)
-		promptDietType(userInfo)
-		promptDietGoal(UserInfo)
-		promptConfirmation(UserInfo)
+		promptUserInfo(&u)
+		promptDietType(&u)
+		promptDietGoal(&u)
+		promptConfirmation(&u)
 
 		// Save user info to config file.
-		err := saveUserInfo(userInfo)
+		err := saveUserInfo(&u)
 		if err != nil {
 			log.Println("Failed to save user info:", err)
 			return nil, err
 		}
 		fmt.Println("User info saved successfully.")
 	} else { // User has a config file.
-		userInfo = UserInfo{}
+		u = UserInfo{}
 
 		// Read YAML file.
-		data, err := ioutil.ReadFile(configFilePath)
+		data, err := ioutil.ReadFile(ConfigFilePath)
 		if err != nil {
 			log.Printf("Error: Can't read file: %v\n", err)
 			return nil, err
 		}
 
 		// Unmarshal YAML data into struct.
-		err = yaml.Unmarshal(data, &userInfo)
+		err = yaml.Unmarshal(data, &u)
 		if err != nil {
 			log.Printf("Error: Can't unmarshal YAML: %v\n", err)
 			return nil, err
@@ -411,7 +451,7 @@ func ReadConfig() (*UserInfo, error) {
 		fmt.Println("User info loaded successful.")
 	}
 
-	return userInfo, nil
+	return &u, nil
 }
 
 // TODO
