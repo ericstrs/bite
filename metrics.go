@@ -30,6 +30,7 @@ type UserInfo struct {
 
 type PhaseInfo struct {
 	Name         string    `yaml:"name"`
+	StartWeight  float64   `yaml:"start_weight"`
 	GoalWeight   float64   `yaml:"goal_weight"`
 	WeeklyChange float64   `yaml:"weekly_change"`
 	StartDate    time.Time `yaml:"start_date"`
@@ -96,11 +97,11 @@ func Macros(weight, fatPercent float64) (float64, float64, float64) {
 	return protein, carbs, fats
 }
 
-// TODO:
-// * Deal with errors
+// Metrics prints user BMR, TDEE, suggested macro split, and generates
+// plots using logs data frame.
 func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
 	if logs.NRows() < 1 {
-		log.Printf("Error: Not enough entries to produce metrics.\n")
+		log.Println("Error: Not enough entries to produce metrics.")
 		return
 	}
 
@@ -109,7 +110,7 @@ func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
 	// Convert string to float64.
 	weight, err := strconv.ParseFloat(vals, 64)
 	if err != nil {
-		fmt.Println("Failed to convert string to float64:", err)
+		log.Println("Failed to convert string to float64:", err)
 		return
 	}
 
@@ -128,7 +129,7 @@ func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
 	// Create plots
 }
 
-// Save userInfo to yaml config file
+// Save userInfo to yaml config file.
 func saveUserInfo(u *UserInfo) error {
 	data, err := yaml.Marshal(u)
 	if err != nil {
@@ -165,14 +166,14 @@ func promptDietOptions(u *UserInfo) string {
 	var g string
 
 	// Print to user recommended and custom diet goal options.
-	fmt.Println("Recomended:")
+	fmt.Println("Recommended:")
 	switch u.Phase.Name {
 	case "cut":
-		fmt.Println("* Fat loss: 8 lbs in 8 weeks.")
+		fmt.Println("* Fat loss: 4 lbs in 8 weeks.")
 	case "maintain":
-		fmt.Println("* Maintenance: X weeks.")
+		fmt.Println("* Maintenance: same weight for 5 weeks.")
 	case "bulk":
-		fmt.Println("* Muscle gain: X lbs in X weeks.")
+		fmt.Println("* Muscle gain: 2.5 lbs in 10 weeks.")
 	}
 	fmt.Println("Custom: Choose diet duration and rate of weight change.")
 
@@ -189,10 +190,12 @@ func promptDietOptions(u *UserInfo) string {
 	}
 }
 
+// validateStartDate prompts user for diet start date and validates user
+// response.
 func validateStartDate(u *UserInfo) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		// Prompt user for diet start/stop date.
+		// Prompt user for diet start date.
 		fmt.Printf("Enter diet start date (YYYY-MM-DD) [Press Enter for today's date]: ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
@@ -212,10 +215,12 @@ func validateStartDate(u *UserInfo) {
 	}
 }
 
+// validateEndDate prompts user for diet end date and validates user
+// response.
 func validateEndDate(u *UserInfo) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		// Prompt user for diet start/stop date.
+		// Prompt user for diet stop date.
 		fmt.Printf("Enter diet end date (YYYY-MM-DD): ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
@@ -237,21 +242,67 @@ func validateEndDate(u *UserInfo) {
 	}
 }
 
+// calculateEndDate calculates the diet end date given diet start date
+// and diet duration in weeks.
 func calculateEndDate(d time.Time, duration float64) time.Time {
 	endDate := d.AddDate(0, 0, int(duration*7.0))
 	return endDate
 }
 
+// calculateDuration calculates and returns diet duration in weeks given
+// start and end date.
 func calculateDuration(start, end time.Time) time.Duration {
 	d := end.Sub(start)
 	return d
 }
 
+// calculateWeeklyChange calculates and returns the weekly weight
+// change given current weight, goal weight, and diet duration.
 func calculateWeeklyChange(current, goal, duration float64) float64 {
 	weeklyChange := (current - goal) / duration
 	return weeklyChange
 }
 
+// validateGoalWeight prompts user for goal weight and validates their
+// response.
+//
+// If phase is maintenace:
+// * ensure goal weight is within +/- 1.25 current weight.
+//
+// If phase is cut:
+// *  cut goal should be smaller than current weight.
+//
+// If phase is bulk:
+// * bulk goal should be bigger than current weight.
+//
+// And check min max weight bounds for a single cut/bulk.
+func validateGoalWeight(u *UserInfo) {
+	var g float64
+
+	for {
+		// Prompt user for goal weight.
+		fmt.Printf("Enter your goal weight: ")
+		fmt.Scanln(&g)
+
+		switch u.Phase.Name {
+		case "cut":
+			// TODO: Find lower bound on the amount of weight a user
+			// can lose in a single cut.
+		case "maintain":
+			d := 1.25 * u.Phase.StartWeight
+			if u.Phase.StartWeight+d < g && g > u.Phase.StartWeight-d {
+				u.Phase.GoalWeight = g
+				return
+			}
+		case "bulk":
+			// TODO: Find upper bound on the amount of weight a user can gain
+			// in a single bulk phase.
+		}
+		fmt.Println("Invalid goal weight. Please try again.")
+	}
+}
+
+// promptDietGoal prompts the user diet goal and diet details.
 func promptDietGoal(u *UserInfo) {
 	fmt.Println("Step 3: Choose diet goal.")
 
@@ -262,57 +313,69 @@ func promptDietGoal(u *UserInfo) {
 	// follow the recommended pace or custom pace.
 	switch goal {
 	case "recommended":
-
 		validateStartDate(u)
 
+		// TODO: Create function to call for each case in order to simplify code.
 		switch u.Phase.Name {
 		case "cut":
 			u.Phase.WeeklyChange = 1
 			u.Phase.Duration = 8
 			u.Phase.MaxDuration = 12
 			u.Phase.MinDuration = 6
+			a := u.Phase.StartWeight * u.Phase.WeeklyChange
+			// Calculate goal weight and set userInfo field
+			u.Phase.GoalWeight = u.Phase.StartWeight - a
 		case "maintain":
 			u.Phase.WeeklyChange = 0
 			u.Phase.Duration = 5
 			u.Phase.MaxDuration = math.Inf(1)
 			u.Phase.MinDuration = 4
+			// Calculate goal weight and set userInfo field
+			u.Phase.GoalWeight = u.Phase.StartWeight
 		case "bulk":
 			u.Phase.WeeklyChange = 0.25
 			u.Phase.Duration = 10
 			u.Phase.MaxDuration = 16
 			u.Phase.MinDuration = 6
+			a := u.Phase.StartWeight * u.Phase.WeeklyChange
+			// Calculate goal weight and set userInfo field
+			u.Phase.GoalWeight = u.Phase.StartWeight + a
 		}
 
-		// Calculate the end date
+		// Calculate the diet end date.
 		u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	case "custom":
-		var w float64
+		// Calculate diet goal weight.
+		validateGoalWeight(u)
 
-		// Prompt user for goal weight
-		fmt.Printf("Enter your goal weight: ")
-		fmt.Scanln(&w)
-
+		// Calculate diet start date.
 		validateStartDate(u)
+		// Calculate diet end date.
 		validateEndDate(u)
-
-		// Calculate diet duration
-		//u.Phase.Duration = calculateDuration(u.Phase.StartDate, u.Phase.EndDate).Hours() / 24 / 7
-		//fmt.Println("Custom diet duration:", u.Phase.Duration)
 
 		// Calculate weekly weight change rate.
 		u.Phase.WeeklyChange = calculateWeeklyChange(u.Weight, u.Phase.GoalWeight, u.Phase.Duration)
 	}
 }
 
+// promptConfirmation prints the diet summary to the user.
 func promptConfirmation(u *UserInfo) {
-	// Find difference from goal and current weight.
-	diff := u.Phase.GoalWeight - u.Weight
-	// Find diet duration
+	// Find difference from goal and start weight.
+	diff := u.Phase.GoalWeight - u.Phase.StartWeight
 
 	// Display current information to the user.
 	fmt.Println("Summary:")
 	fmt.Println("Diet duration: %s-%s (%f weeks)", u.Phase.StartDate, u.Phase.EndDate, u.Phase.Duration)
 	fmt.Printf("Target weight %f (%f)\n", u.Weight+diff, diff)
+
+	switch u.Phase.Name {
+	case "cut":
+		// TODO
+	case "maintain":
+		fmt.Println("During your maintenance, you should focus on low-volume training (3-10 rep strength training). Get active rest (barely anytraining and just living life for two weeks is also an option). This phase is meant to tive your body a break and lets your body recharge for future hard training.")
+	case "bulk":
+		// TODO
+	}
 }
 
 // validateGender prompts user for gender and validates their response.
@@ -343,6 +406,7 @@ func validateWeight(u *UserInfo) {
 		w, err := strconv.ParseFloat(weightStr, 64)
 		if err == nil && u.Weight > 0 {
 			u.Weight = w
+			u.Phase.StartWeight = w
 			return
 		}
 		fmt.Println("Invalid weight. Please try again.")
@@ -412,6 +476,8 @@ func promptUserInfo(u *UserInfo) {
 	validateActivity(u)
 }
 
+// ReadConfig created config file if it doesn't exist or reads in
+// existing config file and returns userInfo.
 func ReadConfig() (*UserInfo, error) {
 	var u UserInfo
 
