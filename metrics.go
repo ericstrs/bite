@@ -320,62 +320,59 @@ func promptDietGoal(u *UserInfo) {
 	// Prompt user for diet goal
 	goal := promptDietOptions(u)
 
-	// Fill out userInfo struct fields depending on whether user wants to
-	// follow the recommended pace or custom pace.
+	// Set min and max diet durations.
+	switch u.Phase.Name {
+	case "cut":
+		u.Phase.MaxDuration = 12
+		u.Phase.MinDuration = 6
+	case "maintain":
+		u.Phase.MaxDuration = math.Inf(1)
+		u.Phase.MinDuration = 4
+	case "bulk":
+		u.Phase.MaxDuration = 16
+		u.Phase.MinDuration = 6
+	}
+
+	// Fill out remaining userInfo struct fields given user preference on
+	// recommended or custom diet pace.
 	switch goal {
 	case "recommended":
 		validateStartDate(u)
 
-		// TODO: Create function to call for each case in order to simplify code.
 		switch u.Phase.Name {
 		case "cut":
 			u.Phase.WeeklyChange = 1
 			u.Phase.Duration = 8
-			u.Phase.MaxDuration = 12
-			u.Phase.MinDuration = 6
+
+			// Calculate expected change in weight.
 			a := u.Phase.StartWeight * u.Phase.WeeklyChange
-			// Calculate goal weight and set userInfo field
+			// Calculate goal weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight - a
 		case "maintain":
 			u.Phase.WeeklyChange = 0
 			u.Phase.Duration = 5
-			u.Phase.MaxDuration = math.Inf(1)
-			u.Phase.MinDuration = 4
-			// Calculate goal weight and set userInfo field
+			// Set goal weight as diet starting weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight
 		case "bulk":
 			u.Phase.WeeklyChange = 0.25
 			u.Phase.Duration = 10
-			u.Phase.MaxDuration = 16
-			u.Phase.MinDuration = 6
+
+			// Calculate expected change in weight.
 			a := u.Phase.StartWeight * u.Phase.WeeklyChange
-			// Calculate goal weight and set userInfo field
+			// Calculate goal weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight + a
 		}
 
 		// Calculate the diet end date.
 		u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	case "custom":
-		// Calculate diet goal weight.
+		// Prompt and validate user diet goal weight.
 		validateGoalWeight(u)
 
-		// Calculate diet start date.
+		// Prompt and validate user diet start date.
 		validateStartDate(u)
 
-		// Set min and max diet durations
-		switch u.Phase.Name {
-		case "cut":
-			u.Phase.MaxDuration = 12
-			u.Phase.MinDuration = 6
-		case "maintain":
-			u.Phase.MaxDuration = math.Inf(1)
-			u.Phase.MinDuration = 4
-		case "bulk":
-			u.Phase.MaxDuration = 16
-			u.Phase.MinDuration = 6
-		}
-
-		// Calculate diet end date.
+		// Prompt and validate user diet end date.
 		validateEndDate(u)
 
 		// Calculate weekly weight change rate.
@@ -383,7 +380,7 @@ func promptDietGoal(u *UserInfo) {
 	}
 }
 
-// promptConfirmation prints the diet summary to the user.
+// promptConfirmation prints diet summary to the user.
 func promptConfirmation(u *UserInfo) {
 	// Find difference from goal and start weight.
 	diff := u.Phase.GoalWeight - u.Phase.StartWeight
@@ -398,10 +395,10 @@ func promptConfirmation(u *UserInfo) {
 		fmt.Println("During your cut, you should lean slightly on the side of doing more high-volume training.")
 	case "maintain":
 		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
-		fmt.Println("During your maintenance, you should lean towards low-volume training (3-10 rep strength training). Get active rest (barely anytraining and just living life for two weeks is also an option). This phase is meant to give your body a break to recharge for future hard training.")
+		fmt.Println("During your maintenance, you should lean towards low-volume training (3-10 rep strength training). Get active rest (barely any training and just living life for two weeks is also an option). This phase is meant to give your body a break to recharge for future hard training.")
 	case "bulk":
 		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
-		fmt.Println("During you bulk, you can just train as you normally would.")
+		fmt.Println("During your bulk, you can just train as you normally would.")
 	}
 }
 
@@ -545,6 +542,66 @@ func ReadConfig() (*UserInfo, error) {
 	}
 
 	return &u, nil
+}
+
+// promptTransition prints a diet recap and suggested next diet phase,
+// prompts them to choose the next phase, and saves next phase to
+// config file.
+func promptTransition(u *UserInfo) {
+	fmt.Println("%s phase completed. Beginning diet transition.", string.ToUpper(s[:1])+s[1:])
+	fmt.Println("Step 1: Diet phase recap")
+	fmt.Printf("Goal weight: %f. Current weight: %f\n", u.Phase.GoalWeight, u.Weight)
+
+	switch u.Phase.Name {
+	case "cut":
+		// Print suggestion to start a maintenance period of the same
+		// duration as the completed cut.
+		fmt.Println("A maintenance period of the same duration as your completed cut is recommended.")
+	case "maintain":
+	case "bulk":
+		// Print suggestion to begin a maintenance phase
+		fmt.Println("A maintenance period of the at least a month is recommended.")
+
+		// TODO: If the user does follow recommendation of a maintenance
+		// phase, then
+		// 1. Calculate your weekly calorie surplus based on the average weight
+		// gain over the final two weeks of bulking.
+		// 2. Start out phase by decreasing your caloric intake by that amount.
+	}
+
+	// Prompt user to start a new diet phase
+	promptDietType(&u)
+	promptDietGoal(&u)
+	promptConfirmation(&u)
+
+	// Save user info to config file.
+	err := saveUserInfo(&u)
+	if err != nil {
+		log.Println("Failed to save user info:", err)
+		return nil, err
+	}
+	fmt.Println("User info saved successfully.")
+}
+
+// CheckProgress performs checks on the user's current diet phase.
+func CheckProgress(u *UserInfo) error {
+	// Get current date.
+	t := time.Now().Format("2006-01-02")
+
+	// If today comes before diet start date, then phase has not yet begun.
+	if t.Before(u.Phase.StartDate) {
+		return nil
+	}
+	// If today comes after diet end date, diet phase is over.
+	if t.After(u.Phase.EndDate) {
+		// Prompt for phase transition
+		promptTransition(u)
+
+		return nil
+	}
+
+	// TODO: Check users progress on the diet.
+	return nil
 }
 
 // TODO
