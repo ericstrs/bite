@@ -2,21 +2,20 @@
 
 Food and weight tracker.
 
-This program contains several parts:
+This program contains the following features:
 
-* Food and weight tracking
-* Daily and weekly feedback.
-  * Are you on track towards reaching your desired weight goal?
-Bulk, cut, and patience phase tracker.
-  * Pie chart
+* Daily calorie and weight tracking.
+* Cut, maintenance, and bulk phase tracker.
 
-Activity level:
+## Finding your activity level
 
-|Sedentary|\*1.2|
-|Lightly active|\*1.375|
-|Moderately active|\*1.55|
-|Active|\*1.725|
-|Very active|\*1.9|
+|Activity Level|Description|
+|--------------|-----------|
+|Sedentary|No exercise and stationary lifestyle|
+|Lightly active|Exercise 1-2 days per week|
+|Moderately active|Exercise 3-5 days per week|
+|Active|Exercise 6-7 days per week|
+|Very active|Exercise 2x per day|
 
 ## TODO
 
@@ -30,5 +29,7 @@ Activity level:
 * Summary:
   [] Streak feature.
   [] Add Monthly view of adherence.
-  [] Add summary feature.
-    [] Add macros pie chart.
+  [] Add macros pie chart.
+  [] Are you on track towards reaching your desired weight goal?
+* Record history
+  [] Add log of completed diet phases with related data.
