@@ -34,7 +34,10 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 	// Read entries from CSV into a dataframe.
 	ctx := context.TODO()
 	logs, err := imports.LoadFromCSV(ctx, csvfile)
-	fmt.Print(logs.Table())
+	if err != nil {
+		log.Printf("ERROR: Couldn't read %s\n", EntriesFilePath)
+		return nil, err
+	}
 
 	return logs, nil
 }
