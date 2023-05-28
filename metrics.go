@@ -493,11 +493,11 @@ func validateActivity(u *UserInfo) {
 // promptUserInfo prompts for user details.
 func promptUserInfo(u *UserInfo) {
 	fmt.Println("Step 1: Your details.")
-	validateGender(u)
-	validateWeight(u)
-	validateHeight(u)
-	validateAge(u)
-	validateActivity(u)
+	validateGender(&u)
+	validateWeight(&u)
+	validateHeight(&u)
+	validateAge(&u)
+	validateActivity(&u)
 }
 
 // ReadConfig created config file if it doesn't exist or reads in
@@ -584,7 +584,7 @@ func promptTransition(u *UserInfo) {
 }
 
 // CheckProgress performs checks on the user's current diet phase.
-func CheckProgress(u *UserInfo) error {
+func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	// Get current date.
 	t := time.Now().Format("2006-01-02")
 
@@ -601,6 +601,10 @@ func CheckProgress(u *UserInfo) error {
 	}
 
 	// TODO: Check users progress on the diet.
+
+	// If there is less than 2 weeks of entries after the diet start date,
+	// then do nothing, and return
+
 	return nil
 }
 
