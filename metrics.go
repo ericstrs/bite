@@ -16,8 +16,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+/*
 const ConfigFilePath = "./config.yaml"
 const EntriesFilePath = "./data.csv"
+*/
 
 type UserInfo struct {
 	Gender        string    `yaml:"gender"`
@@ -147,13 +149,15 @@ func promptDietType(u *UserInfo) {
 	fmt.Println("Maintenance (maintain). Stay at your current weight.")
 	fmt.Println("Muscle gain (bulk). Gain muscle while minimizing fat.")
 
+	var s string
 	for {
 		// Prompt user for diet phase.
 		fmt.Print("Enter phase (cut, maintain, or bulk): ")
-		fmt.Scanln(&u.Phase)
+		fmt.Scanln(&s)
 
 		// Validate user response.
-		if u.Phase.Name == "cut" || u.Phase.Name == "maintain" || u.Phase.Name == "bulk" {
+		if s == "cut" || s == "maintain" || s == "bulk" {
+			u.Phase.Name = s
 			return
 		}
 		fmt.Println("Invalid diet phase. Please try again.")
@@ -166,14 +170,14 @@ func promptDietOptions(u *UserInfo) string {
 	var g string
 
 	// Print to user recommended and custom diet goal options.
-	fmt.Println("Recommended:")
+	fmt.Printf("Recommended: ")
 	switch u.Phase.Name {
 	case "cut":
-		fmt.Println("* Fat loss: 4 lbs in 8 weeks.")
+		fmt.Printf("Lose 4 lbs in 8 weeks.\n")
 	case "maintain":
-		fmt.Println("* Maintenance: same weight for 5 weeks.")
+		fmt.Printf("Maintain same weight for 5 weeks.\n")
 	case "bulk":
-		fmt.Println("* Muscle gain: 2.5 lbs in 10 weeks.")
+		fmt.Printf("Gain 2.5 lbs in 10 weeks.\n")
 	}
 	fmt.Println("Custom: Choose diet duration and rate of weight change.")
 
@@ -233,7 +237,8 @@ func validateEndDate(u *UserInfo) {
 		// * Is diet duration less than max diet duration?
 		// * Is diet duration greater than min diet duration?
 		//
-		if err == nil && d.Before(u.Phase.StartDate) && dur < u.Phase.MaxDuration && dur > u.Phase.MinDuration {
+		fmt.Printf("Duration: %f. MaxDuration: %f. MinDuration: %f\n", dur, u.Phase.MaxDuration, u.Phase.MinDuration)
+		if err == nil && d.After(u.Phase.StartDate) && dur < u.Phase.MaxDuration && dur > u.Phase.MinDuration {
 			u.Phase.EndDate = d
 			u.Phase.Duration = dur
 			return
@@ -277,8 +282,12 @@ func calculateWeeklyChange(current, goal, duration float64) float64 {
 //
 // And check min max weight bounds for a single cut/bulk.
 func validateGoalWeight(u *UserInfo) {
-	var g float64
+	if u.Phase.Name == "maintain" {
+		u.Phase.GoalWeight = u.Phase.StartWeight
+		return
+	}
 
+	var g float64
 	for {
 		// Prompt user for goal weight.
 		fmt.Printf("Enter your goal weight: ")
@@ -286,17 +295,19 @@ func validateGoalWeight(u *UserInfo) {
 
 		switch u.Phase.Name {
 		case "cut":
-			// TODO: Find lower bound on the amount of weight a user
-			// can lose in a single cut.
-		case "maintain":
-			d := 1.25 * u.Phase.StartWeight
-			if u.Phase.StartWeight+d < g && g > u.Phase.StartWeight-d {
+			// Ensure goal weight doesn't exceed 10% of starting body weight.
+			lowerBound := u.Phase.StartWeight * 0.10
+			if g > u.Phase.StartWeight-lowerBound {
 				u.Phase.GoalWeight = g
 				return
 			}
+		case "maintain":
 		case "bulk":
-			// TODO: Find upper bound on the amount of weight a user can gain
-			// in a single bulk phase.
+			// Ensue that goal weight is greater than starting weight.
+			if g > u.Phase.StartWeight {
+				u.Phase.GoalWeight = g
+				return
+			}
 		}
 		fmt.Println("Invalid goal weight. Please try again.")
 	}
@@ -350,6 +361,20 @@ func promptDietGoal(u *UserInfo) {
 
 		// Calculate diet start date.
 		validateStartDate(u)
+
+		// Set min and max diet durations
+		switch u.Phase.Name {
+		case "cut":
+			u.Phase.MaxDuration = 12
+			u.Phase.MinDuration = 6
+		case "maintain":
+			u.Phase.MaxDuration = math.Inf(1)
+			u.Phase.MinDuration = 4
+		case "bulk":
+			u.Phase.MaxDuration = 16
+			u.Phase.MinDuration = 6
+		}
+
 		// Calculate diet end date.
 		validateEndDate(u)
 
@@ -365,16 +390,18 @@ func promptConfirmation(u *UserInfo) {
 
 	// Display current information to the user.
 	fmt.Println("Summary:")
-	fmt.Println("Diet duration: %s-%s (%f weeks)", u.Phase.StartDate, u.Phase.EndDate, u.Phase.Duration)
-	fmt.Printf("Target weight %f (%f)\n", u.Weight+diff, diff)
+	fmt.Printf("Diet duration: %s-%s (%f weeks)\n", u.Phase.StartDate, u.Phase.EndDate, u.Phase.Duration)
 
 	switch u.Phase.Name {
 	case "cut":
-		// TODO
+		fmt.Printf("Target weight %f (%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Println("During your cut, you should lean slightly on the side of doing more high-volume training.")
 	case "maintain":
-		fmt.Println("During your maintenance, you should focus on low-volume training (3-10 rep strength training). Get active rest (barely anytraining and just living life for two weeks is also an option). This phase is meant to tive your body a break and lets your body recharge for future hard training.")
+		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Println("During your maintenance, you should lean towards low-volume training (3-10 rep strength training). Get active rest (barely anytraining and just living life for two weeks is also an option). This phase is meant to give your body a break to recharge for future hard training.")
 	case "bulk":
-		// TODO
+		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Println("During you bulk, you can just train as you normally would.")
 	}
 }
 
@@ -400,11 +427,11 @@ func validateWeight(u *UserInfo) {
 	for {
 		// Prompt user for weight.
 		fmt.Print("Enter current weight: ")
-		fmt.Scanln(&u.Weight)
+		fmt.Scanln(&weightStr)
 
 		// Validate user response.
 		w, err := strconv.ParseFloat(weightStr, 64)
-		if err == nil && u.Weight > 0 {
+		if err == nil && w > 0 {
 			u.Weight = w
 			u.Phase.StartWeight = w
 			return
