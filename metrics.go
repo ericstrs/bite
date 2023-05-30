@@ -16,6 +16,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const (
+	CalsInProtein = 4 // Calories per gram of protein
+	CalsInCarbs   = 4 // Calories per gram of carbohydrate
+	CalsInFats    = 9 // Calories per gram of fat
+)
+
 /*
 const ConfigFilePath = "./config.yaml"
 const EntriesFilePath = "./data.csv"
@@ -27,11 +33,14 @@ type UserInfo struct {
 	Height        float64   `yaml:"height"`
 	Age           int       `yaml:"age"`
 	ActivityLevel string    `yaml:"activity_level"`
+	TDEE          float64   `yaml:"tdee"`
+	Macros        Macros    `taml:"macros"`
 	Phase         PhaseInfo `yaml:"phase"`
 }
 
 type PhaseInfo struct {
 	Name         string    `yaml:"name"`
+	GoalCalories float64   `yaml:"goal_calories"`
 	StartWeight  float64   `yaml:"start_weight"`
 	GoalWeight   float64   `yaml:"goal_weight"`
 	WeeklyChange float64   `yaml:"weekly_change"`
@@ -40,6 +49,16 @@ type PhaseInfo struct {
 	Duration     float64   `yaml:"duration"`
 	MaxDuration  float64   `yaml:"max_duration"`
 	MinDuration  float64   `yaml:"min_duration"`
+}
+
+type Macros struct {
+	Protein    float64 `yaml:"protein"`
+	MinProtein float64 `yaml:"min_protein"`
+	Carbs      float64 `yaml:"carbs"`
+	MinCarbs   float64 `yaml:"min_carbs"`
+	Fats       float64 `yaml:"fats"`
+	MaxFats    float64 `yaml:"max_fats"`
+	MinFats    float64 `yaml:"min_fats"`
 }
 
 // activity returns the scale based on the user's activity level.
@@ -93,15 +112,15 @@ func TDEE(bmr float64, a string) float64 {
 func Macros(weight, fatPercent float64) (float64, float64, float64) {
 	protein := 1 * weight
 	fats := fatPercent * weight
-	remaining := (protein * 4) + (fats * 9)
-	carbs := remaining / 4
+	remaining := (protein * CalsInProtein) + (fats * CalsInFats)
+	carbs := remaining / CalsInCarbs
 
 	return protein, carbs, fats
 }
 
-// Metrics prints user BMR, TDEE, suggested macro split, and generates
+// Metrics prints user TDEE, suggested macro split, and generates
 // plots using logs data frame.
-func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
+func Metrics(logs dataframe.DataFrame, u *UserInfo) {
 	if logs.NRows() < 1 {
 		log.Println("Error: Not enough entries to produce metrics.")
 		return
@@ -116,22 +135,22 @@ func Metrics(logs dataframe.DataFrame, userInfo UserInfo) {
 		return
 	}
 
-	// Get BMR
-	bmr := Mifflin(weight, userInfo.Height, userInfo.Age, userInfo.Gender)
+	// Get BMR.
+	bmr := Mifflin(weight, u.Height, u.Age, u.Gender)
 	fmt.Printf("BMR: %.2f\n", bmr)
 
-	// Get TDEE
-	t := TDEE(bmr, userInfo.ActivityLevel)
+	// Get TDEE.
+	t := TDEE(bmr, u.ActivityLevel)
 	fmt.Printf("TDEE: %.2f\n", t)
 
-	// Get suggested macro split
+	// Get suggested macro split.
 	protein, carbs, fats := Macros(weight, 0.4)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots
 }
 
-// Save userInfo to yaml config file.
+// Save user information to yaml config file.
 func saveUserInfo(u *UserInfo) error {
 	data, err := yaml.Marshal(u)
 	if err != nil {
@@ -333,6 +352,9 @@ func promptDietGoal(u *UserInfo) {
 		u.Phase.MinDuration = 6
 	}
 
+	// TODO: For both recommended and custom diets, calculate and set the
+	// diet phase goal calories.
+
 	// Fill out remaining userInfo struct fields given user preference on
 	// recommended or custom diet pace.
 	switch goal {
@@ -498,6 +520,12 @@ func promptUserInfo(u *UserInfo) {
 	validateHeight(u)
 	validateAge(u)
 	validateActivity(u)
+
+	// Get BMR
+	bmr := Mifflin(u.Weight, u.Height, u.Age, u.Gender)
+
+	// Set TDEE
+	u.TDEE = TDEE(bmr, u.ActivityLevel)
 }
 
 // ReadConfig created config file if it doesn't exist or reads in
@@ -573,6 +601,17 @@ func promptTransition(u *UserInfo) error {
 	// Prompt user to start a new diet phase
 	promptDietType(u)
 	promptDietGoal(u)
+
+	// Set suggested macro split
+	protein, carbs, fats := Macros(weight, 0.4)
+	u.Macros.Protein = protein
+	u.Macros.Carbs = carbs
+	u.Macros.Fats = fats
+
+	// Find min and max values for macros.
+	setMinMaxMacros(u)
+
+	// Print new phase information to user.
 	promptConfirmation(u)
 
 	// Save user info to config file.
@@ -586,6 +625,33 @@ func promptTransition(u *UserInfo) error {
 	return nil
 }
 
+// setMinMaxMacros calculates the minimum and maximum macronutrient in
+// grams using user's most recent logged bodyweight.
+//
+// Note: Min and max values are determined for general health. More
+// active lifestyles will likely require different values.
+func setMinMaxMacros(u *UserInfo) {
+	// Minimum protein daily intake needed for health is about
+	// 0.3g of protein per pound of bodyweight.
+	u.Macros.ProteinMin = 0.3 * u.Weight
+	// Maximum protein intake for general health is 2g of protein per
+	// pound of bodyweight.
+	u.Macros.ProteinMax = 2 * u.Weight
+
+	// Minimum carb daily intake needed for *health* is about
+	// 0.3g of carb per pound of bodyweight.
+	u.Macros.CarbsMin = 0.3 * u.Weight
+	// Maximum carb intake for general health is 5g of carb per pound of
+	// bodyweight.
+	u.Macros.CarbsMax = 5 * u.Weight
+
+	// Minimum daily fat intake is 0.3g per pound of bodyweight.
+	u.Macros.FatsMin = 0.3 * u.Weight
+	// Maximum daily fat intake is keeping calorie contribtions from fat
+	// to be under 40% of total daily calories .
+	u.Macros.FatsMax = 0.4 * u.Phase.GoalCalories / CalsInFats
+}
+
 // CheckProgress performs checks on the user's current diet phase.
 //
 // Current solution to defining a week is continually adding 7 days to
@@ -595,8 +661,7 @@ func promptTransition(u *UserInfo) error {
 // Note: Converting duration in weeks (float64) to int is taking the
 // floor which may truncate days and this may lead to some issues.
 func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
-	// Get current date.
-	t := time.Now()
+	t := time.Now() // Get current date.
 
 	// If today comes before diet start date, then phase has not yet begun.
 	if t.Before(u.Phase.StartDate) {
@@ -684,9 +749,17 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 		if consecutiveMissedWeeks >= 2 {
 			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.")
 			// TODO: Call function to adjust weight loss plan.
+			adjustCutPhase(u)
 		}
 	}
 	return nil
+}
+
+func adjustCutPhase(u *UserInfo) {
+	// Calculate the needed daily surplus/deficit
+	dailyAdjustment := u.Phase.WeeklyChange * 500
+
+	// TODO: Handle cut and bulk cases
 }
 
 // checkCutThreshold checks if the user has lost too much weight, in
