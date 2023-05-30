@@ -271,7 +271,7 @@ func calculateWeeklyChange(current, goal, duration float64) float64 {
 // validateGoalWeight prompts user for goal weight and validates their
 // response.
 //
-// If phase is maintenace:
+// If phase is maintenance:
 // * ensure goal weight is within +/- 1.25 current weight.
 //
 // If phase is cut:
@@ -493,11 +493,11 @@ func validateActivity(u *UserInfo) {
 // promptUserInfo prompts for user details.
 func promptUserInfo(u *UserInfo) {
 	fmt.Println("Step 1: Your details.")
-	validateGender(&u)
-	validateWeight(&u)
-	validateHeight(&u)
-	validateAge(&u)
-	validateActivity(&u)
+	validateGender(u)
+	validateWeight(u)
+	validateHeight(u)
+	validateAge(u)
+	validateActivity(u)
 }
 
 // ReadConfig created config file if it doesn't exist or reads in
@@ -547,8 +547,9 @@ func ReadConfig() (*UserInfo, error) {
 // promptTransition prints a diet recap and suggested next diet phase,
 // prompts them to choose the next phase, and saves next phase to
 // config file.
-func promptTransition(u *UserInfo) {
-	fmt.Println("%s phase completed. Beginning diet transition.", string.ToUpper(s[:1])+s[1:])
+func promptTransition(u *UserInfo) error {
+	s := u.Phase.Name
+	fmt.Printf("%s phase completed. Beginning diet transition.", strings.ToUpper(s[:1])+s[1:])
 	fmt.Println("Step 1: Diet phase recap")
 	fmt.Printf("Goal weight: %f. Current weight: %f\n", u.Phase.GoalWeight, u.Weight)
 
@@ -570,23 +571,32 @@ func promptTransition(u *UserInfo) {
 	}
 
 	// Prompt user to start a new diet phase
-	promptDietType(&u)
-	promptDietGoal(&u)
-	promptConfirmation(&u)
+	promptDietType(u)
+	promptDietGoal(u)
+	promptConfirmation(u)
 
 	// Save user info to config file.
-	err := saveUserInfo(&u)
+	err := saveUserInfo(u)
 	if err != nil {
 		log.Println("Failed to save user info:", err)
-		return nil, err
+		return err
 	}
 	fmt.Println("User info saved successfully.")
+
+	return nil
 }
 
 // CheckProgress performs checks on the user's current diet phase.
+//
+// Current solution to defining a week is continually adding 7 days to
+// the start date. We consider weeks where the user has a consistency of
+// adding at least two entries for a given week.
+//
+// Note: Converting duration in weeks (float64) to int is taking the
+// floor which may truncate days and this may lead to some issues.
 func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	// Get current date.
-	t := time.Now().Format("2006-01-02")
+	t := time.Now()
 
 	// If today comes before diet start date, then phase has not yet begun.
 	if t.Before(u.Phase.StartDate) {
@@ -595,17 +605,165 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	// If today comes after diet end date, diet phase is over.
 	if t.After(u.Phase.EndDate) {
 		// Prompt for phase transition
-		promptTransition(u)
+		err := promptTransition(u)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	}
 
-	// TODO: Check users progress on the diet.
+	// Make a map to track the numbers of entries in each week.
+	entryCountPerWeek := make(map[int]int)
 
+	i := 0
+	// Iterate over weeks within the diet phase.
+	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+		weekStart := date
+		weekEnd := date.AddDate(0, 0, 6)
+
+		// Count the number of entries within the current week.
+		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+		if err != nil {
+			return err
+		}
+
+		weekNumber := i
+		i++
+		entryCountPerWeek[weekNumber] = entryCount
+	}
+
+	count := 0
 	// If there is less than 2 weeks of entries after the diet start date,
 	// then do nothing, and return
+	for week := 1; week <= int(u.Phase.Duration); week++ {
+		if entryCountPerWeek[week] > 2 {
+			count++
+		}
+	}
+	if count < 2 {
+		log.Println("There is less than 2 weeks of entries after the diet start date. Skipping remaining checks on user progress.")
+		return nil
+	}
+
+	switch u.Phase.Name {
+	case "cut":
+		// Ensure user has not lost too much weight.
+		err := checkCutThreshold(u)
+		if err != nil {
+			return err
+		}
+
+		// Ensure user is meeting weekly weight loss.
+		err = checkCutLoss(u, logs)
+		if err != nil {
+			return err
+		}
+	case "maintain":
+	case "bulk":
+	}
 
 	return nil
+}
+
+func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
+	consecutiveMissedWeeks := 0
+	// If there has been 2 weeks of the user not meeting the weekly
+	// weight loss goal, then update accordingly.
+	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+		weekStart := date
+		weekEnd := date.AddDate(0, 0, 6)
+
+		if metWeightLossGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange) {
+			consecutiveMissedWeeks = 0
+			continue
+		}
+
+		consecutiveMissedWeeks++
+
+		if consecutiveMissedWeeks >= 2 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.")
+			// TODO: Call function to adjust weight loss plan.
+		}
+	}
+	return nil
+}
+
+// checkCutThreshold checks if the user has lost too much weight, in
+// which the cut is stopped and a maintenance phase begins.
+//
+// Note: diet duration is left unmodified so maintenance phase
+// lasts as long as the cut.
+func checkCutThreshold(u *UserInfo) error {
+	// Find the amount of weight the user has lost.
+	weightLost := u.Phase.StartWeight - u.Phase.Weight
+	// Find the theshold weight the user is allowed to lose.
+	threshold := u.Phase.StartWeight * 0.10
+
+	// If the user has lost more than 10% of starting weight,
+	if weightLost > threshold {
+		fmt.Println("Warning: You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase.")
+
+		// Stop cut phase and set phase to maintenance.
+		u.Phase.Name = "maintain"
+		// Immediately start maintenance phase.
+		u.Phase.StartDate = time.Now().Format("2006-01-02")
+		u.Phase.WeeklyChange = 0
+		u.Phase.GoalWeight = u.Phase.StartWeight
+		// Calculate the diet end date.
+		u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
+
+		promptConfirmation(u)
+
+		// Save user info to config file.
+		err := saveUserInfo(u)
+		if err != nil {
+			log.Println("Failed to update phase to maintenance:", err)
+			return err
+		}
+		fmt.Println("Phase successfully updated to maintenance.")
+
+		return nil
+	}
+}
+
+// countEntriesInWeek finds the number of entires within a given week.
+func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time) (int, error) {
+	count := 0
+
+	startIdx := -1
+	// Find the index of weekStart in the data frame.
+	for i := 0; i < logs.NRows(); i++ {
+		date, err := time.Parse("2006-02-01", logs.Series[2].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return 0, err
+		}
+		if date.Before(weekStart) {
+			continue
+		}
+		startIdx = i
+		break
+	}
+
+	// If start date has passed,
+	if startIdx != -1 {
+		// Starting from the start date index, iterate over the week, and
+		// update counter when an entry is encountered.
+		for i := startIdx; i < logs.NRows(); i++ {
+			date, err := time.Parse("2006-02-01", logs.Series[2].Value(i).(string))
+			if err != nil {
+				log.Println("ERROR: Couldn't parse date:", err)
+				return 0, err
+			}
+			if date.Before(weekStart) || date.After(weekEnd) {
+				break
+			}
+			count++
+		}
+	}
+
+	return count, nil
 }
 
 // TODO
