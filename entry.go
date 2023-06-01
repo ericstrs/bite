@@ -12,9 +12,6 @@ import (
 	"github.com/rocketlaunchr/dataframe-go/imports"
 )
 
-const ConfigFilePath = "./config.yaml"
-const EntriesFilePath = "./data.csv"
-
 // ReadEntries reads user entries from CSV file into a dataframe.
 func ReadEntries() (*dataframe.DataFrame, error) {
 	// Does entries file exist?
