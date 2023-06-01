@@ -57,11 +57,13 @@ type PhaseInfo struct {
 type Macros struct {
 	Protein    float64 `yaml:"protein"`
 	MinProtein float64 `yaml:"min_protein"`
+	MaxProtein float64 `yaml:"max_protein"`
 	Carbs      float64 `yaml:"carbs"`
 	MinCarbs   float64 `yaml:"min_carbs"`
+	MaxCarbs   float64 `yaml:"max_carbs"`
 	Fats       float64 `yaml:"fats"`
-	MaxFats    float64 `yaml:"max_fats"`
 	MinFats    float64 `yaml:"min_fats"`
+	MaxFats    float64 `yaml:"max_fats"`
 }
 
 // activity returns the scale based on the user's activity level.
@@ -112,7 +114,7 @@ func TDEE(bmr float64, a string) float64 {
 
 // Macros calculates and returns the recommended macronutrients given
 // user weight and desired fat percentage.
-func Macros(weight, fatPercent float64) (float64, float64, float64) {
+func CalculateMacros(weight, fatPercent float64) (float64, float64, float64) {
 	protein := 1 * weight
 	fats := fatPercent * weight
 	remaining := (protein * CalsInProtein) + (fats * CalsInFats)
@@ -147,7 +149,7 @@ func Metrics(logs dataframe.DataFrame, u *UserInfo) {
 	fmt.Printf("TDEE: %.2f\n", t)
 
 	// Get suggested macro split.
-	protein, carbs, fats := Macros(weight, 0.4)
+	protein, carbs, fats := CalculateMacros(weight, 0.4)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots
@@ -634,7 +636,7 @@ func promptTransition(u *UserInfo) error {
 	promptDietGoal(u)
 
 	// Set suggested macro split
-	protein, carbs, fats := Macros(weight, 0.4)
+	protein, carbs, fats := CalculateMacros(u.Weight, 0.4)
 	u.Macros.Protein = protein
 	u.Macros.Carbs = carbs
 	u.Macros.Fats = fats
@@ -664,23 +666,23 @@ func promptTransition(u *UserInfo) error {
 func setMinMaxMacros(u *UserInfo) {
 	// Minimum protein daily intake needed for health is about
 	// 0.3g of protein per pound of bodyweight.
-	u.Macros.ProteinMin = 0.3 * u.Weight
+	u.Macros.MinProtein = 0.3 * u.Weight
 	// Maximum protein intake for general health is 2g of protein per
 	// pound of bodyweight.
-	u.Macros.ProteinMax = 2 * u.Weight
+	u.Macros.MaxProtein = 2 * u.Weight
 
 	// Minimum carb daily intake needed for *health* is about
 	// 0.3g of carb per pound of bodyweight.
-	u.Macros.CarbsMin = 0.3 * u.Weight
+	u.Macros.MinCarbs = 0.3 * u.Weight
 	// Maximum carb intake for general health is 5g of carb per pound of
 	// bodyweight.
-	u.Macros.CarbsMax = 5 * u.Weight
+	u.Macros.MaxCarbs = 5 * u.Weight
 
 	// Minimum daily fat intake is 0.3g per pound of bodyweight.
-	u.Macros.FatsMin = 0.3 * u.Weight
+	u.Macros.MinFats = 0.3 * u.Weight
 	// Maximum daily fat intake is keeping calorie contribtions from fat
 	// to be under 40% of total daily calories .
-	u.Macros.FatsMax = 0.4 * u.Phase.GoalCalories / CalsInFats
+	u.Macros.MaxFats = 0.4 * u.Phase.GoalCalories / CalsInFats
 }
 
 // CheckProgress performs checks on the user's current diet phase.
@@ -776,7 +778,7 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		result, err := metWeightLossGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		result, err := metWeeklyWeightChange(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
 		if err != nil {
 			return err
 		}
@@ -800,6 +802,7 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 
 // findEntryIdx finds the index of an entry given a date.
 func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
+	var startIdx int
 	// Find the index of weekStart in the data frame.
 	for i := 0; i < logs.NRows(); i++ {
 		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
@@ -819,22 +822,26 @@ func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
 	return startIdx, nil
 }
 
-// metWeightLossGoal checks if the user has met the weekly weight loss
+// metWeeklyWeightChange checks if the user has met the weekly weight loss
 // given a single week.
-func metWeightLossGoal(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, weeklyChange float64) (bool, error) {
+func metWeeklyWeightChange(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, weeklyChange float64) (bool, error) {
 	var numDays int
+	var previousWeight float64
 	totalWeightChange := 0.0
 
 	// Get the dataframe index of the entry with the start date of the
 	// diet.
-	startIdx := findEntryIdx(logs, weekStart)
+	startIdx, err := findEntryIdx(logs, weekStart)
+	if err != nil {
+		return false, err
+	}
 
 	for i := 0; i < 7; i++ {
 		// Get entry date.
 		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
-			return nil, err
+			return false, err
 		}
 
 		// Check if date is within the week.
@@ -847,22 +854,14 @@ func metWeightLossGoal(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, 
 		weight, err := strconv.ParseFloat(w, 64)
 		if err != nil {
 			log.Println("ERROR: Failed to convert string to float64:", err)
-			return nil, err
-		}
-
-		// Get entry calories.
-		c := logs.Series[calsCol].Value(i).(string)
-		cals, err := strconv.ParseFloat(c, 64)
-		if err != nil {
-			log.Println("ERROR: Failed to convert string to float64:", err)
-			return nil, err
+			return false, err
 		}
 
 		// If entry is the first in the dataframe, set previous weight
 		// equal to zero. This is necessary to prevent index out of bounds
 		// error.
 		if startIdx == 0 {
-			previousWeight := 0
+			previousWeight = 0
 		} else {
 			// Otherwise, get use previous entry's date to get previous day
 			// weight.
@@ -871,20 +870,20 @@ func metWeightLossGoal(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, 
 			date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i-1).(string))
 			if err != nil {
 				log.Println("ERROR: Couldn't parse date:", err)
-				return nil, err
+				return false, err
 			}
 
 			// If date is after the diet start date,
 			if date.After(weekStart) {
 				// Get previous entry's weight.
 				pw := logs.Series[weightCol].Value(i - 1).(string)
-				previousWeight, err := strconv.ParseFloat(c, 64)
+				previousWeight, err = strconv.ParseFloat(pw, 64)
 				if err != nil {
 					log.Println("ERROR: Failed to convert string to float64:", err)
-					return nil, err
+					return false, err
 				}
 			} else { // Previous entry's date is before the diet has started.
-				previousWeight := 0
+				previousWeight = 0
 			}
 		}
 
@@ -927,11 +926,11 @@ func adjustCutPhase(u *UserInfo) {
 	if fatDeficit >= (u.Macros.Fats - u.Macros.MinFats) {
 		u.Macros.Fats -= u.Macros.MinFats
 		return
-	} else { // Otherwise, there are not enough fats to competely apply the deficit, so remove the remaining fats.
-		// Remove fats up to the minimum fats limit.
-		remainingInFats := u.Macros.MinFats - deficit
-		u.Macros.Fats -= deficit - remainingInFats
 	}
+	// Otherwise, there are not enough fats to competely apply the deficit, so remove the remaining fats.
+	// Remove fats up to the minimum fats limit.
+	remainingInFats := u.Macros.MinFats - deficit
+	u.Macros.Fats -= deficit - remainingInFats
 
 	// Convert the remaining fats in grams to calories.
 	remainingInCals := remainingInFats * CalsInFats
@@ -944,11 +943,10 @@ func adjustCutPhase(u *UserInfo) {
 	if carbDeficit >= (u.Macros.Carbs - u.Macros.MinCarbs) {
 		u.Macros.Carbs -= u.Macros.MinCarbs
 		return
-	} else {
-		// Remove fats up to the minimum carbs limit.
-		remainingInCarbs := u.Macros.MinCarbs - carbDeficit
-		u.Macros.Carbs -= carbDeficit - remainingInCarbs
 	}
+	// Otherwise, remove fats up to the minimum carbs limit.
+	remainingInCarbs := u.Macros.MinCarbs - carbDeficit
+	u.Macros.Carbs -= carbDeficit - remainingInCarbs
 
 	// Set protein deficit in grams to the carbs that could not be
 	// removed.
@@ -961,11 +959,10 @@ func adjustCutPhase(u *UserInfo) {
 	if proteinDeficit >= (u.Macros.Protein - u.Macros.MinProtein) {
 		u.Macros.Protein -= u.Macros.MinProtein
 		return
-	} else {
-		// Remove protein up to the minimum protein limit.
-		remainingInProtein := u.Macros.MinProtein - proteinDeficit
-		u.Macros.Protein -= proteinDeficit - remainingInProtein
 	}
+	// Otherwise, remove protein up to the minimum protein limit.
+	remainingInProtein := u.Macros.MinProtein - proteinDeficit
+	u.Macros.Protein -= proteinDeficit - remainingInProtein
 
 	// Convert the remaining protein in grams to calories.
 	remaining := remainingInProtein * CalsInProtein
@@ -988,7 +985,12 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		if metWeightGainGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange) {
+		result, err := metWeeklyWeightChange(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		if err != nil {
+			return err
+		}
+		// If week has not met the weight loss goal, then restart the count.
+		if result {
 			consecutiveMissedWeeks = 0
 			continue
 		}
@@ -1091,7 +1093,7 @@ func adjustBulkPhase(u *UserInfo) {
 // lasts as long as the cut.
 func checkCutThreshold(u *UserInfo) error {
 	// Find the amount of weight the user has lost.
-	weightLost := u.Phase.StartWeight - u.Phase.Weight
+	weightLost := u.Phase.StartWeight - u.Weight
 	// Find the theshold weight the user is allowed to lose.
 	threshold := u.Phase.StartWeight * 0.10
 
@@ -1102,7 +1104,7 @@ func checkCutThreshold(u *UserInfo) error {
 		// Stop cut phase and set phase to maintenance.
 		u.Phase.Name = "maintain"
 		// Immediately start maintenance phase.
-		u.Phase.StartDate = time.Now().Format("2006-01-02")
+		u.Phase.StartDate = time.Now()
 		u.Phase.WeeklyChange = 0
 		u.Phase.GoalWeight = u.Phase.StartWeight
 		// Calculate the diet end date.
@@ -1117,9 +1119,9 @@ func checkCutThreshold(u *UserInfo) error {
 			return err
 		}
 		fmt.Println("Phase successfully updated to maintenance.")
-
-		return nil
 	}
+
+	return nil
 }
 
 // countEntriesInWeek finds the number of entires within a given week.
