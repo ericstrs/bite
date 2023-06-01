@@ -17,9 +17,12 @@ import (
 )
 
 const (
-	CalsInProtein = 4 // Calories per gram of protein
-	CalsInCarbs   = 4 // Calories per gram of carbohydrate
-	CalsInFats    = 9 // Calories per gram of fat
+	CalsInProtein = 4 // Calories per gram of protein.
+	CalsInCarbs   = 4 // Calories per gram of carbohydrate.
+	CalsInFats    = 9 // Calories per gram of fat.
+	weightCol     = 0 // Dataframe column for weight.
+	calsCol       = 1 // Dataframe column for calories.
+	dateCol       = 2 // Dataframe column for weight.
 )
 
 /*
@@ -127,7 +130,7 @@ func Metrics(logs dataframe.DataFrame, u *UserInfo) {
 	}
 
 	// Get most recent weight as a string.
-	vals := logs.Series[0].Value(logs.NRows() - 1).(string)
+	vals := logs.Series[weightCol].Value(logs.NRows() - 1).(string)
 	// Convert string to float64.
 	weight, err := strconv.ParseFloat(vals, 64)
 	if err != nil {
@@ -288,7 +291,8 @@ func calculateWeeklyChange(current, goal, duration float64) float64 {
 }
 
 // validateGoalWeight prompts user for goal weight and validates their
-// response.
+// response. This function is only used when the user picks the custom
+// diet option.
 //
 // If phase is maintenance:
 // * ensure goal weight is within +/- 1.25 current weight.
@@ -320,13 +324,25 @@ func validateGoalWeight(u *UserInfo) {
 				u.Phase.GoalWeight = g
 				return
 			}
+
+			// Calculate daily deficit needed.
+			deficit := u.Phase.WeeklyChange * 500
+			// Set diet goal calories.
+			u.Phase.GoalCalories = u.TDEE - deficit
 		case "maintain":
+			// Diet goal calories should be TDEE to maintain same weight.
+			u.Phase.GoalCalories = u.TDEE
 		case "bulk":
 			// Ensue that goal weight is greater than starting weight.
 			if g > u.Phase.StartWeight {
 				u.Phase.GoalWeight = g
 				return
 			}
+
+			// Calculate daily surplus needed.
+			deficit := u.Phase.WeeklyChange * 500
+			// Set diet goal calories.
+			u.Phase.GoalCalories = u.TDEE + deficit
 		}
 		fmt.Println("Invalid goal weight. Please try again.")
 	}
@@ -354,6 +370,8 @@ func promptDietGoal(u *UserInfo) {
 
 	// TODO: For both recommended and custom diets, calculate and set the
 	// diet phase goal calories.
+	//
+	// What do we need to do? We already have TDEE. Now, we just need to
 
 	// Fill out remaining userInfo struct fields given user preference on
 	// recommended or custom diet pace.
@@ -370,11 +388,19 @@ func promptDietGoal(u *UserInfo) {
 			a := u.Phase.StartWeight * u.Phase.WeeklyChange
 			// Calculate goal weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight - a
+
+			// Calculate daily deficit needed.
+			deficit := u.Phase.WeeklyChange * 500
+			// Set diet goal calories.
+			u.Phase.GoalCalories = u.TDEE - deficit
 		case "maintain":
 			u.Phase.WeeklyChange = 0
 			u.Phase.Duration = 5
 			// Set goal weight as diet starting weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight
+
+			// Diet goal calories should be TDEE to maintain same weight.
+			u.Phase.GoalCalories = u.TDEE
 		case "bulk":
 			u.Phase.WeeklyChange = 0.25
 			u.Phase.Duration = 10
@@ -383,6 +409,11 @@ func promptDietGoal(u *UserInfo) {
 			a := u.Phase.StartWeight * u.Phase.WeeklyChange
 			// Calculate goal weight.
 			u.Phase.GoalWeight = u.Phase.StartWeight + a
+
+			// Calculate daily surplus needed.
+			deficit := u.Phase.WeeklyChange * 500
+			// Set diet goal calories.
+			u.Phase.GoalCalories = u.TDEE + deficit
 		}
 
 		// Calculate the diet end date.
@@ -726,20 +757,238 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		}
 	case "maintain":
 	case "bulk":
+		err := checkBulkGain(u, logs)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
+// checkCutLoss checks to see if user is on the track to meeting weight
+// loss goal.
 func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 	consecutiveMissedWeeks := 0
-	// If there has been 2 weeks of the user not meeting the weekly
-	// weight loss goal, then update accordingly.
+
+	// Iterate over each week of the diet.
 	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		if metWeightLossGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange) {
+		result, err := metWeightLossGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		if err != nil {
+			return err
+		}
+		// If week has not met the weight loss goal, then restart the count.
+		if result {
+			consecutiveMissedWeeks = 0
+			continue
+		}
+
+		consecutiveMissedWeeks++ // Update the count.
+
+		// If there has been 2 weeks of the user not meeting the weekly
+		// weight loss goal, then update accordingly.
+		if consecutiveMissedWeeks >= 2 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			adjustCutPhase(u) // Adjust weight loss plan.
+		}
+	}
+	return nil
+}
+
+// findEntryIdx finds the index of an entry given a date.
+func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
+	// Find the index of weekStart in the data frame.
+	for i := 0; i < logs.NRows(); i++ {
+		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return 0, err
+		}
+
+		if date.Before(weekStart) {
+			continue
+		}
+
+		startIdx = i
+		break
+	}
+
+	return startIdx, nil
+}
+
+// metWeightLossGoal checks if the user has met the weekly weight loss
+// given a single week.
+func metWeightLossGoal(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, weeklyChange float64) (bool, error) {
+	var numDays int
+	totalWeightChange := 0.0
+
+	// Get the dataframe index of the entry with the start date of the
+	// diet.
+	startIdx := findEntryIdx(logs, weekStart)
+
+	for i := 0; i < 7; i++ {
+		// Get entry date.
+		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return nil, err
+		}
+
+		// Check if date is within the week.
+		if date.After(weekEnd) {
+			break
+		}
+
+		// Get entry weight.
+		w := logs.Series[weightCol].Value(i).(string)
+		weight, err := strconv.ParseFloat(w, 64)
+		if err != nil {
+			log.Println("ERROR: Failed to convert string to float64:", err)
+			return nil, err
+		}
+
+		// Get entry calories.
+		c := logs.Series[calsCol].Value(i).(string)
+		cals, err := strconv.ParseFloat(c, 64)
+		if err != nil {
+			log.Println("ERROR: Failed to convert string to float64:", err)
+			return nil, err
+		}
+
+		// If entry is the first in the dataframe, set previous weight
+		// equal to zero. This is necessary to prevent index out of bounds
+		// error.
+		if startIdx == 0 {
+			previousWeight := 0
+		} else {
+			// Otherwise, get use previous entry's date to get previous day
+			// weight.
+
+			// Get entry date.
+			date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i-1).(string))
+			if err != nil {
+				log.Println("ERROR: Couldn't parse date:", err)
+				return nil, err
+			}
+
+			// If date is after the diet start date,
+			if date.After(weekStart) {
+				// Get previous entry's weight.
+				pw := logs.Series[weightCol].Value(i - 1).(string)
+				previousWeight, err := strconv.ParseFloat(c, 64)
+				if err != nil {
+					log.Println("ERROR: Failed to convert string to float64:", err)
+					return nil, err
+				}
+			} else { // Previous entry's date is before the diet has started.
+				previousWeight := 0
+			}
+		}
+
+		// Caculate the weight change between two days.
+		weightChange := weight - previousWeight
+		// Update total weight change
+		totalWeightChange += weightChange
+	}
+
+	// If there we zero entries found in the week, then return.
+	if numDays == 0 {
+		return false, nil
+	}
+
+	// Calculate the average change in weight over the week.
+	averageWeightChange := totalWeightChange / float64(numDays)
+
+	return averageWeightChange >= weeklyChange, nil
+}
+
+// adjustCutPhase calulates the daily caloric deficit and then attempts
+// to apply that deficit though first cutting fats, then carbs, and
+// finally protein.
+//
+// The deficit will be applied up to the minimmum macro values.
+func adjustCutPhase(u *UserInfo) {
+	// Calculate the needed daily deficit.
+	deficit := u.Phase.WeeklyChange * 500
+
+	// Set cut calorie goal.
+	u.Phase.GoalCalories = u.TDEE - deficit
+	fmt.Print("Reducing caloric deficit by %f calories\n", deficit)
+
+	// Convert caloric deficit to fats in grams.
+	fatDeficit := deficit * CalsInFats
+
+	// If the fat deficit is greater than or equal to the available fats
+	// left (up to minimum fats limit), then apply the defict
+	// exclusively through removing fats.
+	if fatDeficit >= (u.Macros.Fats - u.Macros.MinFats) {
+		u.Macros.Fats -= u.Macros.MinFats
+		return
+	} else { // Otherwise, there are not enough fats to competely apply the deficit, so remove the remaining fats.
+		// Remove fats up to the minimum fats limit.
+		remainingInFats := u.Macros.MinFats - deficit
+		u.Macros.Fats -= deficit - remainingInFats
+	}
+
+	// Convert the remaining fats in grams to calories.
+	remainingInCals := remainingInFats * CalsInFats
+	// Convert the remaining calories to carbs in grams.
+	carbDeficit := remainingInCals / CalsInCarbs
+
+	// If carb deficit is greater than or equal to the availiable carbs
+	// left (up to minimum carbs limit), then apply the remaining
+	// deficit by removing carbs.
+	if carbDeficit >= (u.Macros.Carbs - u.Macros.MinCarbs) {
+		u.Macros.Carbs -= u.Macros.MinCarbs
+		return
+	} else {
+		// Remove fats up to the minimum carbs limit.
+		remainingInCarbs := u.Macros.MinCarbs - carbDeficit
+		u.Macros.Carbs -= carbDeficit - remainingInCarbs
+	}
+
+	// Set protein deficit in grams to the carbs that could not be
+	// removed.
+	// Note: CalsInCarbs = CalsInProtein.
+	proteinDeficit := remainingInCals
+
+	// If protein deficit is greater than or equal to the availiable
+	// protein left (up to minimum protein limit), then apply the
+	// remaining deficit by removing protein.
+	if proteinDeficit >= (u.Macros.Protein - u.Macros.MinProtein) {
+		u.Macros.Protein -= u.Macros.MinProtein
+		return
+	} else {
+		// Remove protein up to the minimum protein limit.
+		remainingInProtein := u.Macros.MinProtein - proteinDeficit
+		u.Macros.Protein -= proteinDeficit - remainingInProtein
+	}
+
+	// Convert the remaining protein in grams to calories.
+	remaining := remainingInProtein * CalsInProtein
+
+	// If the remaining calories are not zero, then stop removing macros
+	// and update the diet goal calories.
+	if remaining != 0 {
+		fmt.Printf("Could not reach a deficit of %f as the minimum fat, carb, and protein values have been met.\n", deficit)
+		fmt.Printf("Updating caloric deficit to %f\n", deficit-remaining)
+		// Override initial cut calorie goal.
+		u.Phase.GoalCalories = u.TDEE - deficit + remaining
+	}
+}
+
+func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
+	consecutiveMissedWeeks := 0
+	// If there has been 2 weeks of the user not meeting the weekly
+	// weight gain goal, then update accordingly.
+	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+		weekStart := date
+		weekEnd := date.AddDate(0, 0, 6)
+
+		if metWeightGainGoal(logs, weekStart, weekEnd, u.Phase.WeeklyChange) {
 			consecutiveMissedWeeks = 0
 			continue
 		}
@@ -747,19 +996,92 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 		consecutiveMissedWeeks++
 
 		if consecutiveMissedWeeks >= 2 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.")
-			// TODO: Call function to adjust weight loss plan.
-			adjustCutPhase(u)
+			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			// Adjust weight loss plan.
+			adjustBulkPhase(u)
 		}
 	}
 	return nil
 }
 
-func adjustCutPhase(u *UserInfo) {
-	// Calculate the needed daily surplus/deficit
-	dailyAdjustment := u.Phase.WeeklyChange * 500
+// adjustCutPhase calculates the caloric surplus and then attempts to
+// apply it by first adding carbs, then fats, and finally fats.
+func adjustBulkPhase(u *UserInfo) {
+	// Calculate the needed daily surplus.
+	surplus := u.Phase.WeeklyChange * 500
 
-	// TODO: Handle cut and bulk cases
+	// Set bulk calorie goal.
+	u.Phase.GoalCalories = u.TDEE + surplus
+	fmt.Print("Modifying caloric surplus by %f calories\n", surplus)
+
+	// Convert surplus in calories to carbs in grams.
+	carbSurplus := surplus * CalsInCarbs
+
+	// If carb surplus is less than or equal to the availiable carbs
+	// left (up to maximum carbs limit), then apply the surplus
+	// execlusively through adding carbs and return.
+	if u.Macros.MaxCarbs <= (u.Macros.Carbs + carbSurplus) {
+		u.Macros.Carbs += carbSurplus
+		return
+	}
+	// Otherwise, there are too many carbs to completely apply the surplus.
+
+	// Calculate how many grams of carbs are over the maximum carb limit.
+	remainingInCarbs := (u.Macros.Carbs + carbSurplus) - u.Macros.MaxCarbs
+	// Add carbs up the maximum carb limit.
+	u.Macros.Carbs += carbSurplus - remainingInCarbs
+
+	// Convert the carbs in grams that couldn't be included to calories.
+	remainingInCals := remainingInCarbs * CalsInCarbs
+	// Convert the remaining surplus from calories to fats.
+	fatSurplus := remainingInCals / CalsInFats
+
+	// If the fat deficit is less than or equal to the available fats
+	// left (up to maximum fats limit), then apply the surplus
+	// exclusively through adding fats and return.
+	if u.Macros.MaxFats <= (u.Macros.Fats + fatSurplus) {
+		u.Macros.Fats += fatSurplus
+		return
+	}
+	// Otherwise, there are too many fats to competely apply the surplus.
+
+	// Calculate how many grams of fats are over the maximum fat limit.
+	remainingInFats := (u.Macros.Fats + fatSurplus) - u.Macros.MaxFats
+	// Add fats up the maximum fat limit.
+	u.Macros.Fats += fatSurplus - remainingInFats
+
+	// Convert the fats in grams that couldn't be included to calories.
+	remainingInCals = remainingInFats * CalsInFats
+	// Convert the remaining surplus from calories to protein.
+	proteinSurplus := remainingInCals / CalsInProtein
+
+	// If protein surplus is less than or equal to the availiable
+	// protein left (up to maximum protein limit), then apply the
+	// surplus by adding protein and return.
+	if u.Macros.MaxProtein <= (u.Macros.Protein + proteinSurplus) {
+		u.Macros.Protein += proteinSurplus
+		return
+	}
+	// Otherwise, there is too much protein to completely apply the
+	// surplus.
+
+	// Calculate how many grams of protein are over the maximum protein limit.
+	remainingInProtein := u.Macros.Protein + proteinSurplus - u.Macros.MaxProtein
+	// Add protein up to the maximum protein limit.
+	u.Macros.Protein += proteinSurplus - remainingInProtein
+
+	// Convert the protein in grams that couldn't be included to calories.
+	remaining := remainingInProtein * CalsInProtein
+
+	// If the remaining calories are not zero, then stop adding to macros
+	// and update the diet goal calories and return.
+	if remaining != 0 {
+		fmt.Printf("Could not reach a surplus of %f as the minimum fat, carb, and protein values have been    met.\n", surplus)
+		fmt.Printf("Updating caloric surplus to %f\n", surplus-remaining)
+		// Override initial cut calorie goal.
+		u.Phase.GoalCalories = u.TDEE + surplus - remaining
+		return
+	}
 }
 
 // checkCutThreshold checks if the user has lost too much weight, in
@@ -804,19 +1126,9 @@ func checkCutThreshold(u *UserInfo) error {
 func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time) (int, error) {
 	count := 0
 
-	startIdx := -1
-	// Find the index of weekStart in the data frame.
-	for i := 0; i < logs.NRows(); i++ {
-		date, err := time.Parse("2006-02-01", logs.Series[2].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return 0, err
-		}
-		if date.Before(weekStart) {
-			continue
-		}
-		startIdx = i
-		break
+	startIdx, err := findEntryIdx(logs, weekStart)
+	if err != nil {
+		return 0, err
 	}
 
 	// If start date has passed,
