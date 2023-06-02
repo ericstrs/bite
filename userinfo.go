@@ -3,10 +3,7 @@ package calories
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
-	"strconv"
 
-	"github.com/rocketlaunchr/dataframe-go"
 	"gopkg.in/yaml.v2"
 )
 
@@ -71,20 +68,24 @@ func activity(a string) (float64, error) {
 	return value, nil
 }
 
+// lbsToKg converts pounts to kilograms.
 func lbsToKg(w float64) float64 {
 	return w * 0.45359237
 }
 
-// Mifflin calculates and returnsthe Basal Metabolic Rate (BMR) which is
+// Mifflin calculates and returns the Basal Metabolic Rate (BMR) which is
 // based on weight (kg), height (cm), age (years), and gender.
-func Mifflin(weight, height float64, age int, gender string) float64 {
+func Mifflin(u *UserInfo) float64 {
+	// Convert weight from pounds to kilograms.
+	weight := lbsToKg(u.Weight)
+
 	factor := 5
-	if gender == "female" {
+	if u.Gender == "female" {
 		factor = -151
 	}
 
 	var bmr float64
-	bmr = (10 * weight) + (6.25 * height) - (5 * float64(age)) + float64(factor)
+	bmr = (10 * weight) + (6.25 * u.Height) - (5 * float64(u.Age)) + float64(factor)
 	return bmr
 }
 
@@ -140,25 +141,9 @@ func setMinMaxMacros(u *UserInfo) {
 
 // PrintMetrics prints user TDEE, suggested macro split, and generates
 // plots using logs data frame.
-func PrintMetrics(logs dataframe.DataFrame, u *UserInfo) {
-	if logs.NRows() < 1 {
-		log.Println("ERROR: Not enough entries to produce metrics.")
-		return
-	}
-
-	// Get most recent weight as a string.
-	vals := logs.Series[weightCol].Value(logs.NRows() - 1).(string)
-	// Convert string to float64.
-	weight, err := strconv.ParseFloat(vals, 64)
-	if err != nil {
-		log.Println("Failed to convert string to float64:", err)
-		return
-	}
-
+func PrintMetrics(u *UserInfo) {
 	// Get BMR.
-	// TODO: Once user is able to specify measurment system, assume
-	// weight is already in kgs.
-	bmr := Mifflin(lbsToKg(weight), u.Height, u.Age, u.Gender)
+	bmr := Mifflin(u)
 	fmt.Printf("BMR: %.2f\n", bmr)
 
 	// Get TDEE.
@@ -166,7 +151,7 @@ func PrintMetrics(logs dataframe.DataFrame, u *UserInfo) {
 	fmt.Printf("TDEE: %.2f\n", t)
 
 	// Get suggested macro split.
-	protein, carbs, fats := CalculateMacros(weight, 0.4)
+	protein, carbs, fats := CalculateMacros(u.Weight, 0.4)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots
