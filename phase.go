@@ -420,7 +420,7 @@ func promptUserInfo(u *UserInfo) {
 	validateActivity(u)
 
 	// Get BMR
-	bmr := Mifflin(u.Weight, u.Height, u.Age, u.Gender)
+	bmr := Mifflin(u)
 
 	// Set TDEE
 	u.TDEE = TDEE(bmr, u.ActivityLevel)
@@ -597,10 +597,12 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		}
 	case "maintain":
 		// Ensure user is maintaing weight.
-		err := checkMaintenance(u, logs)
-		if err != nil {
-			return err
-		}
+		/*
+			err := checkMaintenance(u, logs)
+			if err != nil {
+				return err
+			}
+		*/
 	case "bulk":
 		// Ensure user has not gained too much weight.
 		err := checkBulkThreshold(u)
@@ -623,12 +625,14 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 // diet phase. Otherwise, user might be able to slowly trend up/down in
 // weight over a long period of time. Create tests before implementing.
 // checkMaintenance ensures user is maintaining the same weight.
+/*
 func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) error {
 	lower := u.Phase.StartWeight * -1.25
 	upper := u.Phase.StartWeight * +1.25
 
 	return nil
 }
+*/
 
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
@@ -777,10 +781,10 @@ func adjustCutPhase(u *UserInfo) {
 
 	// Set cut calorie goal.
 	u.Phase.GoalCalories = u.TDEE - deficit
-	fmt.Print("Reducing caloric deficit by %f calories\n", deficit)
+	fmt.Printf("Reducing caloric deficit by %f calories\n", deficit)
 
 	// Convert caloric deficit to fats in grams.
-	fatDeficit := deficit * CalsInFats
+	fatDeficit := deficit * calsInFats
 
 	// If the fat deficit is greater than or equal to the available fats
 	// left (up to minimum fats limit), then apply the defict
@@ -795,9 +799,9 @@ func adjustCutPhase(u *UserInfo) {
 	u.Macros.Fats -= deficit - remainingInFats
 
 	// Convert the remaining fats in grams to calories.
-	remainingInCals := remainingInFats * CalsInFats
+	remainingInCals := remainingInFats * calsInFats
 	// Convert the remaining calories to carbs in grams.
-	carbDeficit := remainingInCals / CalsInCarbs
+	carbDeficit := remainingInCals / calsInCarbs
 
 	// If carb deficit is greater than or equal to the availiable carbs
 	// left (up to minimum carbs limit), then apply the remaining
@@ -812,7 +816,7 @@ func adjustCutPhase(u *UserInfo) {
 
 	// Set protein deficit in grams to the carbs that could not be
 	// removed.
-	// Note: CalsInCarbs = CalsInProtein.
+	// Note: calsInCarbs = calsInProtein.
 	proteinDeficit := remainingInCals
 
 	// If protein deficit is greater than or equal to the availiable
@@ -827,7 +831,7 @@ func adjustCutPhase(u *UserInfo) {
 	u.Macros.Protein -= proteinDeficit - remainingInProtein
 
 	// Convert the remaining protein in grams to calories.
-	remaining := remainingInProtein * CalsInProtein
+	remaining := remainingInProtein * calsInProtein
 
 	// If the remaining calories are not zero, then stop removing macros
 	// and update the diet goal calories.
@@ -876,10 +880,10 @@ func adjustBulkPhase(u *UserInfo) {
 
 	// Set bulk calorie goal.
 	u.Phase.GoalCalories = u.TDEE + surplus
-	fmt.Print("Modifying caloric surplus by %f calories\n", surplus)
+	fmt.Printf("Modifying caloric surplus by %f calories\n", surplus)
 
 	// Convert surplus in calories to carbs in grams.
-	carbSurplus := surplus * CalsInCarbs
+	carbSurplus := surplus * calsInCarbs
 
 	// If carb surplus is less than or equal to the availiable carbs
 	// left (up to maximum carbs limit), then apply the surplus
@@ -896,9 +900,9 @@ func adjustBulkPhase(u *UserInfo) {
 	u.Macros.Carbs += carbSurplus - remainingInCarbs
 
 	// Convert the carbs in grams that couldn't be included to calories.
-	remainingInCals := remainingInCarbs * CalsInCarbs
+	remainingInCals := remainingInCarbs * calsInCarbs
 	// Convert the remaining surplus from calories to fats.
-	fatSurplus := remainingInCals / CalsInFats
+	fatSurplus := remainingInCals / calsInFats
 
 	// If the fat deficit is less than or equal to the available fats
 	// left (up to maximum fats limit), then apply the surplus
@@ -915,9 +919,9 @@ func adjustBulkPhase(u *UserInfo) {
 	u.Macros.Fats += fatSurplus - remainingInFats
 
 	// Convert the fats in grams that couldn't be included to calories.
-	remainingInCals = remainingInFats * CalsInFats
+	remainingInCals = remainingInFats * calsInFats
 	// Convert the remaining surplus from calories to protein.
-	proteinSurplus := remainingInCals / CalsInProtein
+	proteinSurplus := remainingInCals / calsInProtein
 
 	// If protein surplus is less than or equal to the availiable
 	// protein left (up to maximum protein limit), then apply the
@@ -935,7 +939,7 @@ func adjustBulkPhase(u *UserInfo) {
 	u.Macros.Protein += proteinSurplus - remainingInProtein
 
 	// Convert the protein in grams that couldn't be included to calories.
-	remaining := remainingInProtein * CalsInProtein
+	remaining := remainingInProtein * calsInProtein
 
 	// If the remaining calories are not zero, then stop adding to macros
 	// and update the diet goal calories and return.
