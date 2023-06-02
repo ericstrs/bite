@@ -40,39 +40,39 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 }
 
 // checkInput checks if the user input is between 0 and 30,000.
-func checkInput(n float32) error {
+func checkInput(n float64) error {
 	if 0 > n || n > 30000 {
 		return errors.New("invalid number")
 	}
 	return nil
 }
 
-// promptMass prompts the user to enter their mass.
-func promptMass() (mass float32, err error) {
-	fmt.Print("Enter mass in lbs: ")
-	fmt.Scanln(&mass)
+// promptWeight prompts the user to enter their weight.
+func promptWeight() (weight float64, err error) {
+	fmt.Print("Enter weight in lbs: ")
+	fmt.Scanln(&weight)
 
-	return mass, checkInput(mass)
+	return weight, checkInput(weight)
 }
 
 // promptCals prompts the user to enter caloric intake for the previous
 // day.
-func promptCals() (calories float32, err error) {
+func promptCals() (calories float64, err error) {
 	fmt.Print("Enter caloric intake for the day: ")
 	fmt.Scanln(&calories)
 
 	return calories, checkInput(calories)
 }
 
-// promptMassCals prompts and returns user mass and caloric intake.
-func promptMassCals() (mass float32, cals float32) {
+// promptWeightCals prompts and returns user weight and caloric intake.
+func promptWeightCals() (weight float64, cals float64) {
 	// TODO: replace if statements with switch statement
 	//fmt.Println("Press 'q' to quit")
 
 	for {
-		mass, err := promptMass()
+		weight, err := promptWeight()
 		if err != nil {
-			fmt.Printf("Couldn't read mass: %s\n\n", err)
+			fmt.Printf("Couldn't read weight: %s\n\n", err)
 			continue
 		}
 
@@ -82,14 +82,23 @@ func promptMassCals() (mass float32, cals float32) {
 			continue
 		}
 
-		return mass, cals
+		return weight, cals
 	}
 }
 
 // Log appends a new entry to the csv file passed in as an agurment.
-func Log(s string) {
-	// Prompt the user for mass and calorie info.
-	mass, cals := promptMassCals()
+func Log(u *UserInfo, s string) error {
+	// Prompt the user for weight and calorie info.
+	weight, cals := promptWeightCals()
+
+	// Update user weight.
+	u.Weight = weight
+
+	// Save updated user info.
+	err := saveUserInfo(u)
+	if err != nil {
+		return err
+	}
 
 	// Get current date.
 	d := time.Now()
@@ -99,16 +108,18 @@ func Log(s string) {
 	defer f.Close()
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", mass, cals, d.Format("2006-01-02"))
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", weight, cals, d.Format("2006-01-02"))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 
 	fmt.Println("Added entry.")
+
+	return nil
 }
