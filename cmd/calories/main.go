@@ -1,24 +1,42 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
 	c "github.com/oneseIf/calories"
 )
 
-const ConfigFilePath = "./config.yaml"
-const EntriesFilePath = "./data.csv"
-
 func main() {
-	c.ReadConfig()
-	c.ReadEntries()
-	//c.CheckProgress()
+	// Read user's config file.
+	u, err := c.ReadConfig()
+	if err != nil {
+		return
+	}
+
+	// Read user entries.
+	logs, err := c.ReadEntries()
+	if err != nil {
+		return
+	}
+
+	// Print out user entries.
+	fmt.Print(logs.Table())
+
+	// Check diet progress.
+	err = c.CheckProgress(u, logs)
+	if err != nil {
+		return
+	}
 
 	arg := os.Args[1]
 	switch arg {
 	case "log":
-		c.Log(EntriesFilePath)
+		err := c.Log(u, c.EntriesFilePath)
+		if err != nil {
+			return
+		}
 		return
 	case "summary":
 		c.Summary()
