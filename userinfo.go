@@ -19,7 +19,7 @@ const (
 )
 
 type UserInfo struct {
-	Gender        string    `yaml:"gender"`
+	Sex           string    `yaml:"sex"`
 	Weight        float64   `yaml:"weight"`
 	Height        float64   `yaml:"height"`
 	Age           int       `yaml:"age"`
@@ -74,13 +74,13 @@ func lbsToKg(w float64) float64 {
 }
 
 // Mifflin calculates and returns the Basal Metabolic Rate (BMR) which is
-// based on weight (kg), height (cm), age (years), and gender.
+// based on weight (kg), height (cm), age (years), and sex.
 func Mifflin(u *UserInfo) float64 {
 	// Convert weight from pounds to kilograms.
 	weight := lbsToKg(u.Weight)
 
 	factor := 5
-	if u.Gender == "female" {
+	if u.Sex == "female" {
 		factor = -151
 	}
 

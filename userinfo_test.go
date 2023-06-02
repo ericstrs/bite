@@ -3,15 +3,18 @@ package calories
 import "fmt"
 
 func ExampleMifflin() {
-	weight := 80.0  // kg
-	height := 180.0 // cm
-	age := 30
-	gender := "male"
-	result := Mifflin(weight, height, age, gender)
+	u := UserInfo{
+		Weight: 180.0, // lbs
+		Height: 180.0, // cm
+		Age:    30,
+		Gender: "male",
+	}
+
+	result := Mifflin(&u)
 	fmt.Println(result)
 
 	// Output:
-	// 1780
+	// 1796.466266
 }
 
 func ExampleUnknownActivity() {
@@ -60,13 +63,23 @@ func ExampleSetMinMaxMacros() {
 	u := UserInfo{
 		Weight: 180, // lbs
 	}
+	u.Phase.GoalCalories = 2000
 
-	setMinMacros(u)
+	setMinMaxMacros(&u)
 	fmt.Println("Minimum daily protein:", u.Macros.MinProtein)
+	fmt.Println("Maximum daily protein:", u.Macros.MaxProtein)
+	fmt.Println("Minimum daily carbs:", u.Macros.MinCarbs)
+	fmt.Println("Maximum daily carbs:", u.Macros.MaxCarbs)
+	fmt.Println("Minimum daily fat:", u.Macros.MinFats)
+	fmt.Println("Maximum daily fat:", u.Macros.MaxFats)
 
 	// Output:
-	// Minimum daily protein: 52
-	//
+	// Minimum daily protein: 54
+	// Maximum daily protein: 360
+	// Minimum daily carbs: 54
+	// Maximum daily carbs: 900
+	// Minimum daily fat: 54
+	// Maximum daily fat: 88.88888888888889
 }
 
 // TODO: make example tests for when weight has not been set, weight
