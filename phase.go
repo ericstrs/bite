@@ -47,13 +47,11 @@ func validateDietPhase(s string) error {
 	return error.New("Invalid diet phase.")
 }
 
-// getDietPhase prompts user for diet phase, validates user response, and
-// returns valid diet phase.
+// getDietPhase prints diet phases, prompts user for diet phase, validates
+// user response, and returns valid diet phase.
 func getDietPhase() {
 	fmt.Println("Step 2: Choose diet phase.")
-	fmt.Println("Fat loss (cut). Lose fat while losing weight and preserving muscle.")
-	fmt.Println("Maintenance (maintain). Stay at your current weight.")
-	fmt.Println("Muscle gain (bulk). Gain muscle while minimizing fat.")
+	printDietPhases()
 
 	for {
 		// Prompt user for diet phase
@@ -64,10 +62,16 @@ func getDietPhase() {
 	return p
 }
 
+// printDietPhases prints the diet phases to choose from.
+func printDietPhases() {
+	fmt.Println("Fat loss (cut). Lose fat while losing weight and preserving muscle.")
+	fmt.Println("Maintenance (maintain). Stay at your current weight.")
+	fmt.Println("Muscle gain (bulk). Gain muscle while minimizing fat.")
+}
+
 // setMinMaxPhaseDuration sets the minimum and maximum diet phase
 // duration given the current phase the user has chosen.
 func setMinMaxPhaseDuration(u *UserInfo) {
-	// Set min and max diet durations.
 	switch u.Phase.Name {
 	case "cut":
 		u.Phase.MaxDuration = 12
@@ -81,12 +85,32 @@ func setMinMaxPhaseDuration(u *UserInfo) {
 	}
 }
 
-// promptDietOptions prints diet goal options, prompts for diet goal,
-// and validates user response.
-func promptDietOptions(u *UserInfo) string {
-	var g string
-
+// getDietChoice prompts user for their diet choice, validates their
+// reponse until they enter a valid diet choice, and returns the valid
+// diet choice.
+func getDietChoice() (c string) {
 	// Print to user recommended and custom diet goal options.
+	printDietChoices()
+
+	for {
+		// Prompt user for diet goal.
+		c := promptDietChoice()
+
+		// Validate user response.
+		err := validateDietChoice(c)
+		if err != nil {
+			fmt.Println("Invalid diet goal. Please try again.")
+			continue
+		}
+
+		break
+	}
+
+	return c
+}
+
+// printDietChoices prints recommended and custom diet options.
+func printDietChoices() {
 	fmt.Printf("Recommended: ")
 	switch u.Phase.Name {
 	case "cut":
@@ -96,19 +120,111 @@ func promptDietOptions(u *UserInfo) string {
 	case "bulk":
 		fmt.Printf("Gain 2.5 lbs in 10 weeks.\n")
 	}
-	fmt.Println("Custom: Choose diet duration and rate of weight change.")
 
+	fmt.Println("Custom: Choose diet duration and rate of weight change.")
+}
+
+// promptDietOptions prints diet goal options, prompts for diet goal,
+// and validates user response.
+func promptDietChoice() (c string) {
+	fmt.Printf("Enter diet choice (recommended or custom): ")
+	fmt.Scanln(&c)
+	return c
+}
+
+// validateDietChoice validates and returns user diet choice.
+func validateDietChoice(c string) err {
+	if g == "recommended" || g == "custom" {
+		return nil
+	}
+	return errors.New("Invalid diet choice.")
+}
+
+// getStartDate prompts user for diet start date, validates user response
+// until user enters valid date, and returns valid date.
+func getStartDate() (date time.Time) {
 	for {
-		// Prompt user for diet goal.
-		fmt.Printf("Enter diet goal (recommended or custom): ")
-		fmt.Scanln(&g)
+		// Prompt user for diet start date.
+		r := promptStartDate()
 
 		// Validate user response.
-		if g == "recommended" || g == "custom" {
-			return g
+		date, err := validateDate(r)
+		if err != nil {
+			fmt.Println("Invalid date. Please try again.")
+			continue
 		}
-		fmt.Println("Invalid diet goal. Please try again.")
+
+		break
 	}
+	return date
+}
+
+// promptStartDate prompts and returns user start date.
+func promptStartDate() string {
+	response := promptDate("Enter diet start date (YYYY-MM-DD) [Press Enter for today's date]: ")
+
+	// If user entered default date,
+	if response == "" {
+		// set date to today's date.
+		response = time.Now().Format("2006-01-02")
+	}
+
+	return response
+}
+
+// getEndDate prompts user for diet end date, validates user response
+// until user enters valid date, and returns valid date.
+func getEndDate(u *UserInfo) (date time.Time) {
+	for {
+		// Prompt user for diet end date.
+		r := promptDate("Enter diet end date (YYYY-MM-DD)")
+
+		// Validate user response.
+		date, duration, err := validateEndDate(r, u)
+		if err != nil {
+			fmt.Println("Invalid date. Please try again.")
+			continue
+		}
+		u.Phase.EndDate = date
+		u.Phase.Duration = duration
+
+		break
+	}
+	return date
+}
+
+// validateEndDate prompts user for diet end date, validates user
+// response, and returns diet end date and diet duration when date is
+// valid.
+func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
+	// Ensure user response is a date.
+	d, err := validateDate(r)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+
+	// Calculate diet duration given current end date.
+	dur := calculateDuration(u.Phase.StartDate, d).Hours() / 24 / 7
+
+	// Validate user response:
+	// * Does end date fall after start date?
+	// * Is diet duration less than max diet duration?
+	// * Is diet duration greater than min diet duration?
+	if err == nil && d.After(u.Phase.StartDate) && u.Phase.MaxDuration < dur && dur > u.Phase.MinDuration {
+		return d, dur, nil
+	}
+
+	return time.Time{}, 0, errors.New("Invalid diet phase end date.")
+}
+
+// promptDate prompts and returns diet start date.
+func promptDate(promptStr string) string {
+	reader := bufio.NewReader(os.Stdin)
+	// Prompt user for diet stop date.
+	fmt.Printf("%s\n", promptStr)
+	response, _ := reader.ReadString('\n')
+
+	return strings.TrimSpace(response)
 }
 
 // validateDate validates the given date string and returns date if
@@ -121,70 +237,6 @@ func validateDate(dateStr string) (time.Time, error) {
 	}
 
 	return date, nil
-}
-
-// validateStartDate prompts user for diet start date and validates user
-// response.
-func validateStartDate(u *UserInfo) {
-	for {
-		// Prompt user for diet start date.
-		input := promptDate("Enter diet start date (YYYY-MM-DD) [Press Enter for today's date]: ")
-
-		// If user entered default date
-		if input == "" {
-			input = time.Now().Format("2006-01-02")
-		}
-
-		// Validate user response.
-		if date, err := validateDate(input); err == nil {
-			u.Phase.StartDate = date
-			return
-		}
-
-		fmt.Println("Invalid date. Please try again.")
-	}
-}
-
-// promptDate prompts user with given string to get a date.
-func promptDate(promptStr string) string {
-	reader := bufio.NewReader(os.Stdin)
-	// Prompt user for diet stop date.
-	fmt.Printf("%s\n", promptStr)
-	input, _ := reader.ReadString('\n')
-
-	return strings.TrimSpace(input)
-}
-
-// validateEndDate prompts user for diet end date and validates user
-// response.
-func validateEndDate(u *UserInfo) {
-	for {
-		// Prompt user for diet end date.
-		input := promptDate("Enter diet end date (YYYY-MM-DD)")
-
-		// Ensure user response is a date.
-		if d, err := validateDate(input); err != nil {
-			fmt.Println("Invalid date. Please try again.")
-			continue
-		}
-
-		// Calculate diet duration given current end date.
-		dur := calculateDuration(u.Phase.StartDate, d).Hours() / 24 / 7
-
-		// Validate user response:
-		// * Does end date fall after start date?
-		// * Is diet duration less than max diet duration?
-		// * Is diet duration greater than min diet duration?
-		//
-		fmt.Printf("Duration: %f. MaxDuration: %f. MinDuration: %f\n", dur, u.Phase.MaxDuration, u.Phase.MinDuration)
-		if err == nil && d.After(u.Phase.StartDate) && dur < u.Phase.MaxDuration && dur > u.Phase.MinDuration {
-			u.Phase.EndDate = d
-			u.Phase.Duration = dur
-			return
-		}
-
-		fmt.Println("Invalid date. Please try again.")
-	}
 }
 
 // calculateEndDate calculates the diet end date given diet start date
@@ -212,9 +264,6 @@ func calculateWeeklyChange(current, goal, duration float64) float64 {
 // response. This function is only used when the user picks the custom
 // diet option.
 //
-// If phase is maintenance:
-// * maintenance weight goal should be set to TDEE.
-//
 // If phase is cut:
 // *  cut goal should be smaller than current weight.
 //
@@ -235,7 +284,7 @@ func validateGoalWeight(u *UserInfo) {
 		fmt.Scanln(&g)
 
 		switch u.Phase.Name {
-		case "cut":
+		case "cut": // If phase is cut,
 			// Ensure goal weight doesn't exceed 10% of starting body weight.
 			lowerBound := u.Phase.StartWeight * 0.10
 			if g > u.Phase.StartWeight-lowerBound {
@@ -246,8 +295,8 @@ func validateGoalWeight(u *UserInfo) {
 				u.Phase.GoalCalories = u.TDEE - deficit
 				return
 			}
-		case "maintain":
-			// Diet goal calories should be TDEE to maintain same weight.
+		case "maintain": // If phase is maintience,
+			// diet goal calories should be TDEE to maintain same weight.
 			u.Phase.GoalCalories = u.TDEE
 			return
 		case "bulk":
@@ -273,17 +322,7 @@ func promptDietGoal(u *UserInfo) {
 	goal := promptDietOptions(u)
 
 	// Set min and max diet durations.
-	switch u.Phase.Name {
-	case "cut":
-		u.Phase.MaxDuration = 12
-		u.Phase.MinDuration = 6
-	case "maintain":
-		u.Phase.MaxDuration = math.Inf(1)
-		u.Phase.MinDuration = 4
-	case "bulk":
-		u.Phase.MaxDuration = 16
-		u.Phase.MinDuration = 6
-	}
+	setMinMaxPhaseDuration()
 
 	// Fill out remaining userInfo struct fields given user preference on
 	// recommended or custom diet pace.
@@ -397,8 +436,10 @@ func getSex() (s string) {
 			fmt.Println("Must enter \"male\" or \"female\".")
 			continue
 		}
+
 		break
 	}
+
 	return s
 }
 
@@ -425,8 +466,10 @@ func getWeight() (weight float64) {
 			fmt.Println("Invalid weight. Please try again.")
 			continue
 		}
+
 		break
 	}
+
 	return weight
 }
 
@@ -453,12 +496,14 @@ func getHeight() (height float64) {
 	for {
 		// Prompt user for height.
 		heightStr := promptHeight()
+
 		// Validate their response.
 		height, err := validateHeight(heightStr)
 		if err != nil {
 			fmt.Println("Invalid height. Please try again.")
 			continue
 		}
+
 		break
 	}
 
@@ -489,12 +534,14 @@ func getAge() (age int) {
 	for {
 		// Prompt user for age.
 		ageStr := promptAge()
+
 		// Validate user response.
 		age, err := validateAge(ageStr)
 		if err != nil {
 			fmt.Println("Invalid age. Please try again.")
 			continue
 		}
+
 		break
 	}
 	return age
@@ -522,12 +569,14 @@ func getActivity() string {
 	for {
 		// Prompt user for activity.
 		a := promptActivity()
+
 		// Validate user response.
 		err := validateActivity(a)
 		if err != nil {
 			fmt.Println("Invalid activity level. Please try again.")
 			continue
 		}
+
 		break
 	}
 	return nil
@@ -561,7 +610,9 @@ func generateConfig() (u *UserInfo, err error) {
 
 	// Prompt for user and diet information
 	promptUserInfo(&u)
-	promptDietType(&u)
+
+	u.Phase.Name = getDietPhase()
+
 	promptDietGoal(&u)
 	promptConfirmation(&u)
 
@@ -826,6 +877,7 @@ func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
 		}
 
 		startIdx = i
+
 		break
 	}
 
