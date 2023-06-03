@@ -30,41 +30,54 @@ type PhaseInfo struct {
 	MinDuration  float64   `yaml:"min_duration"`
 }
 
-// promptUserType prompts the user to enter desired diet phase.
-func promptDietType(u *UserInfo) {
-	fmt.Println("Step 2: Choose diet type.")
+// promptUserPhase prompts the user to enter desired diet phase.
+func promptDietPhase() (s string) {
+	fmt.Print("Enter phase (cut, maintain, or bulk): ")
+	fmt.Scanln(&s)
+	return s
+}
+
+// validateDietPhase validates user diet phase.
+func validateDietPhase(s string) error {
+	// If user response is either "cut", "maintain", or "bulk",
+	if s == "cut" || s == "maintain" || s == "bulk" {
+		return nil
+	}
+
+	return error.New("Invalid diet phase.")
+}
+
+// getDietPhase prompts user for diet phase, validates user response, and
+// returns valid diet phase.
+func getDietPhase() {
+	fmt.Println("Step 2: Choose diet phase.")
 	fmt.Println("Fat loss (cut). Lose fat while losing weight and preserving muscle.")
 	fmt.Println("Maintenance (maintain). Stay at your current weight.")
 	fmt.Println("Muscle gain (bulk). Gain muscle while minimizing fat.")
 
-	var s string
 	for {
-		// Prompt user for diet phase.
-		fmt.Print("Enter phase (cut, maintain, or bulk): ")
-		fmt.Scanln(&s)
-
-		// If user response is either "cut", "maintain", or "bulk",
-		if s == "cut" || s == "maintain" || s == "bulk" {
-			// Set diet phase name.
-			u.Phase.Name = s
-
-			// Set min and max diet durations.
-			switch u.Phase.Name {
-			case "cut":
-				u.Phase.MaxDuration = 12
-				u.Phase.MinDuration = 6
-			case "maintain":
-				u.Phase.MaxDuration = math.Inf(1)
-				u.Phase.MinDuration = 4
-			case "bulk":
-				u.Phase.MaxDuration = 16
-				u.Phase.MinDuration = 6
-			}
-
-			return
-		}
-
+		// Prompt user for diet phase
+		p := promptDietPhase()
 		fmt.Println("Invalid diet phase. Please try again.")
+	}
+
+	return p
+}
+
+// setMinMaxPhaseDuration sets the minimum and maximum diet phase
+// duration given the current phase the user has chosen.
+func setMinMaxPhaseDuration(u *UserInfo) {
+	// Set min and max diet durations.
+	switch u.Phase.Name {
+	case "cut":
+		u.Phase.MaxDuration = 12
+		u.Phase.MinDuration = 6
+	case "maintain":
+		u.Phase.MaxDuration = math.Inf(1)
+		u.Phase.MinDuration = 4
+	case "bulk":
+		u.Phase.MaxDuration = 16
+		u.Phase.MinDuration = 6
 	}
 }
 
@@ -487,35 +500,53 @@ func getAge() (age int) {
 	return age
 }
 
-// validateActivity prompts user for activity level and validates their
-// response.
-func validateActivity(u *UserInfo) {
-	for {
-		// Prompt user for activity level.
-		fmt.Print("Enter activity level (sedentary, light, moderate, active, very): ")
-		fmt.Scanln(&u.ActivityLevel)
+// promptActivity prompts and returns user activity level.
+func promptActivity() (a string) {
+	fmt.Print("Enter activity level (sedentary, light, moderate, active, very): ")
+	fmt.Scanln(&a)
+	return a
+}
 
-		// Validate user response.
-		_, err := activity(u.ActivityLevel)
-		if err == nil {
-			return
-		}
-		fmt.Println("Invalid activity level. Please try again.")
+// validateActivity and validates their  response.
+func validateActivity(a string) error {
+	_, err := activity(a)
+	if err != nil {
+		return err
 	}
+	return nil
+}
+
+// getActivity prompts user for activity level, validates user
+// response, and returns valid activity level.
+func getActivity() string {
+	for {
+		// Prompt user for activity.
+		a := promptActivity()
+		// Validate user response.
+		err := validateActivity(a)
+		if err != nil {
+			fmt.Println("Invalid activity level. Please try again.")
+			continue
+		}
+		break
+	}
+	return nil
 }
 
 // promptUserInfo prompts for user details.
 func promptUserInfo(u *UserInfo) {
 	fmt.Println("Step 1: Your details.")
-	validateSex(u)
+	u.Sex = getSex()
 
-	w := getWeight(u)
+	w := getWeight()
 	u.Weight = w
+	// TODO: StartWeight should instead be initialized whenver the phase
+	// starts.
 	u.Phase.StartWeight = w
 
-	validateHeight(u)
-	validateAge(u)
-	validateActivity(u)
+	u.Height = getHeight()
+	u.Age = getAge()
+	u.ActivityLevel = getActivity()
 
 	// Get BMR
 	bmr := Mifflin(u)
@@ -524,46 +555,57 @@ func promptUserInfo(u *UserInfo) {
 	u.TDEE = TDEE(bmr, u.ActivityLevel)
 }
 
-// ReadConfig created config file if it doesn't exist or reads in
-// existing config file and returns userInfo.
-func ReadConfig() (*UserInfo, error) {
-	var u UserInfo
+// generateConfig generates a new config file for the user.
+func generateConfig() (u *UserInfo, err error) {
+	fmt.Println("Welcome! Please provide required information:")
 
-	// If the yaml config file doesn't exist
-	if _, err := os.Stat(ConfigFilePath); os.IsNotExist(err) {
-		fmt.Println("Welcome! Please provide required information:")
+	// Prompt for user and diet information
+	promptUserInfo(&u)
+	promptDietType(&u)
+	promptDietGoal(&u)
+	promptConfirmation(&u)
 
-		// Prompt for user information
-		promptUserInfo(&u)
-		promptDietType(&u)
-		promptDietGoal(&u)
-		promptConfirmation(&u)
-
-		// Save user info to config file.
-		err := saveUserInfo(&u)
-		if err != nil {
-			log.Println("Failed to save user info:", err)
-			return nil, err
-		}
-		fmt.Println("User info saved successfully.")
-	} else { // User has a config file.
-		u = UserInfo{}
-
-		// Read YAML file.
-		data, err := ioutil.ReadFile(ConfigFilePath)
-		if err != nil {
-			log.Printf("Error: Can't read file: %v\n", err)
-			return nil, err
-		}
-
-		// Unmarshal YAML data into struct.
-		err = yaml.Unmarshal(data, &u)
-		if err != nil {
-			log.Printf("Error: Can't unmarshal YAML: %v\n", err)
-			return nil, err
-		}
-		fmt.Println("User info loaded successful.")
+	// Save user info to config file.
+	err := saveUserInfo(&u)
+	if err != nil {
+		log.Println("Failed to save user info:", err)
+		return nil, err
 	}
+
+	return u, nil
+}
+
+// ReadConfig reads config file or creates it if it doesn't exist and
+// returns UserInfo struct.
+func ReadConfig() (u *UserInfo, err error) {
+	// If no config file exists,
+	if _, err := os.Stat(ConfigFilePath); os.IsNotExist(err) {
+		u, err = generateConfig()
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("Saved user info.")
+
+		return &u, nil
+	}
+	// Otherwise, user has a config file.
+
+	u := UserInfo{}
+
+	// Read YAML file.
+	data, err := ioutil.ReadFile(ConfigFilePath)
+	if err != nil {
+		log.Printf("Error: Can't read file: %v\n", err)
+		return nil, err
+	}
+
+	// Unmarshal YAML data into struct.
+	err = yaml.Unmarshal(data, &u)
+	if err != nil {
+		log.Printf("Error: Can't unmarshal YAML: %v\n", err)
+		return nil, err
+	}
+	fmt.Println("Loaded user info.")
 
 	return &u, nil
 }
@@ -594,17 +636,21 @@ func promptTransition(u *UserInfo) error {
 		// 2. Start out phase by decreasing your caloric intake by that amount.
 	}
 
-	// Prompt user to start a new diet phase
-	promptDietType(u)
+	// Get the phase the user wants to transition into.
+	u.Phase.Name = getDietPhase()
+
+	// Set min and max diet phase duration.
+	setMinMaxPhaseDuration(u)
+
 	promptDietGoal(u)
 
-	// Set suggested macro split
+	// Set suggested macro split.
 	protein, carbs, fats := CalculateMacros(u.Weight, 0.4)
 	u.Macros.Protein = protein
 	u.Macros.Carbs = carbs
 	u.Macros.Fats = fats
 
-	// Find min and max values for macros.
+	// Set min and max values for macros.
 	setMinMaxMacros(u)
 
 	// Print new phase information to user.
