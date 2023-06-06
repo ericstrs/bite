@@ -17,18 +17,23 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const (
+	calsPerPound = 3500 // Estimated calories per pound of bodyweight.
+)
+
 type PhaseInfo struct {
-	Name         string    `yaml:"name"`
-	GoalCalories float64   `yaml:"goal_calories"`
-	StartWeight  float64   `yaml:"start_weight"`
-	GoalWeight   float64   `yaml:"goal_weight"`
-	WeeklyChange float64   `yaml:"weekly_change"`
-	StartDate    time.Time `yaml:"start_date"`
-	EndDate      time.Time `yaml:"end_date"`
-	Duration     float64   `yaml:"duration"`
-	MaxDuration  float64   `yaml:"max_duration"`
-	MinDuration  float64   `yaml:"min_duration"`
-	Active       bool      `yaml:"active"`
+	Name            string    `yaml:"name"`
+	GoalCalories    float64   `yaml:"goal_calories"`
+	StartWeight     float64   `yaml:"start_weight"`
+	GoalWeight      float64   `yaml:"goal_weight"`
+	WeeklyChange    float64   `yaml:"weekly_change"`
+	StartDate       time.Time `yaml:"start_date"`
+	EndDate         time.Time `yaml:"end_date"`
+	LastCheckedDate time.Time `yaml:"last_checked_date"`
+	Duration        float64   `yaml:"duration"`
+	MaxDuration     float64   `yaml:"max_duration"`
+	MinDuration     float64   `yaml:"min_duration"`
+	Active          bool      `yaml:"active"`
 }
 
 // ReadConfig reads config file or creates it if it doesn't exist and
@@ -296,10 +301,13 @@ func validateActivity(a string) error {
 // floor which may truncate days and this may lead to some issues.
 func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	// Make a map to track the numbers of entries in each week.
-	entryCountPerWeek := countEntriesPerWeek(u)
+	entryCountPerWeek, err := countEntriesPerWeek(u, logs)
+	if err != nil {
+		return err
+	}
 
 	// Count number of valid weeks.
-	count := countValidWeeks(entryCountPerWeek)
+	count := countValidWeeks(*entryCountPerWeek)
 
 	// If there is less than 2 weeks of entries after the diet start date,
 	// then do nothing, and return early.
@@ -323,12 +331,10 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		}
 	case "maintain":
 		// Ensure user is maintaing weight.
-		/*
-			err := checkMaintenance(u, logs)
-			if err != nil {
-				return err
-			}
-		*/
+		err := checkMaintenance(u, logs)
+		if err != nil {
+			return err
+		}
 	case "bulk":
 		// Ensure user has not gained too much weight.
 		err := checkBulkThreshold(u)
@@ -350,7 +356,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 //
 // countEntriesPerWeek iterates over the logged entries ands adds the
 // number of entries for each week of the diet and returns the map.
-func countEntriesPerWeek(u *UserInfo) *map[int]int {
+func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
 	entryCountPerWeek := make(map[int]int)
 
 	weekNumber := 0
@@ -362,20 +368,21 @@ func countEntriesPerWeek(u *UserInfo) *map[int]int {
 		// Count the number of entries within the current week.
 		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		entryCountPerWeek[weekNumber] = entryCount
 		weekNumber++
 	}
 
-	return entryCountPerWeek
+	return &entryCountPerWeek, nil
 }
 
 // countValidWeeks counts ands returns the number of valid weeks in a
 // given diet phase.
 func countValidWeeks(e map[int]int) int {
-	for week, count := 1, 0; week < len(e); week++ {
+	count := 0
+	for week := 1; week < len(e); week++ {
 		if e[week] > 2 {
 			count++
 		}
@@ -486,125 +493,73 @@ func validateNextAction(a string) error {
 }
 
 // TODO:
-// * before you can use bulk/cut code, determine how you want to
-// take average. I'm thinking after 3 weeks, we take average over entire
-// diet phase. Otherwise, user might be able to slowly trend up/down in
-// weight over a long period of time. Create tests before implementing.
 // * This function shouly only perform the check; not the adjustment
 //
 // checkMaintenance ensures user is maintaining the same weight.
 func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) error {
-	// If there has been there has been more than three weeks of missing
-	// maintience goal, adjust maintience.
+	lower := u.Phase.StartWeight * -1.25
+	upper := u.Phase.StartWeight * +1.25
 
 	consecutiveMissedWeeks := 0
+	avgTotal := 0.0
 
 	// Iterate over each week of the diet.
-	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		result, err := metWeeklyWeightMaintenance(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		weekAverageWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return err
 		}
+		// TODO: put this check logic into metMaintenanceGoal
 		// If the week has met the weight loss goal, then restart the count.
-		if result {
+		if valid && weekAverageWeightChange < upper && lower > weekAverageWeightChange { // TODO: AND so far, the weekly averages are close to zero.
 			consecutiveMissedWeeks = 0
+			avgTotal = 0
 			continue
 		}
 
 		// Otherwise, the week did not meet the weight loss goal.
 		consecutiveMissedWeeks++
+		avgTotal += weekAverageWeightChange
 
-		// If two  weeks of the user not meeting the weekly weight loss goal,
-		// then update accordingly.
-		if consecutiveMissedWeeks >= 2 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
-			adjustMaintiencePhase(u) // Adjust weight loss plan.
+		// If there has been there has been more than three weeks of missing
+		// maintience goal, adjust maintience.
+		if consecutiveMissedWeeks >= 3 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for three consecutive weeks.", u.Phase.WeeklyChange)
+			adjustMaintiencePhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
 		}
 	}
 
 	return nil
 }
 
-// TODO:
-// * This function does nearly the same thing as the metWeekly function
-// for cut and bulk. Difference is just the returning bool expression.
-// Try to get rid of this function by making the other metWeekly
-// function compatible with the maintenance phase.
-//
-// metWeeklyWeightMaintenance checks if the maintience goal has been met
-// for a given week.
-func metWeeklyWeightMaintenance(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (bool, error) {
-	// Find average weight over the week.
+// adjustMaintiencePhase calculates the daily average change in
+// weight adjusts the daily calorie goal accordingly.
+func adjustMaintiencePhase(u *UserInfo, avgWeekWeightChange float64) {
+	// Get weekly average weight change.
+	avgWeekWeightChangeCals := avgWeekWeightChange * calsPerPound
+	// Get daily average weight change.
+	avgDayWeightChangeCals := avgWeekWeightChangeCals / 7
 
-	totalWeightChange := 0.0
-
-	// Get the dataframe index of the entry with the start date of the
-	// diet.
-	startIdx, err := findEntryIdx(logs, weekStart)
-	if err != nil {
-		return false, err
+	// Average week weight change was positive,
+	if avgWeekWeightChange > 0 {
+		// remove calories from daily calorie goal.
+		u.Phase.GoalCalories -= avgDayWeightChangeCals
+		fmt.Printf("Reducing diet calorie goal by %f calories.\n", avgDayWeightChangeCals)
+		return
 	}
 
-	// Iterate over the week starting from startIdx.
-	for i := 0; i < 7; i++ {
-		// Get entry date.
-		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx+i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return false, err
-		}
-
-		// If date falls after the end of the week,
-		if date.After(weekEnd) {
-			break
-		}
-
-		// Get entry weight.
-		w := logs.Series[weightCol].Value(startIdx + i).(string)
-		weight, err := strconv.ParseFloat(w, 64)
-		if err != nil {
-			log.Println("ERROR: Failed to convert string to float64:", err)
-			return false, err
-		}
-
-		// Get the previous weight to current week.
-		previousWeight := getPrecedingWeightToWeek(u, logs, startIdx)
-
-		// Calculate the weight change between two days.
-		weightChange := weight - previousWeight
-
-		// Update total weight change
-		totalWeightChange += weightChange
-	}
-
-	// If there were zero entries found in the week, then return early.
-	if i == 0 {
-		return false, nil
-	}
-
-	lower := u.Phase.StartWeight * -1.25
-	upper := u.Phase.StartWeight * +1.25
-
-	// Calculate the average change in weight over this single week.
-	weekAverageWeightChange := totalWeightChange / float64(i)
-
-	result := false
-	// If the user met the desired weekly change in weight.
-	if weekAverageWeightChange < upper && lower > weekAverageWeightChange {
-		result = true
-	}
-
-	return result
-}
-
-// TODO: adjustMaintiencePhase
-func adjustMaintiencePhase() {
+	// Otherwise, week weight change was negative.
+	// Add calories to daily calorie goal.
+	u.Phase.GoalCalories += avgDayWeightChangeCals
+	fmt.Printf("Adding %f to diet calorie goal.\n", avgDayWeightChangeCals)
 }
 
 // TODO:
+// * This function should only start checking from what hasn't been
+// checked for far.
 // * This function should only perform the check; not the adjustment.
 //
 // checkCutLoss checks to see if user is on the track to meeting weight
@@ -612,144 +567,97 @@ func adjustMaintiencePhase() {
 func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 
 	consecutiveMissedWeeks := 0
+	avgTotal := 0.0
 
 	// Iterate over each week of the diet.
-	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		result, err := metWeeklyWeightChange(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return err
 		}
+
+		// TODO: Current check if week average is aligned with goal average may be
+		// too strict. Should allow +/- some value.
 		// If the week has met the weight loss goal, then restart the count.
-		if result {
+		if valid && avgWeekWeightChange <= u.Phase.WeeklyChange {
 			consecutiveMissedWeeks = 0
+			avgTotal = 0
 			continue
 		}
 
 		// Otherwise, the week did not meet the weight loss goal.
 		consecutiveMissedWeeks++
+		avgTotal += avgWeekWeightChange
 
 		// If two  weeks of the user not meeting the weekly weight loss goal,
 		// then update accordingly.
 		if consecutiveMissedWeeks >= 2 {
 			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
-			adjustCutPhase(u) // Adjust weight loss plan.
+			adjustCutPhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
+			break
 		}
 	}
 	return nil
 }
 
-// TODO:
-// * Will for loops cause idx out of bounds?
-// * Current check if weekAverage is aligned with goal average may be
-// too strict. Should allow +/- some value.
-//
-// metWeeklyWeightChange checks if the user has met the weekly weight loss
-// given a single week.
-func metWeeklyWeightChange(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, weeklyChange float64) (bool, error) {
-	totalWeightChange := 0.0
-
-	// Get the dataframe index of the entry with the start date of the
-	// diet.
-	startIdx, err := findEntryIdx(logs, weekStart)
-	if err != nil {
-		return false, err
-	}
-
-	// Iterate over the week starting from startIdx.
-	for i := 0; i < 7; i++ {
-		// Get entry date.
-		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx+i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return false, err
-		}
-
-		// If date falls after the end of the week,
-		if date.After(weekEnd) {
-			break
-		}
-
-		// Get entry weight.
-		w := logs.Series[weightCol].Value(startIdx + i).(string)
-		weight, err := strconv.ParseFloat(w, 64)
-		if err != nil {
-			log.Println("ERROR: Failed to convert string to float64:", err)
-			return false, err
-		}
-
-		// Get the previous weight to current week.
-		previousWeight := getPrecedingWeightToWeek(u, logs, startIdx)
-
-		// Calculate the weight change between two days.
-		weightChange := weight - previousWeight
-
-		// Update total weight change
-		totalWeightChange += weightChange
-	}
-
-	// If there were zero entries found in the week, then return early.
-	if i == 0 {
-		return false, nil
-	}
-
-	// Calculate the average change in weight over this single week.
-	weekAverageWeightChange := totalWeightChange / float64(i)
-
-	return weekAverageWeightChange >= weeklyChange, nil
-}
-
 // getPrecedingWeightToWeek returns the preceding entry to a given week.
-func getPrecedingWeightToWeek(u *UserInfo, logs *dataframe.DataFrame, startIdx int) (previousWeight float64) {
+func getPrecedingWeightToWeek(u *UserInfo, logs *dataframe.DataFrame, startIdx int) (float64, error) {
+	var previousWeight float64
 	// If entry is the first in the dataframe, set previous weight
 	// equal to zero. This is necessary to prevent index out of bounds
 	// error.
 	if startIdx == 0 {
 		previousWeight = 0
-		return previousWeight
+		return previousWeight, nil
 	}
 
 	// Get entry date.
-	date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i-1).(string))
+	date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx-1).(string))
 	if err != nil {
 		log.Println("ERROR: Couldn't parse date:", err)
-		return false, err
+		return 0, err
 	}
 
 	// If date is before the diet start date,
-	if date.Before(weekStart) {
+	if date.Before(u.Phase.StartDate) {
 		previousWeight = 0
-		return previousWeight
+		return previousWeight, nil
 	}
 	// Otherwise, the date is after the start date.
 
 	// Get previous entry's weight.
-	pw := logs.Series[weightCol].Value(i - 1).(string)
+	pw := logs.Series[weightCol].Value(startIdx - 1).(string)
 	previousWeight, err = strconv.ParseFloat(pw, 64)
 	if err != nil {
 		log.Println("ERROR: Failed to convert string to float64:", err)
-		return false, err
+		return 0, err
 	}
 
-	return previousWeight
+	return previousWeight, nil
 }
 
-// TODO:
-// * I think calculating the needed calorie deficit looks different?
-//
 // adjustCutPhase calulates the daily caloric deficit and then attempts
 // to apply that deficit though first cutting fats, then carbs, and
 // finally protein.
 //
 // The deficit will be applied up to the minimmum macro values.
-func adjustCutPhase(u *UserInfo) {
-	// Calculate the needed daily deficit.
-	deficit := u.Phase.WeeklyChange * 500
+func adjustCutPhase(u *UserInfo, avgWeekWeightChange float64) {
+
+	diff := avgWeekWeightChange - u.Phase.WeeklyChange
+
+	// Get weekly average weight change in calories.
+	avgWeekWeightChangeCals := diff * calsPerPound
+	// Get daily average weight change in calories.
+	avgDayWeightChangeCals := avgWeekWeightChangeCals / 7
+
+	// Set deficit
+	deficit := avgDayWeightChangeCals
 
 	// Update calorie goal.
-	u.Phase.GoalCalories = u.TDEE - deficit
+	u.Phase.GoalCalories -= deficit
 	fmt.Printf("Reducing caloric deficit by %f calories\n", deficit)
 
 	// Convert caloric deficit to fats in grams.
@@ -816,45 +724,57 @@ func adjustCutPhase(u *UserInfo) {
 // gain goal.
 func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
 	consecutiveMissedWeeks := 0
-	// If there has been 2 weeks of the user not meeting the weekly
-	// weight gain goal, then update accordingly.
-	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	avgTotal := 0.0
+
+	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		result, err := metWeeklyWeightChange(logs, weekStart, weekEnd, u.Phase.WeeklyChange)
+		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return err
 		}
+
+		// TODO: Current check if week average is aligned with goal average may be
+		// too strict. Should allow +/- some value.
 		// If week has not met the weight loss goal, then restart the count.
-		if result {
+		if valid && avgWeekWeightChange >= u.Phase.WeeklyChange {
 			consecutiveMissedWeeks = 0
+			avgTotal = 0
 			continue
 		}
 
 		consecutiveMissedWeeks++
+		avgTotal += avgWeekWeightChange
 
+		// If there has been 2 weeks of the user not meeting the weekly
+		// weight gain goal, then update accordingly.
 		if consecutiveMissedWeeks >= 2 {
 			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
 			// Adjust weight loss plan.
-			adjustBulkPhase(u)
+			adjustBulkPhase(u, avgTotal/float64(consecutiveMissedWeeks))
 		}
 	}
 	return nil
 }
 
-// TODO:
-// * I think calculating the needed calorie deficit looks different?
-//
 // adjustBulkPhase calculates the caloric surplus and then attempts to
 // apply it by first adding carbs, then fats, and finally fats.
-func adjustBulkPhase(u *UserInfo) {
-	// Calculate the needed daily surplus.
-	surplus := u.Phase.WeeklyChange * 500
+func adjustBulkPhase(u *UserInfo, avgWeekWeightChange float64) {
 
-	// Set bulk calorie goal.
-	u.Phase.GoalCalories = u.TDEE + surplus
-	fmt.Printf("Modifying caloric surplus by %f calories\n", surplus)
+	diff := u.Phase.WeeklyChange - avgWeekWeightChange
+
+	// Get weekly average weight change in calories.
+	avgWeekWeightChangeCals := diff * calsPerPound
+	// Get daily average weight change in calories.
+	avgDayWeightChangeCals := avgWeekWeightChangeCals / 7
+
+	// Calculate the needed daily surplus.
+	surplus := avgDayWeightChangeCals
+
+	// Update calorie goal.
+	u.Phase.GoalCalories += surplus
+	fmt.Printf("Adding to caloric surplus by %f calories\n", surplus)
 
 	// Convert surplus in calories to carbs in grams.
 	carbSurplus := surplus * calsInCarbs
@@ -1076,6 +996,76 @@ func checkBulkThreshold(u *UserInfo) error {
 	return nil
 }
 
+// avgWeightChangeWeek calculates and returns the average change in
+// weight for a given week.
+func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
+	var date time.Time
+	var err error
+	var weight float64
+	var startIdx int
+	var i int
+	totalWeightChangeWeek := 0.0
+
+	// Get the dataframe index of the entry with the start date of the
+	// diet.
+	startIdx, err = findEntryIdx(logs, weekStart)
+	if err != nil {
+		return 0, false, err
+	}
+
+	// Iterate over the week starting from startIdx.
+	for i = 0; i < 7; i++ {
+		// Get entry date.
+
+		date, err = time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx+i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return 0, false, err
+		}
+
+		// If date falls after the end of the week, return setting `valid`
+		// week variable to false. This ensures we only consider entry's
+		// that are within a full week.
+		if date.After(weekEnd) {
+			return 0, false, nil
+		}
+
+		// Get entry weight.
+		w := logs.Series[weightCol].Value(startIdx + i).(string)
+		weight, err = strconv.ParseFloat(w, 64)
+		if err != nil {
+			log.Println("ERROR: Failed to convert string to float64:", err)
+			return 0, false, err
+		}
+
+		// Get the previous weight to current week.
+		previousWeight, err := getPrecedingWeightToWeek(u, logs, startIdx)
+		if err != nil {
+			return 0, false, nil
+		}
+
+		// Calculate the weight change between two days.
+		weightChange := weight - previousWeight
+
+		// Update total weight change
+		totalWeightChangeWeek += weightChange
+	}
+
+	// If there were zero entries found in the week, then return early.
+	if i == 0 {
+		return 0, false, nil
+	}
+
+	// Update the last checkd day in the diet phase to the last day of the
+	// week.
+	u.Phase.LastCheckedDate = date
+
+	// Calculate the average change in weight over this single week.
+	avgWeightChangeWeek := totalWeightChangeWeek / float64(i)
+
+	return avgWeightChangeWeek, true, nil
+}
+
 // calculateEndDate calculates the diet end date given diet start date
 // and diet duration in weeks.
 func calculateEndDate(d time.Time, duration float64) time.Time {
@@ -1269,6 +1259,8 @@ func setRecommendedValues(u *UserInfo, w, d, g, c float64) {
 	u.Phase.Duration = d
 	u.Phase.GoalWeight = g
 	u.Phase.GoalCalories = c
+	// Initialize last checked date.
+	u.Phase.LastCheckedDate = u.Phase.StartDate
 }
 
 // handleCustomDiet sets UserInfo struct fields according to custom diet
@@ -1276,6 +1268,9 @@ func setRecommendedValues(u *UserInfo, w, d, g, c float64) {
 func handleCustomDiet(u *UserInfo) {
 	// Get diet start date.
 	u.Phase.StartDate = getStartDate(u)
+
+	// Initialize last checked date.
+	u.Phase.LastCheckedDate = u.Phase.StartDate
 
 	// Get diet end date.
 	u.Phase.EndDate = getEndDate(u)
