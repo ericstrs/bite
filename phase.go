@@ -332,6 +332,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	case "maintain":
 		// Ensure user is maintaing weight.
 		err := checkMaintenance(u, logs)
+
 		if err != nil {
 			return err
 		}
@@ -390,7 +391,7 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 		// Starting from the start date index, iterate over the week, and
 		// update counter when an entry is encountered.
 		for i := startIdx; i < 7; i++ {
-			date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
+			date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(i).(string))
 			if err != nil {
 				log.Println("ERROR: Couldn't parse date:", err)
 				return 0, err
@@ -440,7 +441,7 @@ func checkCutThreshold(u *UserInfo) error {
 
 	// If the user has lost more than 10% of starting weight,
 	if weightLost > threshold {
-		fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please     choose one of the following actions:")
+		fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
 
 		// Get option.
 		var option string
@@ -453,6 +454,7 @@ func checkCutThreshold(u *UserInfo) error {
 
 			if option != "1" && option != "2" && option != "3" {
 				fmt.Println("Invalid action. Please try again.")
+				continue
 			}
 			break
 		}
@@ -462,6 +464,206 @@ func checkCutThreshold(u *UserInfo) error {
 			// End cut and begin maintenance phase.
 			// Note: diet duration is left unmodified so maintenance phase
 			// lasts as long as the cut.
+
+			// Set phase to maintenance.
+			u.Phase.Name = "maintain"
+
+			// Immediately start maintenance phase.
+			u.Phase.StartDate = time.Now()
+			u.Phase.WeeklyChange = 0
+			u.Phase.GoalWeight = u.Phase.StartWeight
+
+			// Calculate the diet end date.
+			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
+
+			promptConfirmation(u)
+
+			// Save user info to config file.
+			err := saveUserInfo(u)
+			if err != nil {
+				log.Println("Failed to update phase to maintenance:", err)
+				return err
+			}
+			fmt.Println("Saved user information.")
+		case "2": // Change to different phase.
+			err := processPhaseTransition(u)
+			if err != nil {
+				return err
+			}
+		case "3": // Continue with the cut.
+		}
+	}
+
+	return nil
+}
+
+// TODO:
+// * This function should only perform the check; not the adjustment.
+//
+// checkCutLoss checks to see if user is on the track to meeting weight
+// loss goal.
+func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
+
+	consecutiveMissedWeeks := 0
+	avgTotal := 0.0
+
+	// Iterate over each week of the diet.
+	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+		weekStart := date
+		weekEnd := date.AddDate(0, 0, 6)
+
+		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
+		if err != nil {
+			return err
+		}
+
+		// TODO: Current check if week average is aligned with goal average may be
+		// too strict. Should allow +/- some value.
+		// If the week has met the weight loss goal, then restart the count.
+		if valid && avgWeekWeightChange <= u.Phase.WeeklyChange {
+			consecutiveMissedWeeks = 0
+			avgTotal = 0
+			continue
+		}
+
+		// Otherwise, the week did not meet the weight loss goal.
+		consecutiveMissedWeeks++
+		avgTotal += avgWeekWeightChange
+
+		// If two  weeks of the user not meeting the weekly weight loss goal,
+		// then update accordingly.
+		if consecutiveMissedWeeks >= 2 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			adjustCutPhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
+			break
+		}
+	}
+	return nil
+}
+
+// adjustCutPhase calulates the daily caloric deficit and then attempts
+// to apply that deficit though first cutting fats, then carbs, and
+// finally protein.
+//
+// The deficit will be applied up to the minimmum macro values.
+func adjustCutPhase(u *UserInfo, avgWeekWeightChange float64) {
+
+	diff := avgWeekWeightChange - u.Phase.WeeklyChange
+
+	// Get weekly average weight change in calories.
+	avgWeekWeightChangeCals := diff * calsPerPound
+	// Get daily average weight change in calories.
+	avgDayWeightChangeCals := avgWeekWeightChangeCals / 7
+
+	// Set deficit
+	deficit := avgDayWeightChangeCals
+
+	// Update calorie goal.
+	u.Phase.GoalCalories -= deficit
+	fmt.Printf("Reducing caloric deficit by %f calories\n", deficit)
+
+	// Convert caloric deficit to fats in grams.
+	fatDeficit := deficit * calsInFats
+
+	// If the fat deficit is greater than or equal to the available fats
+	// left (up to minimum fats limit), then apply the defict
+	// exclusively through removing fats.
+	if fatDeficit >= (u.Macros.Fats - u.Macros.MinFats) {
+		u.Macros.Fats -= u.Macros.MinFats
+		return
+	}
+	// Otherwise, there are not enough fats to competely apply the deficit, so remove the remaining fats.
+	// Remove fats up to the minimum fats limit.
+	remainingInFats := u.Macros.MinFats - deficit
+	u.Macros.Fats -= deficit - remainingInFats
+
+	// Convert the remaining fats in grams to calories.
+	remainingInCals := remainingInFats * calsInFats
+	// Convert the remaining calories to carbs in grams.
+	carbDeficit := remainingInCals / calsInCarbs
+
+	// If carb deficit is greater than or equal to the availiable carbs
+	// left (up to minimum carbs limit), then apply the remaining
+	// deficit by removing carbs.
+	if carbDeficit >= (u.Macros.Carbs - u.Macros.MinCarbs) {
+		u.Macros.Carbs -= u.Macros.MinCarbs
+		return
+	}
+	// Otherwise, remove fats up to the minimum carbs limit.
+	remainingInCarbs := u.Macros.MinCarbs - carbDeficit
+	u.Macros.Carbs -= carbDeficit - remainingInCarbs
+
+	// Set protein deficit in grams to the carbs that could not be
+	// removed.
+	// Note: calsInCarbs = calsInProtein.
+	proteinDeficit := remainingInCals
+
+	// If protein deficit is greater than or equal to the availiable
+	// protein left (up to minimum protein limit), then apply the
+	// remaining deficit by removing protein.
+	if proteinDeficit >= (u.Macros.Protein - u.Macros.MinProtein) {
+		u.Macros.Protein -= u.Macros.MinProtein
+		return
+	}
+	// Otherwise, remove protein up to the minimum protein limit.
+	remainingInProtein := u.Macros.MinProtein - proteinDeficit
+	u.Macros.Protein -= proteinDeficit - remainingInProtein
+
+	// Convert the remaining protein in grams to calories.
+	remaining := remainingInProtein * calsInProtein
+
+	// If the remaining calories are not zero, then stop removing macros
+	// and update the diet goal calories.
+	if remaining != 0 {
+		fmt.Printf("Could not reach a deficit of %f as the minimum fat, carb, and protein values have been met.\n", deficit)
+		fmt.Printf("Updating caloric deficit to %f\n", deficit-remaining)
+		// Override initial cut calorie goal.
+		u.Phase.GoalCalories = u.TDEE - deficit + remaining
+	}
+}
+
+// TODO:
+// * Case 1 of ending bulk and beginning maintenance phase should be its
+// own function. Particularily, it should be a helper function that
+// encapsulates transistion from a bulk/cut diet to maintenance. That
+// is, a helper function to processPhaseTransistion.
+// * If they decide to continue, how much do you update threshold?
+//
+// checkBulkThreshold checks if the user has gained too much weight, in
+// which the bulk is stopped and a maintenance phase begins.
+//
+// Note: diet duration is left unmodified so maintenance phase
+// lasts as long as the bulk and threshold is for beginner's by default.
+func checkBulkThreshold(u *UserInfo) error {
+	// Find the amount of weight the user has gained.
+	weightGain := u.Weight - u.Phase.StartWeight
+	// Find the theshold weight the user is allowed to lose.
+	threshold := u.Phase.StartWeight * 0.10
+
+	// If the user has lost more than 10% of starting weight,
+	if weightGain > threshold {
+		fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
+
+		// Get option.
+		var option string
+		for {
+			fmt.Println("1. End bulk and begin maintenance phase")
+			fmt.Println("2. Choose a different diet phase.")
+			fmt.Println("3. Continue with the bulk.")
+			fmt.Printf("Enter actions (1, 2, or 3): ")
+			fmt.Scanln(&option)
+
+			if option != "1" && option != "2" && option != "3" {
+				fmt.Println("Invalid action. Please try again.")
+			}
+			break
+		}
+
+		switch option {
+		case "1":
+			// End bulk and begin maintenance phase.
+			// Note: diet duration is left unmodified so maintenance phase
+			// lasts as long as the bulk.
 
 			// Set phase to maintenance.
 			u.Phase.Name = "maintain"
@@ -661,167 +863,6 @@ func adjustMaintiencePhase(u *UserInfo, avgWeekWeightChange float64) {
 	fmt.Printf("Adding %f to diet calorie goal.\n", avgDayWeightChangeCals)
 }
 
-// TODO:
-// * This function should only perform the check; not the adjustment.
-//
-// checkCutLoss checks to see if user is on the track to meeting weight
-// loss goal.
-func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
-
-	consecutiveMissedWeeks := 0
-	avgTotal := 0.0
-
-	// Iterate over each week of the diet.
-	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
-		weekStart := date
-		weekEnd := date.AddDate(0, 0, 6)
-
-		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
-		if err != nil {
-			return err
-		}
-
-		// TODO: Current check if week average is aligned with goal average may be
-		// too strict. Should allow +/- some value.
-		// If the week has met the weight loss goal, then restart the count.
-		if valid && avgWeekWeightChange <= u.Phase.WeeklyChange {
-			consecutiveMissedWeeks = 0
-			avgTotal = 0
-			continue
-		}
-
-		// Otherwise, the week did not meet the weight loss goal.
-		consecutiveMissedWeeks++
-		avgTotal += avgWeekWeightChange
-
-		// If two  weeks of the user not meeting the weekly weight loss goal,
-		// then update accordingly.
-		if consecutiveMissedWeeks >= 2 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
-			adjustCutPhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
-			break
-		}
-	}
-	return nil
-}
-
-// getPrecedingWeightToWeek returns the preceding entry to a given week.
-func getPrecedingWeightToWeek(u *UserInfo, logs *dataframe.DataFrame, startIdx int) (float64, error) {
-	var previousWeight float64
-	// If entry is the first in the dataframe, set previous weight
-	// equal to zero. This is necessary to prevent index out of bounds
-	// error.
-	if startIdx == 0 {
-		previousWeight = 0
-		return previousWeight, nil
-	}
-
-	// Get entry date.
-	date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx-1).(string))
-	if err != nil {
-		log.Println("ERROR: Couldn't parse date:", err)
-		return 0, err
-	}
-
-	// If date is before the diet start date,
-	if date.Before(u.Phase.StartDate) {
-		previousWeight = 0
-		return previousWeight, nil
-	}
-	// Otherwise, the date is after the start date.
-
-	// Get previous entry's weight.
-	pw := logs.Series[weightCol].Value(startIdx - 1).(string)
-	previousWeight, err = strconv.ParseFloat(pw, 64)
-	if err != nil {
-		log.Println("ERROR: Failed to convert string to float64:", err)
-		return 0, err
-	}
-
-	return previousWeight, nil
-}
-
-// adjustCutPhase calulates the daily caloric deficit and then attempts
-// to apply that deficit though first cutting fats, then carbs, and
-// finally protein.
-//
-// The deficit will be applied up to the minimmum macro values.
-func adjustCutPhase(u *UserInfo, avgWeekWeightChange float64) {
-
-	diff := avgWeekWeightChange - u.Phase.WeeklyChange
-
-	// Get weekly average weight change in calories.
-	avgWeekWeightChangeCals := diff * calsPerPound
-	// Get daily average weight change in calories.
-	avgDayWeightChangeCals := avgWeekWeightChangeCals / 7
-
-	// Set deficit
-	deficit := avgDayWeightChangeCals
-
-	// Update calorie goal.
-	u.Phase.GoalCalories -= deficit
-	fmt.Printf("Reducing caloric deficit by %f calories\n", deficit)
-
-	// Convert caloric deficit to fats in grams.
-	fatDeficit := deficit * calsInFats
-
-	// If the fat deficit is greater than or equal to the available fats
-	// left (up to minimum fats limit), then apply the defict
-	// exclusively through removing fats.
-	if fatDeficit >= (u.Macros.Fats - u.Macros.MinFats) {
-		u.Macros.Fats -= u.Macros.MinFats
-		return
-	}
-	// Otherwise, there are not enough fats to competely apply the deficit, so remove the remaining fats.
-	// Remove fats up to the minimum fats limit.
-	remainingInFats := u.Macros.MinFats - deficit
-	u.Macros.Fats -= deficit - remainingInFats
-
-	// Convert the remaining fats in grams to calories.
-	remainingInCals := remainingInFats * calsInFats
-	// Convert the remaining calories to carbs in grams.
-	carbDeficit := remainingInCals / calsInCarbs
-
-	// If carb deficit is greater than or equal to the availiable carbs
-	// left (up to minimum carbs limit), then apply the remaining
-	// deficit by removing carbs.
-	if carbDeficit >= (u.Macros.Carbs - u.Macros.MinCarbs) {
-		u.Macros.Carbs -= u.Macros.MinCarbs
-		return
-	}
-	// Otherwise, remove fats up to the minimum carbs limit.
-	remainingInCarbs := u.Macros.MinCarbs - carbDeficit
-	u.Macros.Carbs -= carbDeficit - remainingInCarbs
-
-	// Set protein deficit in grams to the carbs that could not be
-	// removed.
-	// Note: calsInCarbs = calsInProtein.
-	proteinDeficit := remainingInCals
-
-	// If protein deficit is greater than or equal to the availiable
-	// protein left (up to minimum protein limit), then apply the
-	// remaining deficit by removing protein.
-	if proteinDeficit >= (u.Macros.Protein - u.Macros.MinProtein) {
-		u.Macros.Protein -= u.Macros.MinProtein
-		return
-	}
-	// Otherwise, remove protein up to the minimum protein limit.
-	remainingInProtein := u.Macros.MinProtein - proteinDeficit
-	u.Macros.Protein -= proteinDeficit - remainingInProtein
-
-	// Convert the remaining protein in grams to calories.
-	remaining := remainingInProtein * calsInProtein
-
-	// If the remaining calories are not zero, then stop removing macros
-	// and update the diet goal calories.
-	if remaining != 0 {
-		fmt.Printf("Could not reach a deficit of %f as the minimum fat, carb, and protein values have been met.\n", deficit)
-		fmt.Printf("Updating caloric deficit to %f\n", deficit-remaining)
-		// Override initial cut calorie goal.
-		u.Phase.GoalCalories = u.TDEE - deficit + remaining
-	}
-}
-
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
 func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
@@ -945,81 +986,6 @@ func adjustBulkPhase(u *UserInfo, avgWeekWeightChange float64) {
 	}
 }
 
-// TODO:
-// * Case 1 of ending bulk and beginning maintenance phase should be its
-// own function. Particularily, it should be a helper function that
-// encapsulates transistion from a bulk/cut diet to maintenance. That
-// is, a helper function to processPhaseTransistion.
-// * If they decide to continue, how much do you update threshold?
-//
-// checkBulkThreshold checks if the user has gained too much weight, in
-// which the bulk is stopped and a maintenance phase begins.
-//
-// Note: diet duration is left unmodified so maintenance phase
-// lasts as long as the bulk and threshold is for beginner's by default.
-func checkBulkThreshold(u *UserInfo) error {
-	// Find the amount of weight the user has gained.
-	weightGain := u.Weight - u.Phase.StartWeight
-	// Find the theshold weight the user is allowed to lose.
-	threshold := u.Phase.StartWeight * 0.10
-
-	// If the user has lost more than 10% of starting weight,
-	if weightGain > threshold {
-		fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
-
-		// Get option.
-		var option string
-		for {
-			fmt.Println("1. End bulk and begin maintenance phase")
-			fmt.Println("2. Choose a different diet phase.")
-			fmt.Println("3. Continue with the bulk.")
-			fmt.Printf("Enter actions (1, 2, or 3): ")
-			fmt.Scanln(&option)
-
-			if option != "1" && option != "2" && option != "3" {
-				fmt.Println("Invalid action. Please try again.")
-			}
-			break
-		}
-
-		switch option {
-		case "1":
-			// End bulk and begin maintenance phase.
-			// Note: diet duration is left unmodified so maintenance phase
-			// lasts as long as the bulk.
-
-			// Set phase to maintenance.
-			u.Phase.Name = "maintain"
-
-			// Immediately start maintenance phase.
-			u.Phase.StartDate = time.Now()
-			u.Phase.WeeklyChange = 0
-			u.Phase.GoalWeight = u.Phase.StartWeight
-
-			// Calculate the diet end date.
-			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
-
-			promptConfirmation(u)
-
-			// Save user info to config file.
-			err := saveUserInfo(u)
-			if err != nil {
-				log.Println("Failed to update phase to maintenance:", err)
-				return err
-			}
-			fmt.Println("Saved user information.")
-		case "2": // Change to different phase.
-			err := processPhaseTransition(u)
-			if err != nil {
-				return err
-			}
-		case "3": // Continue with the cut.
-		}
-	}
-
-	return nil
-}
-
 // avgWeightChangeWeek calculates and returns the average change in
 // weight for a given week.
 func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
@@ -1041,7 +1007,7 @@ func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time
 	for i = 0; i < 7; i++ {
 		// Get entry date.
 
-		date, err = time.Parse("2006-02-01", logs.Series[dateCol].Value(startIdx+i).(string))
+		date, err = time.Parse("2006-01-02", logs.Series[dateCol].Value(startIdx+i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
 			return 0, false, err
@@ -1062,8 +1028,8 @@ func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time
 			return 0, false, err
 		}
 
-		// Get the previous weight to current week.
-		previousWeight, err := getPrecedingWeightToWeek(u, logs, startIdx)
+		// Get the previous weight to current day.
+		previousWeight, err := getPrecedingWeightToDay(u, logs, weight, startIdx+i)
 		if err != nil {
 			return 0, false, nil
 		}
@@ -1085,16 +1051,67 @@ func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time
 	u.Phase.LastCheckedDate = date
 
 	// Calculate the average change in weight over this single week.
-	avgWeightChangeWeek := totalWeightChangeWeek / float64(i)
+	avg := totalWeightChangeWeek / float64(i)
 
-	return avgWeightChangeWeek, true, nil
+	return avg, true, nil
 }
 
-// calculateEndDate calculates the diet end date given diet start date
-// and diet duration in weeks.
-func calculateEndDate(d time.Time, duration float64) time.Time {
-	endDate := d.AddDate(0, 0, int(duration*7.0))
-	return endDate
+// findEntryIdx finds the index of an entry given a date.
+func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
+	var startIdx int
+	// Find the index of weekStart in the data frame.
+	for i := 0; i < logs.NRows(); i++ {
+		date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return 0, err
+		}
+
+		if date.Equal(weekStart) {
+			startIdx = i
+			break
+		}
+
+		continue
+	}
+
+	return startIdx, nil
+}
+
+// getPrecedingWeightToDay returns the preceding entry to a given week.
+func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight float64, startIdx int) (float64, error) {
+	var previousWeight float64
+	// If entry is the first in the dataframe, set previous weight
+	// equal to zero. This is necessary to prevent index out of bounds
+	// error.
+	if startIdx == 0 {
+		previousWeight = weight
+		return previousWeight, nil
+	}
+
+	// Get entry date.
+	date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(startIdx-1).(string))
+	if err != nil {
+		log.Println("ERROR: Couldn't parse date:", err)
+		return 0, err
+	}
+
+	// If date is before the diet start date,
+	if date.Before(u.Phase.StartDate) {
+		previousWeight = weight
+		return previousWeight, nil
+	}
+	// Otherwise, the date is after the start date.
+
+	// Get previous entry's weight.
+	pw := logs.Series[weightCol].Value(startIdx - 1).(string)
+	previousWeight, err = strconv.ParseFloat(pw, 64)
+	if err != nil {
+		log.Println("ERROR: Failed to convert string to float64:", err)
+		return 0, err
+	}
+
+	return previousWeight, nil
 }
 
 // TODO: Handle case where user is brand new. They set diet date start
@@ -1241,10 +1258,10 @@ func promptDietChoice() (c string) {
 
 // validateDietChoice validates and returns user diet choice.
 func validateDietChoice(c string) error {
-	if c == "recommended" || c == "custom" {
-		return nil
+	if c != "recommended" && c != "custom" {
+		return errors.New("Invalid diet choice.")
 	}
-	return errors.New("Invalid diet choice.")
+	return nil
 }
 
 // handleRecommendedDiet sets UserInfo struct fields according to a
@@ -1253,6 +1270,7 @@ func handleRecommendedDiet(u *UserInfo) {
 	// Get the diet start date.
 	u.Phase.StartDate = getStartDate(u)
 
+	// TODO: show logic that derives daily calories.
 	// Calculate daily caloric change need to create a deficit/surplus.
 	c := u.Phase.WeeklyChange * 500
 
@@ -1285,6 +1303,13 @@ func setRecommendedValues(u *UserInfo, w, d, g, c float64) {
 	u.Phase.GoalCalories = c
 	// Initialize last checked date.
 	u.Phase.LastCheckedDate = u.Phase.StartDate
+}
+
+// calculateEndDate calculates the diet end date given diet start date
+// and diet duration in weeks.
+func calculateEndDate(d time.Time, duration float64) time.Time {
+	endDate := d.AddDate(0, 0, int(duration*7.0))
+	return endDate
 }
 
 // handleCustomDiet sets UserInfo struct fields according to custom diet
@@ -1385,21 +1410,30 @@ func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 	// Ensure user response is a date.
 	d, err := validateDate(r)
 	if err != nil {
-		return time.Time{}, 0, err
+		return time.Time{}, 0, errors.New("Invalid date.")
 	}
 
-	// Calculate diet duration given current end date.
+	// Calculate diet duration in weeks given start and end date.
 	dur := calculateDuration(u.Phase.StartDate, d).Hours() / 24 / 7
 
-	// Validate user response:
-	// * Does end date fall after start date?
-	// * Is diet duration less than max diet duration?
-	// * Is diet duration greater than min diet duration?
-	if err == nil && d.After(u.Phase.StartDate) && u.Phase.MaxDuration < dur && dur > u.Phase.MinDuration {
-		return d, dur, nil
+	// Does end date fall after start date?
+	if d.Before(u.Phase.StartDate) {
+		return time.Time{}, 0, errors.New("Invalid diet phase end date. End date must be after diet start date.")
 	}
 
-	return time.Time{}, 0, errors.New("Invalid diet phase end date.")
+	// Is diet duration less than max diet duration?
+	if dur > u.Phase.MaxDuration {
+		e := fmt.Sprintf("Invalid diet phase end date. Diet duration of %.2f weeks exceeds the maximum duration of %.2f.", math.Round(dur*100)/100, u.Phase.MaxDuration)
+		return time.Time{}, 0, errors.New(e)
+	}
+
+	// Is diet duration greater than min diet duration?
+	if dur < u.Phase.MinDuration {
+		e := fmt.Sprintf("Invalid diet phase end date. Diet duration of %.2f weeks falls short of the minimum duration of %.2f.", math.Round(dur*100)/100, u.Phase.MinDuration)
+		return time.Time{}, 0, errors.New(e)
+	}
+
+	return d, dur, nil
 }
 
 // validateDate validates the given date string and returns date if
@@ -1414,8 +1448,8 @@ func validateDate(dateStr string) (time.Time, error) {
 	return date, nil
 }
 
-// calculateDuration calculates and returns diet duration in weeks given
-// start and end date.
+// calculateDuration calculates and returns diet duration as a
+// `time.Duration` value given start and end date.
 func calculateDuration(start, end time.Time) time.Duration {
 	d := end.Sub(start)
 	return d
@@ -1447,13 +1481,6 @@ func getGoalWeight(u *UserInfo) (g float64) {
 	return g
 }
 
-// calculateWeeklyChange calculates and returns the weekly weight
-// change given current weight, goal weight, and diet duration.
-func calculateWeeklyChange(current, goal, duration float64) float64 {
-	weeklyChange := (current - goal) / duration
-	return weeklyChange
-}
-
 // promptGoalWeight prompts and returns user goal weight.
 func promptGoalWeight() (w string) {
 	fmt.Printf("Enter your goal weight: ")
@@ -1462,28 +1489,49 @@ func promptGoalWeight() (w string) {
 }
 
 // validateGoalWeight prompts validates diet goal weight.
+// Maintenance phase goal weight need not be validated as it is just
+// set to the users starting weight.
 func validateGoalWeight(weightStr string, u *UserInfo) (g float64, err error) {
 	// Convert string to float64.
 	g, err = strconv.ParseFloat(weightStr, 64)
 	if err != nil || g < 0 {
-		return 0, errors.New("Invalid goal weight.")
+		return 0, errors.New("Invalid goal weight. Goal weight must be a number.")
+	}
+
+	if g == u.Phase.StartWeight {
+		return 0, errors.New("Invliad goal weight. For any diet phase other than maintenance, goal weight must differ from starting weight.")
 	}
 
 	switch u.Phase.Name {
 	case "cut":
-		// Ensure goal weight doesn't exceed 10% of starting body weight.
+		if g > u.Phase.StartWeight {
+			return 0, errors.New("Invalid goal weight. For a cut, goal weight must be lower than starting weight.")
+		}
+
 		lowerBound := u.Phase.StartWeight * 0.10
 		if g < u.Phase.StartWeight-lowerBound {
-			return 0, errors.New("Invalid goal weight.")
+			return 0, errors.New("Invalid goal weight. For a cut, goal weight cannot be less than 10% of starting body weight.")
 		}
 	case "bulk":
-		// Ensure that goal weight is greater than starting weight.
 		if g < u.Phase.StartWeight {
-			return 0, errors.New("Invalid goal weight.")
+			return 0, errors.New("Invalid goal weight. For a bulk, goal weight must be greater than starting weight.")
+		}
+
+		upperBound := u.Phase.StartWeight * 0.10
+		if g > u.Phase.StartWeight+upperBound {
+			return 0, errors.New("Invalid goal weight. For a bulk, goal weight cannot exceed 10% of starting body weight.")
 		}
 	}
 
 	return g, nil
+}
+
+// calculateWeeklyChange calculates and returns the weekly weight
+// change in pounds given current weight, goal weight, and diet duration.
+func calculateWeeklyChange(current, goal, duration float64) float64 {
+	//weeklyChange := (current - goal) / duration
+	weeklyChange := (goal - current) / duration
+	return math.Abs(weeklyChange)
 }
 
 // setMinMaxPhaseDuration sets the minimum and maximum diet phase
@@ -1569,28 +1617,6 @@ func validateDietPhase(s string) error {
 	}
 
 	return errors.New("Invalid diet phase.")
-}
-
-// findEntryIdx finds the index of an entry given a date.
-func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
-	var startIdx int
-	// Find the index of weekStart in the data frame.
-	for i := 0; i < logs.NRows(); i++ {
-		date, err := time.Parse("2006-02-01", logs.Series[dateCol].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return 0, err
-		}
-
-		if date.Equal(weekStart) {
-			startIdx = i
-			break
-		}
-
-		continue
-	}
-
-	return startIdx, nil
 }
 
 // TODO
