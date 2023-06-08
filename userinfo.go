@@ -101,6 +101,80 @@ func TDEE(bmr float64, a string) float64 {
 	return bmr * al
 }
 
+// calculateMacros calculates and returns the recommended macronutrients given
+// user weight (lbs) and daily caloric intake.
+func calculateMacros(u *UserInfo) (float64, float64, float64) {
+	protein := 1 * u.Weight
+	carbs := 1.5 * u.Weight
+
+	totalCals := (protein * calsInProtein) + (carbs * calsInCarbs)
+	remainingCals := u.Phase.GoalCalories - totalCals
+	//fmt.Println("remainingCals =", remainingCals)
+
+	fats := remainingCals / 9
+
+	fmt.Printf("%f < protein=%f < %f\n%f < carbs=%f < %f\n%f < fats=%f < %f\n",
+		u.Macros.MinProtein, protein, u.Macros.MaxProtein, u.Macros.MinCarbs, carbs, u.Macros.MaxCarbs, u.Macros.MinFats, fats, u.Macros.MaxFats)
+
+	// If fat caculation is less than minimum allowed fats.
+	if u.Macros.MinFats > fats {
+		fmt.Println("Fats too low. Taking some from carbs")
+		// Get some calories from carbs and add to fats to reach minimum.
+
+		fatsNeeded := u.Macros.MinFats - fats
+		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+		fatCalsNeeded := fatsNeeded * 9
+		carbsToRemove := fatCalsNeeded / 4
+
+		// If we are able to remove carbs and still stay above the minimum
+		// carb limit,
+		if carbs-carbsToRemove > u.Phase.MinCarbs {
+			// then we are save to take the needed calories from carbs and put
+			// them towards reaching the minimum fat limit.
+			carbs -= carbsToRemove
+			fats += fatsNeeded
+			return protein, carbs, fats
+		}
+		// Otherwise, we remove what carbs we can and then take attempt to
+		// take the remaining calories from protein in an effor to maintain
+		// the minimum fat limit.
+
+		// Calculate the carbs we can take away before reaching minium carb
+		// limit.
+
+		// Calculate the remaining calories that are required to reach
+		// minimum fat limit.
+
+		// Attempt to take the remaining calories from protein.
+		if protein-proteinToRemove > u.Phase.MinProtein {
+			// then we are save to take the needed calories from the protein
+			// and put them towards reaching the minimum fat limit.
+			protein -= proteinToRemove
+			// TODO: fats += fatsNeeded?
+		}
+		// Otherwise, we have reached the each minimum carb and protein
+		// limit.
+
+		// Let the user that their daily calories are too lower and update
+		// their daily calories to the minimum allowed. That is,
+		// u.Phase.MinProtein * 4 + ... = u.Phase.GoalCalories
+
+		// Update their phase daily goal calories
+
+		// Set each macro to their minimum limit.
+	}
+
+	/*
+		// Round macros to two decimal places
+		protein = math.Round(protein*100) / 100
+		carbs = math.Round(carbs*100) / 100
+		fats = math.Round(fats*100) / 100
+	*/
+
+	return protein, carbs, fats
+}
+
+/*
 // Macros calculates and returns the recommended macronutrients given
 // user weight (lbs) and desired fat percentage.
 func calculateMacros(weight, fatPercent float64) (float64, float64, float64) {
@@ -111,6 +185,7 @@ func calculateMacros(weight, fatPercent float64) (float64, float64, float64) {
 
 	return protein, carbs, fats
 }
+*/
 
 // setMinMaxMacros calculates the minimum and maximum macronutrient in
 // grams using user's most recent logged bodyweight (lbs).
@@ -151,7 +226,7 @@ func PrintMetrics(u *UserInfo) {
 	fmt.Printf("TDEE: %.2f\n", t)
 
 	// Get suggested macro split.
-	protein, carbs, fats := calculateMacros(u.Weight, 0.4)
+	protein, carbs, fats := calculateMacros(u)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots
