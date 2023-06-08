@@ -103,7 +103,7 @@ func TDEE(bmr float64, a string) float64 {
 
 // Macros calculates and returns the recommended macronutrients given
 // user weight (lbs) and desired fat percentage.
-func CalculateMacros(weight, fatPercent float64) (float64, float64, float64) {
+func calculateMacros(weight, fatPercent float64) (float64, float64, float64) {
 	protein := 1 * weight
 	fats := fatPercent * weight
 	remaining := (protein * calsInProtein) + (fats * calsInFats)
@@ -151,7 +151,7 @@ func PrintMetrics(u *UserInfo) {
 	fmt.Printf("TDEE: %.2f\n", t)
 
 	// Get suggested macro split.
-	protein, carbs, fats := CalculateMacros(u.Weight, 0.4)
+	protein, carbs, fats := calculateMacros(u.Weight, 0.4)
 	fmt.Printf("Protein: %.2fg Carbs: %.2fg Fats: %.2fg\n", protein, carbs, fats)
 
 	// Create plots

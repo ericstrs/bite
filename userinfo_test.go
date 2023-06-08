@@ -7,7 +7,7 @@ func ExampleMifflin() {
 		Weight: 180.0, // lbs
 		Height: 180.0, // cm
 		Age:    30,
-		Gender: "male",
+		Sex:    "male",
 	}
 
 	result := Mifflin(&u)
@@ -48,7 +48,7 @@ func ExampleCalculateMacros() {
 	weight := 180.0 // lbs
 	fatPercent := 0.4
 
-	protein, carbs, fat := CalculateMacros(weight, fatPercent)
+	protein, carbs, fat := calculateMacros(weight, fatPercent)
 	fmt.Println("Protein:", protein)
 	fmt.Println("Carbs:", carbs)
 	fmt.Println("Fat:", fat)
