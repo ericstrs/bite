@@ -108,6 +108,10 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 	carbs := 1.5 * u.Weight
 
 	totalCals := (protein * calsInProtein) + (carbs * calsInCarbs)
+
+	// TODO: If calories so far exceed the goal calories, just set all carbs and
+	// fats to their minimum values. And let user know that they can't use
+	// that calorie goal and show updated goal.
 	remainingCals := u.Phase.GoalCalories - totalCals
 	//fmt.Println("remainingCals =", remainingCals)
 
@@ -128,7 +132,7 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 
 		// If we are able to remove carbs and still stay above the minimum
 		// carb limit,
-		if carbs-carbsToRemove > u.Phase.MinCarbs {
+		if carbs-carbsToRemove > u.Macros.MinCarbs {
 			// then we are save to take the needed calories from carbs and put
 			// them towards reaching the minimum fat limit.
 			carbs -= carbsToRemove
@@ -139,29 +143,72 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// take the remaining calories from protein in an effor to maintain
 		// the minimum fat limit.
 
-		// Calculate the carbs we can take away before reaching minium carb
+		// Calculate the carbs we can take away before reaching minimum carb
 		// limit.
+		carbsToRemove = carbs - u.Macros.MinCarbs
 
-		// Calculate the remaining calories that are required to reach
-		// minimum fat limit.
+		// Remove the carbs.
+		carbs -= carbsToRemove
+
+		// Calculate the calories in carbs that were removed.
+		carbsRemovedInCals := carbsToRemove * calsInCarbs
+
+		// Update fats using the carbs that were able to be taken.
+		fats += carbsRemovedInCals / 9
+
+		// Calculate the remaining fats need to reach minimum limit.
+		fatsNeeded = u.Macros.MinFats - fats
+		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+		fatCalsNeeded = fatsNeeded * 9
+
+		// Convert the remaining calories into protein.
+		proteinToRemove := fatCalsNeeded / 4
 
 		// Attempt to take the remaining calories from protein.
-		if protein-proteinToRemove > u.Phase.MinProtein {
+		if protein-proteinToRemove > u.Macros.MinProtein {
 			// then we are save to take the needed calories from the protein
 			// and put them towards reaching the minimum fat limit.
 			protein -= proteinToRemove
-			// TODO: fats += fatsNeeded?
+			fats += fatsNeeded
+			return protein, carbs, fats
 		}
 		// Otherwise, we have reached the each minimum carb and protein
 		// limit.
 
-		// Let the user that their daily calories are too lower and update
-		// their daily calories to the minimum allowed. That is,
-		// u.Phase.MinProtein * 4 + ... = u.Phase.GoalCalories
+		// Calculate the protein we are allowed to remove.
+		proteinToRemove = protein - u.Macros.MinProtein
 
-		// Update their phase daily goal calories
+		// Remove the protein.
+		protein -= proteinToRemove
 
-		// Set each macro to their minimum limit.
+		// Calculate the calories in protein that were removed.
+		proteinRemovedInCals := proteinToRemove * calsInProtein
+
+		// Update fats using the protein that were able to be taken.
+		fats += proteinRemovedInCals / 9
+
+		// Calculate the remaining fats needed to reach the minimum limit.
+		fatsNeeded = u.Macros.MinFats - fats
+		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+
+		if fatsNeeded != 0 {
+			// Let the user that their daily calories are too lower and update
+			// their daily calories to the minimum allowed. That is,
+			// u.Macros.MinProtein * 4 + ... = u.Phase.GoalCalories
+			fmt.Println("Fats and protein minimum limit has been reached. Unable to move calories from fats and protein to fats.")
+			fmt.Printf("Updating daily calorie goal of %f to the absolute minimum.", u.Phase.GoalCalories)
+
+			// Set fat to its minimum limit. This truncates the fats needed to
+			// reach the minimum limit, hence the recalculation of the daily
+			// caloires.
+			fats = u.Macros.MinFats
+
+			// Update their phase daily goal calories
+			u.Phase.GoalCalories = protein*4 + carbs*4 + fats*9
+			fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
+		}
+
+		return protein, carbs, fats
 	}
 
 	/*
