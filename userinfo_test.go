@@ -45,18 +45,89 @@ func ExampleLbsToKg() {
 }
 
 func ExampleCalculateMacros() {
-	weight := 180.0 // lbs
-	fatPercent := 0.4
+	u := UserInfo{
+		Weight: 180,
+		TDEE:   2700,
+	}
+	u.Phase.GoalCalories = 2400
 
-	protein, carbs, fat := calculateMacros(weight, fatPercent)
+	setMinMaxMacros(&u)
+
+	protein, carbs, fat := calculateMacros(&u)
 	fmt.Println("Protein:", protein)
 	fmt.Println("Carbs:", carbs)
 	fmt.Println("Fat:", fat)
 
 	// Output:
 	// Protein: 180
-	// Carbs: 342
-	// Fat: 72
+	// Carbs: 270
+	// Fat: 66.67
+}
+
+func ExampleCalculateMacros_extremeCut() {
+	u := UserInfo{
+		Weight: 180,
+		TDEE:   2700,
+	}
+	u.Phase.GoalCalories = 1200
+
+	setMinMaxMacros(&u)
+
+	protein, carbs, fat := calculateMacros(&u)
+	fmt.Println("Protein:", protein)
+	fmt.Println("Carbs:", carbs)
+	fmt.Println("Fat:", fat)
+
+	// Output:
+	// Fats are below minimum limit. Taking calories from carbs and moving them to fats.
+	// Minimum carb limit reached and fats are still under minimum amount. Attempting to take calories from protein and move them to fats.
+	// Protein: 124.49999999999999
+	// Carbs: 54
+	// Fat: 54
+}
+
+func ExampleCalculateMacros_exceedCutCals() {
+	u := UserInfo{
+		Weight: 180,
+		TDEE:   2700,
+	}
+	u.Phase.GoalCalories = 900
+
+	setMinMaxMacros(&u)
+
+	protein, carbs, fat := calculateMacros(&u)
+	fmt.Println("Protein:", protein)
+	fmt.Println("Carbs:", carbs)
+	fmt.Println("Fat:", fat)
+
+	// Output:
+	// Minimum macro values in calories exceed original calorie goal of 900.00
+	// New daily calorie goal: 918
+	// Protein: 54
+	// Carbs: 54
+	// Fat: 54
+}
+
+func ExampleCalculateMacros_extremeBulk() {
+	u := UserInfo{
+		Weight: 180,
+		TDEE:   2700,
+	}
+	u.Phase.GoalCalories = 6000
+
+	setMinMaxMacros(&u)
+
+	protein, carbs, fat := calculateMacros(&u)
+	fmt.Println("Protein:", protein)
+	fmt.Println("Carbs:", carbs)
+	fmt.Println("Fat:", fat)
+
+	// Output:
+	// Calculated fats are above maximum amount. Taking calories from fats and moving them to carbs.
+	// Carb maximum limit reached and fats are still over maximum amount. Attempting to take calories from fats and move them to protein.
+	// Protein: 180
+	// Carbs: 720
+	// Fat: 266.6666666666667
 }
 
 func ExampleSetMinMaxMacros() {
@@ -77,7 +148,7 @@ func ExampleSetMinMaxMacros() {
 	// Minimum daily protein: 54
 	// Maximum daily protein: 360
 	// Minimum daily carbs: 54
-	// Maximum daily carbs: 900
+	// Maximum daily carbs: 720
 	// Minimum daily fat: 54
 	// Maximum daily fat: 88.88888888888889
 }
