@@ -39,20 +39,12 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 	return logs, nil
 }
 
-// checkInput checks if the user input is between 0 and 30,000.
+// checkInput checks if the user input is positive
 func checkInput(n float64) error {
-	if 0 > n || n > 30000 {
+	if n < 0 {
 		return errors.New("invalid number")
 	}
 	return nil
-}
-
-// promptWeight prompts the user to enter their weight.
-func promptWeight() (weight float64, err error) {
-	fmt.Print("Enter weight in lbs: ")
-	fmt.Scanln(&weight)
-
-	return weight, checkInput(weight)
 }
 
 // promptCals prompts the user to enter caloric intake for the previous
@@ -64,38 +56,19 @@ func promptCals() (calories float64, err error) {
 	return calories, checkInput(calories)
 }
 
-// promptWeightCals prompts and returns user weight and caloric intake.
-func promptWeightCals() (weight float64, cals float64) {
-	// TODO: replace if statements with switch statement
-	//fmt.Println("Press 'q' to quit")
-
-	for {
-		weight, err := promptWeight()
-		if err != nil {
-			fmt.Printf("Couldn't read weight: %s\n\n", err)
-			continue
-		}
-
-		cals, err := promptCals()
-		if err != nil {
-			fmt.Printf("Couldn't read calories: %s\n\n", err)
-			continue
-		}
-
-		return weight, cals
-	}
-}
-
 // Log appends a new entry to the csv file passed in as an agurment.
 func Log(u *UserInfo, s string) error {
-	// Prompt the user for weight and calorie info.
-	weight, cals := promptWeightCals()
+	// Get user weight.
+	u.Weight = getWeight()
 
-	// Update user weight.
-	u.Weight = weight
+	// Get user calories for the day.
+	cals, err := promptCals()
+	if err != nil {
+		return err
+	}
 
 	// Save updated user info.
-	err := saveUserInfo(u)
+	err = saveUserInfo(u)
 	if err != nil {
 		return err
 	}
@@ -112,7 +85,7 @@ func Log(u *UserInfo, s string) error {
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", weight, cals, d.Format("2006-01-02"))
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, d.Format("2006-01-02"))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
