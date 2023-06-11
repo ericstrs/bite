@@ -3,6 +3,7 @@ package calories
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 
 	"gopkg.in/yaml.v2"
 )
@@ -103,37 +104,76 @@ func TDEE(bmr float64, a string) float64 {
 
 // calculateMacros calculates and returns the recommended macronutrients given
 // user weight (lbs) and daily caloric intake.
+//
+// This function prioritizes protein. Once optimal protein and carbs
+// have been calculated, fat is then calculated and checked for minimum
+// value. If fat is below the minimum limit, calories carbs are first to
+// be moved (followed by protein) in an attempt to reach the minimum
+// fat limit. This results in a possibly unbalanced macro split where
+// fats and carbs are at their minimum, but protein sits at its optimal
+// value.
 func calculateMacros(u *UserInfo) (float64, float64, float64) {
+	// Get the calories from the minimum macro values.
+	mc := getMacroCals(u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats)
+	if mc > u.Phase.GoalCalories {
+		// Let the user know their daily calories are too low and update
+		// daily calories to the minimum allowed.
+		fmt.Printf("Minimum macro values in calories exceed original calorie goal of %.2f\n", u.Phase.GoalCalories)
+
+		// Update phase daily goal calories.
+		u.Phase.GoalCalories = mc
+		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
+
+		return u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats
+	}
+
+	// Get the calories from the maximum macro values.
+	mc = getMacroCals(u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats)
+	if mc < u.Phase.GoalCalories {
+		// Let the user know their daily calories are too high and update
+		// daily calories to the maximum allowed.
+		fmt.Printf("Maximum macro values exceed original calorie goal of %f\n", u.Phase.GoalCalories)
+
+		// Update phase daily goal calories.
+		u.Phase.GoalCalories = mc
+		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
+
+		return u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats
+	}
+
+	// Calculate optimal protein and carb amounts.
 	protein := 1 * u.Weight
 	carbs := 1.5 * u.Weight
 
 	totalCals := (protein * calsInProtein) + (carbs * calsInCarbs)
 
-	// TODO: If calories so far exceed the goal calories, just set all carbs and
-	// fats to their minimum values. And let user know that they can't use
-	// that calorie goal and show updated goal.
 	remainingCals := u.Phase.GoalCalories - totalCals
-	//fmt.Println("remainingCals =", remainingCals)
 
 	fats := remainingCals / 9
 
-	fmt.Printf("%f < protein=%f < %f\n%f < carbs=%f < %f\n%f < fats=%f < %f\n",
-		u.Macros.MinProtein, protein, u.Macros.MaxProtein, u.Macros.MinCarbs, carbs, u.Macros.MaxCarbs, u.Macros.MinFats, fats, u.Macros.MaxFats)
+	/*
+		fmt.Printf("%f < protein=%f < %f\n%f < carbs=%f < %f\n%f < fats=%f < %f\n",
+			u.Macros.MinProtein, protein, u.Macros.MaxProtein, u.Macros.MinCarbs, carbs, u.Macros.MaxCarbs, u.Macros.MinFats, fats, u.Macros.MaxFats)
+	*/
 
 	// If fat caculation is less than minimum allowed fats.
 	if u.Macros.MinFats > fats {
-		fmt.Println("Fats too low. Taking some from carbs")
+		fmt.Println("Fats are below minimum limit. Taking calories from carbs and moving them to fats.")
 		// Get some calories from carbs and add to fats to reach minimum.
 
 		fatsNeeded := u.Macros.MinFats - fats
-		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+
+		/*
+			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+		*/
+
 		fatCalsNeeded := fatsNeeded * 9
 		carbsToRemove := fatCalsNeeded / 4
 
 		// If we are able to remove carbs and still stay above the minimum
 		// carb limit,
 		if carbs-carbsToRemove > u.Macros.MinCarbs {
-			// then we are save to take the needed calories from carbs and put
+			// then we are safe to take the needed calories from carbs and put
 			// them towards reaching the minimum fat limit.
 			carbs -= carbsToRemove
 			fats += fatsNeeded
@@ -142,6 +182,8 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// Otherwise, we remove what carbs we can and then take attempt to
 		// take the remaining calories from protein in an effor to maintain
 		// the minimum fat limit.
+
+		fmt.Println("Minimum carb limit reached and fats are still under minimum amount. Attempting to take calories from protein and move them to fats.")
 
 		// Calculate the carbs we can take away before reaching minimum carb
 		// limit.
@@ -154,19 +196,23 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		carbsRemovedInCals := carbsToRemove * calsInCarbs
 
 		// Update fats using the carbs that were able to be taken.
-		fats += carbsRemovedInCals / 9
+		fats += carbsRemovedInCals / calsInFats
 
 		// Calculate the remaining fats need to reach minimum limit.
 		fatsNeeded = u.Macros.MinFats - fats
-		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
-		fatCalsNeeded = fatsNeeded * 9
+
+		/*
+			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+		*/
+
+		fatCalsNeeded = fatsNeeded * calsInFats
 
 		// Convert the remaining calories into protein.
-		proteinToRemove := fatCalsNeeded / 4
+		proteinToRemove := fatCalsNeeded / calsInProtein
 
 		// Attempt to take the remaining calories from protein.
 		if protein-proteinToRemove > u.Macros.MinProtein {
-			// then we are save to take the needed calories from the protein
+			// then we are safe to take the needed calories from the protein
 			// and put them towards reaching the minimum fat limit.
 			protein -= proteinToRemove
 			fats += fatsNeeded
@@ -187,52 +233,107 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// Update fats using the protein that were able to be taken.
 		fats += proteinRemovedInCals / 9
 
-		// Calculate the remaining fats needed to reach the minimum limit.
-		fatsNeeded = u.Macros.MinFats - fats
-		fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
-
-		if fatsNeeded != 0 {
-			// Let the user that their daily calories are too lower and update
-			// their daily calories to the minimum allowed. That is,
-			// u.Macros.MinProtein * 4 + ... = u.Phase.GoalCalories
-			fmt.Println("Fats and protein minimum limit has been reached. Unable to move calories from fats and protein to fats.")
-			fmt.Printf("Updating daily calorie goal of %f to the absolute minimum.", u.Phase.GoalCalories)
-
-			// Set fat to its minimum limit. This truncates the fats needed to
-			// reach the minimum limit, hence the recalculation of the daily
-			// caloires.
-			fats = u.Macros.MinFats
-
-			// Update their phase daily goal calories
-			u.Phase.GoalCalories = protein*4 + carbs*4 + fats*9
-			fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
-		}
-
-		return protein, carbs, fats
+		/*
+			// Calculate the remaining fats needed to reach the minimum limit.
+			fatsNeeded = u.Macros.MinFats - fats
+			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
+		*/
 	}
 
-	/*
-		// Round macros to two decimal places
-		protein = math.Round(protein*100) / 100
-		carbs = math.Round(carbs*100) / 100
-		fats = math.Round(fats*100) / 100
-	*/
+	// If fat caculation is greater than maximum allowed fats.
+	if u.Macros.MaxFats < fats {
+
+		fmt.Println("Calculated fats are above maximum amount. Taking calories from fats and moving them to carbs.")
+		// Get some calories from carbs and add to fats to reach maximum.
+
+		fatsToRemove := fats - u.Macros.MaxFats
+
+		/*
+			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
+		*/
+
+		fatsToRemoveCals := fatsToRemove * calsInFats
+		carbsToAdd := fatsToRemoveCals / calsInCarbs
+
+		// If we are able to adds carbs and still stay below the maximum
+		// carb limit,
+		if carbs+carbsToAdd < u.Macros.MaxCarbs {
+			// then we are safe to adds to carbs.
+			fats -= fatsToRemove
+			carbs += carbsToAdd
+			return protein, carbs, fats
+		}
+		// Otherwise, we remove what carbs we can and then take attempt to
+		// take the remaining calories from protein in an effor to maintain
+		// the minimum fat limit.
+
+		fmt.Println("Carb maximum limit reached and fats are still over maximum amount. Attempting to take calories from fats and move them to protein.")
+
+		// Calculate the carbs we can add before reaching maximum carb limit.
+		carbsToAdd = u.Macros.MaxCarbs - carbs
+
+		// Add the carbs.
+		carbs += carbsToAdd
+
+		// Calculate the calories in carbs that were added.
+		carbsAddedInCals := carbsToAdd * calsInCarbs
+
+		// Update fats using the carbs that were able to be added.
+		fats -= carbsAddedInCals / calsInFats
+
+		// Calculate the remaining fats need to be added reach maximum limit.
+		fatsToRemove = fats - u.Macros.MaxFats
+
+		/*
+			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
+		*/
+
+		fatsToRemoveCals = fatsToRemove * calsInFats
+
+		// Convert the remaining calories into protein.
+		proteinToAdd := fatsToRemoveCals / calsInProtein
+
+		// Attempt to adds the excess fats calories to protein.
+		if protein+proteinToAdd < u.Macros.MaxProtein {
+			// then we are safe to adds the excess fat to protein.
+			fats -= fatsToRemove
+			protein += proteinToAdd
+			return protein, carbs, fats
+		}
+		// Otherwise, we have reached the each maximum carb and protein
+		// limit.
+
+		// Calculate the protein we are allowed to add.
+		proteinToAdd = u.Macros.MaxProtein - protein
+
+		// Add the protein.
+		protein += proteinToAdd
+
+		// Calculate the calories in protein that were added.
+		proteinAddedInCals := proteinToAdd * calsInProtein
+
+		// Update fats using the protein that were able to be added.
+		fats += proteinAddedInCals / calsInFats
+
+		/*
+			// Calculate the remaining fats needed to reach the maximum limit.
+			fatsToRemove = fats - u.Macros.MaxFats
+			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
+		*/
+	}
+
+	// Round macros to two decimal places
+	protein = math.Round(protein*100) / 100
+	carbs = math.Round(carbs*100) / 100
+	fats = math.Round(fats*100) / 100
 
 	return protein, carbs, fats
 }
 
-/*
-// Macros calculates and returns the recommended macronutrients given
-// user weight (lbs) and desired fat percentage.
-func calculateMacros(weight, fatPercent float64) (float64, float64, float64) {
-	protein := 1 * weight
-	fats := fatPercent * weight
-	remaining := (protein * calsInProtein) + (fats * calsInFats)
-	carbs := remaining / calsInCarbs
-
-	return protein, carbs, fats
+// getMacroCals calculates and returns the amount of calories given macronutrients.
+func getMacroCals(protein, carbs, fats float64) float64 {
+	return (protein * calsInProtein) + (carbs * calsInCarbs) + (fats * calsInFats)
 }
-*/
 
 // setMinMaxMacros calculates the minimum and maximum macronutrient in
 // grams using user's most recent logged bodyweight (lbs).
@@ -250,9 +351,9 @@ func setMinMaxMacros(u *UserInfo) {
 	// Minimum carb daily intake needed for *health* is about
 	// 0.3g of carb per pound of bodyweight.
 	u.Macros.MinCarbs = 0.3 * u.Weight
-	// Maximum carb intake for general health is 5g of carb per pound of
+	// Maximum carb intake for general health is 4g of carb per pound of
 	// bodyweight.
-	u.Macros.MaxCarbs = 5 * u.Weight
+	u.Macros.MaxCarbs = 4 * u.Weight
 
 	// Minimum daily fat intake is 0.3g per pound of bodyweight.
 	u.Macros.MinFats = 0.3 * u.Weight
