@@ -324,17 +324,33 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 			return err
 		}
 
+		var consecutiveMissedWeeks int
+		var avgTotal float64
+
 		// Ensure user is meeting weekly weight loss.
-		err = checkCutLoss(u, logs)
+		consecutiveMissedWeeks, avgTotal, err = checkCutLoss(u, logs)
 		if err != nil {
 			return err
 		}
+
+		// If two  weeks of the user not meeting the weekly weight loss goal,
+		// then update accordingly.
+		if consecutiveMissedWeeks >= 2 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			adjustCutPhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
+		}
 	case "maintain":
 		// Ensure user is maintaing weight.
-		err := checkMaintenance(u, logs)
-
+		consecutiveMissedWeeks, avgTotal, err := checkMaintenance(u, logs)
 		if err != nil {
 			return err
+		}
+
+		// If there has been there has been more than three weeks of missing
+		// maintience goal, adjust maintience.
+		if consecutiveMissedWeeks >= 3 {
+			fmt.Printf("The weekly weight loss goal of %f has not been met for three consecutive weeks.", u.Phase.WeeklyChange)
+			adjustMaintenancePhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
 		}
 	case "bulk":
 		// Ensure user has not gained too much weight.
@@ -343,11 +359,21 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 			return err
 		}
 
+		var consecutiveMissedWeeks int
+		var avgTotal float64
 		// Ensure user is metting weekly weight gain.
-		err = checkBulkGain(u, logs)
+		consecutiveMissedWeeks, avgTotal, err = checkBulkGain(u, logs)
 		if err != nil {
 			return err
 		}
+
+		// If there has been 2 weeks of the user not meeting the weekly
+		// weight gain goal, then adjust the bulk phase.
+		if consecutiveMissedWeeks >= 2 {
+			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			adjustBulkPhase(u, avgTotal/float64(consecutiveMissedWeeks))
+		}
+
 	}
 
 	return nil
@@ -502,7 +528,7 @@ func checkCutThreshold(u *UserInfo) error {
 //
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
-func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
+func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error) {
 
 	consecutiveMissedWeeks := 0
 	avgTotal := 0.0
@@ -514,7 +540,7 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 
 		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
-			return err
+			return 0, 0, err
 		}
 
 		// TODO: Current check if week average is aligned with goal average may be
@@ -530,15 +556,11 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) error {
 		consecutiveMissedWeeks++
 		avgTotal += avgWeekWeightChange
 
-		// If two  weeks of the user not meeting the weekly weight loss goal,
-		// then update accordingly.
 		if consecutiveMissedWeeks >= 2 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
-			adjustCutPhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
 			break
 		}
 	}
-	return nil
+	return consecutiveMissedWeeks, avgTotal, nil
 }
 
 // adjustCutPhase calulates the daily caloric deficit and then attempts
@@ -560,7 +582,8 @@ func adjustCutPhase(u *UserInfo, avgWeekWeightChange float64) {
 
 	// Update calorie goal.
 	u.Phase.GoalCalories -= deficit
-	fmt.Printf("Reducing caloric deficit by %f calories\n", deficit)
+	fmt.Printf("Reducing caloric deficit by %.2f calories.\n", deficit)
+	fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
 
 	// Convert caloric deficit to fats in grams.
 	fatDeficit := deficit * calsInFats
@@ -615,10 +638,12 @@ func adjustCutPhase(u *UserInfo, avgWeekWeightChange float64) {
 	// If the remaining calories are not zero, then stop removing macros
 	// and update the diet goal calories.
 	if remaining != 0 {
-		fmt.Printf("Could not reach a deficit of %f as the minimum fat, carb, and protein values have been met.\n", deficit)
-		fmt.Printf("Updating caloric deficit to %f\n", deficit-remaining)
+		fmt.Printf("Could not reach a deficit of %.2f as the minimum fat, carb, and protein limits have been met.\n", deficit)
+		fmt.Printf("Updating caloric deficit to %.2f\n", deficit-remaining)
 		// Override initial cut calorie goal.
 		u.Phase.GoalCalories = u.TDEE - deficit + remaining
+		fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
+		return
 	}
 }
 
@@ -798,13 +823,10 @@ func validateNextAction(a string) error {
 	return nil
 }
 
-// TODO:
-// * This function shouly only perform the check; not the adjustment
-//
 // checkMaintenance ensures user is maintaining the same weight.
-func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) error {
-	lower := u.Phase.StartWeight * -1.25
-	upper := u.Phase.StartWeight * +1.25
+func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error) {
+	lower := u.Phase.StartWeight * -0.0125
+	upper := u.Phase.StartWeight * 0.0125
 
 	consecutiveMissedWeeks := 0
 	avgTotal := 0.0
@@ -816,11 +838,11 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) error {
 
 		weekAverageWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
-			return err
+			return 0, 0, err
 		}
-		// TODO: put this check logic into metMaintenanceGoal
+
 		// If the week has met the weight loss goal, then restart the count.
-		if valid && weekAverageWeightChange < upper && lower > weekAverageWeightChange { // TODO: AND so far, the weekly averages are close to zero.
+		if valid && weekAverageWeightChange < upper && lower < weekAverageWeightChange {
 			consecutiveMissedWeeks = 0
 			avgTotal = 0
 			continue
@@ -830,20 +852,17 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) error {
 		consecutiveMissedWeeks++
 		avgTotal += weekAverageWeightChange
 
-		// If there has been there has been more than three weeks of missing
-		// maintience goal, adjust maintience.
 		if consecutiveMissedWeeks >= 3 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for three consecutive weeks.", u.Phase.WeeklyChange)
-			adjustMaintiencePhase(u, avgTotal/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
+			break
 		}
 	}
 
-	return nil
+	return consecutiveMissedWeeks, avgTotal, nil
 }
 
-// adjustMaintiencePhase calculates the daily average change in
+// adjustMaintenancePhase calculates the daily average change in
 // weight adjusts the daily calorie goal accordingly.
-func adjustMaintiencePhase(u *UserInfo, avgWeekWeightChange float64) {
+func adjustMaintenancePhase(u *UserInfo, avgWeekWeightChange float64) {
 	// Get weekly average weight change.
 	avgWeekWeightChangeCals := avgWeekWeightChange * calsPerPound
 	// Get daily average weight change.
@@ -854,18 +873,20 @@ func adjustMaintiencePhase(u *UserInfo, avgWeekWeightChange float64) {
 		// remove calories from daily calorie goal.
 		u.Phase.GoalCalories -= avgDayWeightChangeCals
 		fmt.Printf("Reducing diet calorie goal by %f calories.\n", avgDayWeightChangeCals)
+		fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
 		return
 	}
 
 	// Otherwise, week weight change was negative.
 	// Add calories to daily calorie goal.
 	u.Phase.GoalCalories += avgDayWeightChangeCals
-	fmt.Printf("Adding %f to diet calorie goal.\n", avgDayWeightChangeCals)
+	fmt.Printf("Removing %.2f calories from diet calorie goal.\n", math.Abs(avgDayWeightChangeCals))
+	fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
 }
 
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
-func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
+func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error) {
 	consecutiveMissedWeeks := 0
 	avgTotal := 0.0
 
@@ -875,7 +896,7 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
 
 		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
-			return err
+			return 0, 0, err
 		}
 
 		// If week has met the weight gain goal, then restart the count.
@@ -888,14 +909,11 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) error {
 		consecutiveMissedWeeks++
 		avgTotal += avgWeekWeightChange
 
-		// If there has been 2 weeks of the user not meeting the weekly
-		// weight gain goal, then adjust the bulk phase.
-		if consecutiveMissedWeeks >= 2 {
-			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
-			adjustBulkPhase(u, avgTotal/float64(consecutiveMissedWeeks))
+		if consecutiveMissedWeeks > 2 {
+			break
 		}
 	}
-	return nil
+	return consecutiveMissedWeeks, avgTotal, nil
 }
 
 // adjustBulkPhase calculates the caloric surplus and then attempts to
@@ -914,7 +932,8 @@ func adjustBulkPhase(u *UserInfo, avgWeekWeightChange float64) {
 
 	// Update calorie goal.
 	u.Phase.GoalCalories += surplus
-	fmt.Printf("Adding to caloric surplus by %f calories\n", surplus)
+	fmt.Printf("Adding to caloric surplus by %.2f calories.\n", surplus)
+	fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
 
 	// Convert surplus in calories to carbs in grams.
 	carbSurplus := surplus * calsInCarbs
@@ -978,10 +997,11 @@ func adjustBulkPhase(u *UserInfo, avgWeekWeightChange float64) {
 	// If the remaining calories are not zero, then stop adding to macros
 	// and update the diet goal calories and return.
 	if remaining != 0 {
-		fmt.Printf("Could not reach a surplus of %f as the minimum fat, carb, and protein values have been    met.\n", surplus)
-		fmt.Printf("Updating caloric surplus to %f\n", surplus-remaining)
+		fmt.Printf("Could not reach a surplus of %f since the maximum fat, carb, and protein limits were met before the entire surplus could be applied.\n", surplus)
+		fmt.Printf("Updating caloric surplus to %f.\n", surplus-remaining)
 		// Override initial cut calorie goal.
 		u.Phase.GoalCalories = u.TDEE + surplus - remaining
+		fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
 		return
 	}
 }
@@ -1057,7 +1077,7 @@ func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time
 }
 
 // findEntryIdx finds the index of an entry given a date.
-func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
+func findEntryIdx(logs *dataframe.DataFrame, day time.Time) (int, error) {
 	var startIdx int
 	// Find the index of weekStart in the data frame.
 	for i := 0; i < logs.NRows(); i++ {
@@ -1067,7 +1087,7 @@ func findEntryIdx(logs *dataframe.DataFrame, weekStart time.Time) (int, error) {
 			return 0, err
 		}
 
-		if date.Equal(weekStart) {
+		if date.Equal(day) {
 			startIdx = i
 			break
 		}
@@ -1176,14 +1196,14 @@ func processUserInfo(u *UserInfo) {
 	// to the weight of the user when the user begins the diet.
 	u.Phase.StartWeight = u.Weight
 
+	// Set min and max values for macros.
+	setMinMaxMacros(u)
+
 	// Set suggested macro split.
-	protein, carbs, fats := calculateMacros(u.Weight, 0.4)
+	protein, carbs, fats := calculateMacros(u)
 	u.Macros.Protein = protein
 	u.Macros.Carbs = carbs
 	u.Macros.Fats = fats
-
-	// Set min and max values for macros.
-	setMinMaxMacros(u)
 
 	// Print new phase information to user.
 	promptConfirmation(u)
