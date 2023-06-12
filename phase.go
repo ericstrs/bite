@@ -69,22 +69,24 @@ func ReadConfig() (u *UserInfo, err error) {
 }
 
 // generateConfig generates a new config file for the user.
-func generateConfig() (u *UserInfo, err error) {
+func generateConfig() (*UserInfo, error) {
 	fmt.Println("Welcome! Please provide required information:")
 
-	// Get user details.
-	getUserInfo(u)
+	u := UserInfo{}
 
-	processUserInfo(u)
+	// Get user details.
+	getUserInfo(&u)
+
+	processUserInfo(&u)
 
 	// Save user info to config file.
-	err = saveUserInfo(u)
+	err := saveUserInfo(&u)
 	if err != nil {
 		log.Println("Failed to save user info:", err)
 		return nil, err
 	}
 
-	return u, nil
+	return &u, nil
 }
 
 // getUserInfo prompts for user details.
@@ -130,7 +132,7 @@ func getSex() (s string) {
 func promptSex() (s string) {
 	// Prompt user for their sex.
 	fmt.Print("Enter sex (male/female): ")
-	fmt.Scanln(s)
+	fmt.Scanln(&s)
 	return s
 }
 
@@ -1183,10 +1185,10 @@ func printTransitionSuggestion(phase string) {
 // diet duration, calculates macros, prompts for confirmation, and
 // updates the user information.
 func processUserInfo(u *UserInfo) {
-	getPhaseInfo(u)
-
-	// Get the phase the user wants to transition into.
+	// Get the phase the user wants to start.
 	u.Phase.Name = getDietPhase()
+
+	getPhaseInfo(u)
 
 	// Set min and max diet phase duration.
 	setMinMaxPhaseDuration(u)
@@ -1230,15 +1232,16 @@ func getPhaseInfo(u *UserInfo) {
 // getDietChoice prompts user for their diet choice, validates their
 // reponse until they enter a valid diet choice, and returns the valid
 // diet choice.
-func getDietChoice(u *UserInfo) (c string) {
+func getDietChoice(u *UserInfo) string {
 	fmt.Println("Step 3: Choose diet goal.")
 
 	// Print to user recommended and custom diet goal options.
 	printDietChoices(u.Phase.Name)
 
+	var c string
 	for {
 		// Prompt user for diet goal.
-		c := promptDietChoice()
+		c = promptDietChoice()
 
 		// Validate user response.
 		err := validateDietChoice(c)
