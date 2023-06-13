@@ -17,8 +17,13 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type WeightGainStatus int
+
 const (
-	calsPerPound = 3500 // Estimated calories per pound of bodyweight.
+	calsPerPound                     = 3500 // Estimated calories per pound of bodyweight.
+	gainedTooLittle WeightGainStatus = -1
+	withinRange     WeightGainStatus = 0
+	gainedTooMuch   WeightGainStatus = 1
 )
 
 type PhaseInfo struct {
@@ -63,7 +68,7 @@ func ReadConfig() (u *UserInfo, err error) {
 		log.Printf("Error: Can't unmarshal YAML: %v\n", err)
 		return nil, err
 	}
-	fmt.Println("Loaded user info.")
+	log.Println("Loaded user info.")
 
 	return u, nil
 }
@@ -368,6 +373,8 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		if err != nil {
 			return err
 		}
+
+		// TODO: switch status {...}
 
 		// If there has been 2 weeks of the user not meeting the weekly
 		// weight gain goal, then adjust the bulk phase.
@@ -734,6 +741,7 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 
 	// If today comes after diet end date, diet phase is over.
 	if t.After(u.Phase.EndDate) {
+		fmt.Println("Diet phase completed! Starting the diet phase transistion process.")
 		// Process phase transition
 		err := processPhaseTransition(u)
 		if err != nil {
@@ -888,9 +896,11 @@ func adjustMaintenancePhase(u *UserInfo, avgWeekWeightChange float64) {
 
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
-func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error) {
-	consecutiveMissedWeeks := 0
-	avgTotal := 0.0
+func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, int, float64, error) {
+	weeksGainedTooMuch := 0   // Consecutive weeks where the user gained too much weight.
+	weeksGainedTooLittle := 0 // Consecutive weeks where the user gained too little weight.
+	avgTotalGain := 0.0
+	avgTotalLoss := 0.0
 
 	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
@@ -898,24 +908,69 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error)
 
 		avgWeekWeightChange, valid, err := avgWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
-			return 0, 0, err
+			return -2, 0, 0, err
 		}
 
-		// If week has met the weight gain goal, then restart the count.
-		if valid && avgWeekWeightChange >= u.Phase.WeeklyChange {
-			consecutiveMissedWeeks = 0
-			avgTotal = 0
+		if !valid {
+			weeksGainedTooLittle = 0
+			weeksGainedTooMuch = 0
+			avgTotalGain = 0
+			avgTotalLoss = 0
 			continue
 		}
 
-		consecutiveMissedWeeks++
-		avgTotal += avgWeekWeightChange
+		status := metWeeklyGoalBulk(u, avgWeightChangeWeek)
 
-		if consecutiveMissedWeeks > 2 {
-			break
+		switch status {
+		case gainedTooLittle:
+			weeksGainedTooLittle++
+			weeksGainedTooMuch = 0
+			avgTotalGain = 0
+			avgTotalLoss += avgWeightChangeWeek
+		case gainedTooMuch:
+			weeksGainedTooMuch++
+			weeksGainedTooLittle = 0
+			avgTotalLoss = 0
+			avgTotalGain += avgWeightChangeWeek
+		case withinRange:
+			weeksGainedTooLittle = 0
+			weeksGainedTooMuch = 0
+			avgTotalGain = 0
+			avgTotalLoss = 0
+		}
+
+		if weeksGainedTooLittle > 2 {
+			return status, weeksGainedTooLittle, avgTotalLoss, nil
+		}
+
+		if weeksGainedTooMuch > 2 {
+			return status, weeksGainedTooMuch, avgTotalGain, nil
 		}
 	}
-	return consecutiveMissedWeeks, avgTotal, nil
+
+	return withinRange, 0, 0, nil
+}
+
+// TODO:
+// * Does having a tolerance allow user to end up drastically far from
+// their goal AND not notify them of the bad progress?
+//
+// metWeeklyGoalBulk checks to see if a given week has met the weekly
+// change in weight goal
+func metWeeklyGoalBulk(u *UserInfo, avgWeekWeightChange float64) WeightGainStatus {
+	lowerTolerance := avgWeekWeightChange * 0.1
+	upperTolerance := avgWeekWeightChange * 0.2
+
+	// If user did not gain enough this week,
+	if avgWeekWeightChange-lowerTolerance <= u.Phase.WeeklyChange {
+		return gainedTooLittle
+	}
+	// If user gained too much this week,
+	if avgWeekWeightChange+upperTolerance >= u.Phase.WeeklyChange {
+		return gainedTooMuch
+	}
+
+	return withinRange
 }
 
 // adjustBulkPhase calculates the caloric surplus and then attempts to
@@ -1053,7 +1108,7 @@ func avgWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time
 		// Get the previous weight to current day.
 		previousWeight, err := getPrecedingWeightToDay(u, logs, weight, startIdx+i)
 		if err != nil {
-			return 0, false, nil
+			return 0, false, err
 		}
 
 		// Calculate the weight change between two days.
@@ -1143,7 +1198,7 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 // to, validated their response until they enter a valid transistion
 // option, savesd next phase to config file, and returns error to indicate success or failure.
 func processPhaseTransition(u *UserInfo) error {
-	fmt.Println("Step 1: Diet phase recap") // TODO: This may not work when called from CheckDietProgress.
+	fmt.Println("Step 1: Diet phase recap")
 	fmt.Printf("Goal weight: %f. Current weight: %f\n", u.Phase.GoalWeight, u.Weight)
 
 	printTransitionSuggestion(u.Phase.Name)
@@ -1162,7 +1217,7 @@ func processPhaseTransition(u *UserInfo) error {
 		log.Println("Failed to save user info:", err)
 		return err
 	}
-	fmt.Println("User info saved successfully.")
+	log.Println("User info saved successfully.")
 
 	return nil
 }
@@ -1188,15 +1243,15 @@ func processUserInfo(u *UserInfo) {
 	// Get the phase the user wants to start.
 	u.Phase.Name = getDietPhase()
 
-	getPhaseInfo(u)
-
-	// Set min and max diet phase duration.
-	setMinMaxPhaseDuration(u)
-
 	// Set initial start weight.
 	// Note: If diet is sometime in the future, this field will be upated
 	// to the weight of the user when the user begins the diet.
 	u.Phase.StartWeight = u.Weight
+
+	getPhaseInfo(u)
+
+	// Set min and max diet phase duration.
+	setMinMaxPhaseDuration(u)
 
 	// Set min and max values for macros.
 	setMinMaxMacros(u)
@@ -1344,8 +1399,8 @@ func handleCustomDiet(u *UserInfo) {
 	// Initialize last checked date.
 	u.Phase.LastCheckedDate = u.Phase.StartDate
 
-	// Get diet end date.
-	u.Phase.EndDate = getEndDate(u)
+	// set diet end date.
+	setEndDate(u)
 
 	// Get diet goal weight.
 	u.Phase.GoalWeight = getGoalWeight(u)
@@ -1386,7 +1441,7 @@ func getStartDate(u *UserInfo) (date time.Time) {
 		var err error
 		date, err = validateDate(r)
 		if err != nil {
-			fmt.Println("Invalid date. Please try again.")
+			fmt.Println("%v. Please try again.", err)
 			continue
 		}
 
@@ -1395,25 +1450,25 @@ func getStartDate(u *UserInfo) (date time.Time) {
 	return date
 }
 
-// getEndDate prompts user for diet end date, validates user response
+// setEndDate prompts user for diet end date, validates user response
 // until user enters valid date, and returns valid date.
-func getEndDate(u *UserInfo) (date time.Time) {
+func setEndDate(u *UserInfo) {
 	for {
 		// Prompt user for diet end date.
-		r := promptDate("Enter diet end date (YYYY-MM-DD)")
+		r := promptDate("Enter diet end date (YYYY-MM-DD): ")
 
 		// Validate user response.
 		date, duration, err := validateEndDate(r, u)
 		if err != nil {
-			fmt.Println("Invalid date. Please try again.")
+			fmt.Println("%v. Please try again.", err)
 			continue
 		}
+
 		u.Phase.EndDate = date
 		u.Phase.Duration = duration
 
 		break
 	}
-	return date
 }
 
 // promptDate prompts and returns diet start date.
@@ -1566,7 +1621,7 @@ func setMinMaxPhaseDuration(u *UserInfo) {
 		u.Phase.MinDuration = 6
 	case "maintain":
 		u.Phase.MaxDuration = math.Inf(1)
-		u.Phase.MinDuration = 4
+		u.Phase.MinDuration = 0
 	case "bulk":
 		u.Phase.MaxDuration = 16
 		u.Phase.MinDuration = 6
@@ -1575,22 +1630,21 @@ func setMinMaxPhaseDuration(u *UserInfo) {
 
 // promptConfirmation prints diet summary to the user.
 func promptConfirmation(u *UserInfo) {
-	// Find difference from goal and start weight.
-	diff := u.Phase.GoalWeight - u.Phase.StartWeight
-
 	// Display current information to the user.
 	fmt.Println("Summary:")
-	fmt.Printf("Diet duration: %s-%s (%f weeks)\n", u.Phase.StartDate, u.Phase.EndDate, u.Phase.Duration)
+	fmt.Println("Diet start date:", u.Phase.StartDate.Format("2006-01-02"))
+	fmt.Println("Diet end date:", u.Phase.EndDate.Format("2006-01-02"))
+	fmt.Println("Diet duration:", u.Phase.Duration)
 
 	switch u.Phase.Name {
 	case "cut":
-		fmt.Printf("Target weight %f (%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Printf("Target weight: %.2f (%.2f lbs)\n", u.Phase.GoalWeight, u.Phase.StartWeight-u.Phase.GoalWeight)
 		fmt.Println("During your cut, you should lean slightly on the side of doing more high-volume training.")
 	case "maintain":
-		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Printf("Target weight: %.2f\n", u.Phase.GoalWeight)
 		fmt.Println("During your maintenance, you should lean towards low-volume training (3-10 rep strength training). Get active rest (barely any training and just living life for two weeks is also an option). This phase is meant to give your body a break to recharge for future hard  training.")
 	case "bulk":
-		fmt.Printf("Target weight %f (+%.2f lbs)\n", u.Weight+diff, diff)
+		fmt.Printf("Target weight: %.2f (+%.2f lbs)\n", u.Phase.GoalWeight, u.Phase.GoalWeight-u.Phase.StartWeight)
 		fmt.Println("During your bulk, you can just train as you normally would.")
 	}
 }
