@@ -200,6 +200,14 @@ func ExampleRemoveCals() {
 	// New calorie goal: 2720.14.
 }
 
+func ExampleValidateAction() {
+	err := validateAction("1")
+	fmt.Println(err)
+
+	// Output:
+	// <nil>
+}
+
 func ExampleValidateNextAction() {
 	err := validateNextAction("1")
 	fmt.Println(err)
