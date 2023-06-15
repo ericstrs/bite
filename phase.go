@@ -18,12 +18,20 @@ import (
 )
 
 type WeightGainStatus int
+type WeightLossStatus int
+type WeightMaintenanceStatus int
 
 const (
-	calsPerPound                     = 3500 // Estimated calories per pound of bodyweight.
-	gainedTooLittle WeightGainStatus = -1
-	withinRange     WeightGainStatus = 0
-	gainedTooMuch   WeightGainStatus = 1
+	calsPerPound                            = 3500 // Estimated calories per pound of bodyweight.
+	gainedTooLittle WeightGainStatus        = -1
+	withinGainRange WeightGainStatus        = 0
+	gainedTooMuch   WeightGainStatus        = 1
+	lostTooLittle   WeightLossStatus        = -1
+	withinLossRange WeightLossStatus        = 0
+	lostTooMuch     WeightLossStatus        = 1
+	lost            WeightMaintenanceStatus = -1
+	maintained      WeightMaintenanceStatus = 0
+	gained          WeightMaintenanceStatus = 1
 )
 
 type PhaseInfo struct {
@@ -332,7 +340,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		}
 
 		var total float64
-		var status WeightGainStatus
+		var status WeightLossStatus
 
 		// Ensure user is meeting weekly weight loss.
 		status, total, err = checkCutLoss(u, logs)
@@ -341,26 +349,29 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		}
 
 		switch status {
-		case gainedTooLittle:
+		case lostTooLittle:
 			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
 			addCals(u, total)
-		case gainedTooMuch:
+		case lostTooMuch:
 			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
 			removeCals(u, total)
-		case withinRange: // Do nothing
+		case withinLossRange: // Do nothing
 		}
 	case "maintain":
 		// Ensure user is maintaing weight.
-		consecutiveMissedWeeks, total, err := checkMaintenance(u, logs)
+		status, total, err := checkMaintenance(u, logs)
 		if err != nil {
 			return err
 		}
 
-		// If there has been there has been more than three weeks of missing
-		// maintience goal, adjust maintience.
-		if consecutiveMissedWeeks >= 3 {
-			fmt.Printf("The weekly weight loss goal of %f has not been met for three consecutive weeks.", u.Phase.WeeklyChange)
-			adjustMaintenancePhase(u, total/float64(consecutiveMissedWeeks)) // Adjust weight loss plan.
+		switch status {
+		case lost:
+			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			addCals(u, total)
+		case gained:
+			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
+			removeCals(u, total)
+		case maintained: // Do nothing
 		}
 	case "bulk":
 		// Ensure user has not gained too much weight.
@@ -384,7 +395,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		case gainedTooMuch:
 			fmt.Printf("The weekly weight gain goal of %f has not been met for two consecutive weeks.", u.Phase.WeeklyChange)
 			removeCals(u, total)
-		case withinRange: // Do nothing
+		case withinGainRange: // Do nothing
 		}
 	}
 
@@ -537,11 +548,11 @@ func checkCutThreshold(u *UserInfo) error {
 
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
-func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, float64, error) {
-	weeksGainedTooMuch := 0   // Consecutive weeks where the user gained too much weight.
-	weeksGainedTooLittle := 0 // Consecutive weeks where the user gained too little weight.
-	totalGain := 0.0
-	totalLoss := 0.0
+func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, float64, error) {
+	weeksLostTooMuch := 0   // Consecutive weeks where the user gained too much weight.
+	weeksLostTooLittle := 0 // Consecutive weeks where the user gained too little weight.
+	totalLossTooMuch := 0.0
+	totalLossTooLittle := 0.0
 
 	// Iterate over each week of the diet.
 	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
@@ -554,51 +565,51 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, flo
 		}
 
 		if !valid {
-			weeksGainedTooLittle = 0
-			weeksGainedTooMuch = 0
-			totalGain = 0
-			totalLoss = 0
+			weeksLostTooLittle = 0
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
+			totalLossTooLittle = 0
 			continue
 		}
 
 		status := metWeeklyGoalCut(u, totalWeekWeightChange)
 
 		switch status {
-		case gainedTooLittle:
-			weeksGainedTooLittle++
-			totalLoss += totalWeekWeightChange
+		case lostTooLittle:
+			weeksLostTooLittle++
+			totalLossTooLittle += totalWeekWeightChange
 
-			weeksGainedTooMuch = 0
-			totalGain = 0
-		case gainedTooMuch:
-			weeksGainedTooMuch++
-			totalGain += totalWeekWeightChange
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
+		case lostTooMuch:
+			weeksLostTooMuch++
+			totalLossTooMuch += totalWeekWeightChange
 
-			weeksGainedTooLittle = 0
-			totalLoss = 0
-		case withinRange:
-			weeksGainedTooLittle = 0
-			weeksGainedTooMuch = 0
-			totalGain = 0
-			totalLoss = 0
+			weeksLostTooLittle = 0
+			totalLossTooLittle = 0
+		case withinLossRange:
+			weeksLostTooLittle = 0
+			totalLossTooLittle = 0
+
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
 		}
 
-		if weeksGainedTooLittle >= 2 {
-			return status, totalLoss, nil
+		if weeksLostTooLittle >= 2 {
+			return status, totalLossTooLittle, nil
 		}
 
-		if weeksGainedTooMuch >= 2 {
-			return status, totalGain, nil
+		if weeksLostTooMuch >= 2 {
+			return status, totalLossTooMuch, nil
 		}
 	}
 
-	return withinRange, 0, nil
+	return withinLossRange, 0, nil
 }
 
 // metWeeklyGoalCut checks to see if a given week has met the weekly
 // change in weight goal
-func metWeeklyGoalCut(u *UserInfo, totalWeekWeightChange float64) WeightGainStatus {
-
+func metWeeklyGoalCut(u *UserInfo, totalWeekWeightChange float64) WeightLossStatus {
 	lowerTolerance := u.Phase.WeeklyChange * 0.2
 	upperTolerance := math.Abs(u.Phase.WeeklyChange) * 0.1
 
@@ -607,20 +618,20 @@ func metWeeklyGoalCut(u *UserInfo, totalWeekWeightChange float64) WeightGainStat
 		/*
 			fmt.Printf("User did not lose enough this week. total > WeeklyChange+upperTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange-lowerTolerance)
 		*/
-		return gainedTooLittle
+		return lostTooLittle
 	}
 	// If user lost too much this week,
 	if totalWeekWeightChange < u.Phase.WeeklyChange+lowerTolerance {
 		/*
 			fmt.Printf("User lost too much this week. total < WeeklyChange+lowerTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange+upperTolerance)
 		*/
-		return gainedTooMuch
+		return lostTooMuch
 	}
 
 	/*
 		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
 	*/
-	return withinRange
+	return withinLossRange
 }
 
 // removeCals calulates the daily caloric deficit and then attempts
@@ -885,64 +896,89 @@ func validateNextAction(a string) error {
 }
 
 // checkMaintenance ensures user is maintaining the same weight.
-func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (int, float64, error) {
-	lower := u.Phase.StartWeight * -0.0125
-	upper := u.Phase.StartWeight * 0.0125
-
-	consecutiveMissedWeeks := 0
-	total := 0.0
+func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenanceStatus, float64, error) {
+	weeksGained := 0 // Consecutive weeks where the user gained too much weight.
+	weeksLost := 0   // Consecutive weeks where the user lost too much weight.
+	totalGain := 0.0
+	totalLoss := 0.0
 
 	// Iterate over each week of the diet.
 	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		weekAverageWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
 
-		// If the week has met the weight loss goal, then restart the count.
-		if valid && weekAverageWeightChange < upper && lower < weekAverageWeightChange {
-			consecutiveMissedWeeks = 0
-			total = 0
+		if !valid {
+			weeksGained = 0
+			weeksLost = 0
+			totalGain = 0
+			totalLoss = 0
 			continue
 		}
 
-		// Otherwise, the week did not meet the weight loss goal.
-		consecutiveMissedWeeks++
-		total += weekAverageWeightChange
+		status := metWeeklyGoalMainenance(u, totalWeekWeightChange)
 
-		if consecutiveMissedWeeks >= 3 {
-			break
+		switch status {
+		case lost:
+			weeksLost++
+			totalLoss += totalWeekWeightChange
+
+			weeksGained = 0
+			totalGain = 0
+		case gained:
+			weeksGained++
+			totalGain += totalWeekWeightChange
+
+			weeksLost = 0
+			totalLoss = 0
+		case maintained:
+			weeksLost = 0
+			weeksGained = 0
+			totalGain = 0
+			totalLoss = 0
+		}
+
+		if weeksLost >= 2 {
+			return status, totalLoss, nil
+		}
+
+		if weeksGained >= 2 {
+			return status, totalGain, nil
 		}
 	}
 
-	return consecutiveMissedWeeks, total, nil
+	return maintained, 0, nil
 }
 
-// adjustMaintenancePhase calculates the daily average change in
-// weight adjusts the daily calorie goal accordingly.
-func adjustMaintenancePhase(u *UserInfo, totalWeekWeightChange float64) {
-	// Get weekly average weight change.
-	totalWeekWeightChangeCals := totalWeekWeightChange * calsPerPound
-	// Get daily average weight change.
-	avgDayWeightChangeCals := totalWeekWeightChangeCals / 7
+// metWeeklyGoalMainenance checks to see if a given week has met the weekly
+// change in weight goal
+func metWeeklyGoalMainenance(u *UserInfo, totalWeekWeightChange float64) WeightMaintenanceStatus {
+	lowerTolerance := 0.20
+	upperTolerance := 0.20
 
-	// Average week weight change was positive,
-	if totalWeekWeightChange > 0 {
-		// remove calories from daily calorie goal.
-		u.Phase.GoalCalories -= avgDayWeightChangeCals
-		fmt.Printf("Reducing diet calorie goal by %f calories.\n", avgDayWeightChangeCals)
-		fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
-		return
+	// If user lost too much weight this week,
+	if totalWeekWeightChange < u.Phase.WeeklyChange-lowerTolerance {
+		/*
+			fmt.Printf("User lost too much this week. total < WeeklyChange-lowerTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange-lowerTolerance)
+		*/
+		return lost
+	}
+	// If user gained too much weight this week,
+	if totalWeekWeightChange > u.Phase.WeeklyChange+upperTolerance {
+		/*
+			fmt.Printf("User gained too much this week. total > WeeklyChange+upperTol:   %f > %f\n", totalWeekWeightChange, u.Phase.WeeklyChange+upperTolerance)
+		*/
+		return gained
 	}
 
-	// Otherwise, week weight change was negative.
-	// Add calories to daily calorie goal.
-	u.Phase.GoalCalories += avgDayWeightChangeCals
-	fmt.Printf("Removing %.2f calories from diet calorie goal.\n", math.Abs(avgDayWeightChangeCals))
-	fmt.Printf("New calorie goal: %.2f.\n", u.Phase.GoalCalories)
+	/*
+		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
+	*/
+	return maintained
 }
 
 // checkBulkGain checks to see if user is on the track to meeting weight
@@ -985,7 +1021,7 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 
 			weeksGainedTooLittle = 0
 			totalLoss = 0
-		case withinRange:
+		case withinGainRange:
 			weeksGainedTooLittle = 0
 			weeksGainedTooMuch = 0
 			totalGain = 0
@@ -1001,7 +1037,7 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 		}
 	}
 
-	return withinRange, 0, nil
+	return withinGainRange, 0, nil
 }
 
 // metWeeklyGoalBulk checks to see if a given week has met the weekly
@@ -1028,7 +1064,7 @@ func metWeeklyGoalBulk(u *UserInfo, totalWeekWeightChange float64) WeightGainSta
 	/*
 		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
 	*/
-	return withinRange
+	return withinGainRange
 }
 
 // addCals calculates the caloric surplus and then attempts to
