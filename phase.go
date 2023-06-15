@@ -733,27 +733,12 @@ func removeCals(u *UserInfo, totalWeekWeightChange float64) {
 func checkBulkThreshold(u *UserInfo) error {
 	// Find the amount of weight the user has gained.
 	weightGain := u.Weight - u.Phase.StartWeight
-	// Find the theshold weight the user is allowed to lose.
+	// Find the theshold weight the user is allowed to gain.
 	threshold := u.Phase.StartWeight * 0.10
 
-	// If the user has lost more than 10% of starting weight,
+	// If the user has gained more than 10% of starting weight,
 	if weightGain > threshold {
-		fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
-
-		// Get option.
-		var option string
-		for {
-			fmt.Println("1. End bulk and begin maintenance phase")
-			fmt.Println("2. Choose a different diet phase.")
-			fmt.Println("3. Continue with the bulk.")
-			fmt.Printf("Enter actions (1, 2, or 3): ")
-			fmt.Scanln(&option)
-
-			if option != "1" && option != "2" && option != "3" {
-				fmt.Println("Invalid action. Please try again.")
-			}
-			break
-		}
+		option := getAction()
 
 		switch option {
 		case "1":
@@ -774,6 +759,7 @@ func checkBulkThreshold(u *UserInfo) error {
 
 			promptConfirmation(u)
 
+			// Get option.
 			// Save user info to config file.
 			err := saveUserInfo(u)
 			if err != nil {
@@ -790,6 +776,46 @@ func checkBulkThreshold(u *UserInfo) error {
 		}
 	}
 
+	return nil
+}
+
+// getAction prompts user for the action given that they've
+// already surpassed bulk thresholds, validates their reponse
+// until they've entered a valid action, and returns the valid action.
+func getAction() string {
+	fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
+	fmt.Println("1. End bulk and begin maintenance phase")
+	fmt.Println("2. Choose a different diet phase.")
+	fmt.Println("3. Continue with the bulk.")
+
+	var option string
+	for {
+
+		option = promptAction()
+
+		err := validateAction(option)
+		if err != nil {
+			fmt.Println("Invalid action. Please try again.")
+			continue
+		}
+
+		break
+	}
+	return option
+}
+
+// promptAction prompts the user for the action.
+func promptAction() (option string) {
+	fmt.Printf("Enter actions (1, 2, or 3): ")
+	fmt.Scanln(&option)
+	return option
+}
+
+// validates and returns the action.
+func validateAction(option string) error {
+	if option != "1" && option != "2" && option != "3" {
+		return errors.New("Invalid action.")
+	}
 	return nil
 }
 
