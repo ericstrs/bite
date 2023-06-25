@@ -151,6 +151,7 @@ func promptSex() (s string) {
 
 // validateSex validates user sex and returns sex if valid.
 func validateSex(s string) error {
+	s = strings.ToLower(s)
 	if s == "male" || s == "female" {
 		return nil
 	}
@@ -304,6 +305,7 @@ func promptActivity() (a string) {
 
 // validateActivity validates their user response.
 func validateActivity(a string) error {
+	a = strings.ToLower(a)
 	_, err := activity(a)
 	if err != nil {
 		return err
@@ -1469,6 +1471,7 @@ func promptDietChoice() (c string) {
 
 // validateDietChoice validates and returns user diet choice.
 func validateDietChoice(c string) error {
+	c = strings.ToLower(c)
 	if c == "recommended" || c == "custom" {
 		return nil
 	}
@@ -1821,6 +1824,7 @@ func promptDietPhase() (s string) {
 
 // validateDietPhase validates user diet phase.
 func validateDietPhase(s string) error {
+	s = strings.ToLower(s)
 	// If user response is either "cut", "maintain", or "bulk",
 	if s == "cut" || s == "maintain" || s == "bulk" {
 		return nil
