@@ -490,23 +490,7 @@ func checkCutThreshold(u *UserInfo) error {
 
 	// If the user has lost more than 10% of starting weight,
 	if weightLost > threshold {
-		fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
-
-		// Get option.
-		var option string
-		for {
-			fmt.Println("1. End cut and begin maintenance phase")
-			fmt.Println("2. Choose a different diet phase.")
-			fmt.Println("3. Continue with the cut.")
-			fmt.Printf("Enter actions (1, 2, or 3): ")
-			fmt.Scanln(&option)
-
-			if option != "1" && option != "2" && option != "3" {
-				fmt.Println("Invalid action. Please try again.")
-				continue
-			}
-			break
-		}
+		option := getCutAction()
 
 		switch option {
 		case "1":
@@ -544,6 +528,30 @@ func checkCutThreshold(u *UserInfo) error {
 	}
 
 	return nil
+}
+
+// getCutAction prompts user for the action given that they've
+// already surpassed cut threshold, validates their reponse
+// until they've entered a valid action, and returns the valid action.
+func getCutAction() string {
+	fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
+	fmt.Println("1. End cut and begin maintenance phase")
+	fmt.Println("2. Choose a different diet phase.")
+	fmt.Println("3. Continue with the cut.")
+
+	var option string
+	for {
+		option = promptAction()
+
+		err := validateAction(option)
+		if err != nil {
+			fmt.Println("Invalid action. Please try again.")
+			continue
+		}
+
+		break
+	}
+	return option
 }
 
 // checkCutLoss checks to see if user is on the track to meeting weight
@@ -738,7 +746,7 @@ func checkBulkThreshold(u *UserInfo) error {
 
 	// If the user has gained more than 10% of starting weight,
 	if weightGain > threshold {
-		option := getAction()
+		option := getBulkAction()
 
 		switch option {
 		case "1":
@@ -779,10 +787,10 @@ func checkBulkThreshold(u *UserInfo) error {
 	return nil
 }
 
-// getAction prompts user for the action given that they've
+// getBulkAction prompts user for the action given that they've
 // already surpassed bulk thresholds, validates their reponse
 // until they've entered a valid action, and returns the valid action.
-func getAction() string {
+func getBulkAction() string {
 	fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
 	fmt.Println("1. End bulk and begin maintenance phase")
 	fmt.Println("2. Choose a different diet phase.")
