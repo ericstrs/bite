@@ -32,6 +32,7 @@ const (
 	lost            WeightMaintenanceStatus = -1
 	maintained      WeightMaintenanceStatus = 0
 	gained          WeightMaintenanceStatus = 1
+	dateFormat                              = "2006-01-02"
 )
 
 type PhaseInfo struct {
@@ -448,7 +449,7 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 		// Starting from the start date index, iterate over the week, and
 		// update counter when an entry is encountered.
 		for i := startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
-			date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(i).(string))
+			date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 			if err != nil {
 				log.Println("ERROR: Couldn't parse date:", err)
 				return 0, err
@@ -1221,7 +1222,7 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 	// Iterate over each day of the week starting from startIdx.
 	for i = startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
 		// Get entry date.
-		date, err = time.Parse("2006-01-02", logs.Series[dateCol].Value(i).(string))
+		date, err = time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
 			return 0, false, err
@@ -1273,7 +1274,7 @@ func findEntryIdx(logs *dataframe.DataFrame, day time.Time) (int, error) {
 	var startIdx int
 	// Find the index of weekStart in the data frame.
 	for i := 0; i < logs.NRows(); i++ {
-		date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(i).(string))
+		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
 			return 0, err
@@ -1302,7 +1303,7 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 	}
 
 	// Get entry date.
-	date, err := time.Parse("2006-01-02", logs.Series[dateCol].Value(startIdx-1).(string))
+	date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(startIdx-1).(string))
 	if err != nil {
 		log.Println("ERROR: Couldn't parse date:", err)
 		return 0, err
@@ -1569,7 +1570,7 @@ func getStartDate(u *UserInfo) (date time.Time) {
 		// If user entered default date,
 		if r == "" {
 			// set date to today's date.
-			r = time.Now().Format("2006-01-02")
+			r = time.Now().Format(dateFormat)
 			// Set phase status to true.
 			u.Phase.Active = true
 		}
@@ -1655,7 +1656,7 @@ func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 // valid.
 func validateDate(dateStr string) (time.Time, error) {
 	// Validate user response.
-	date, err := time.Parse("2006-01-02", dateStr)
+	date, err := time.Parse(dateFormat, dateStr)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -1768,8 +1769,8 @@ func setMinMaxPhaseDuration(u *UserInfo) {
 func promptConfirmation(u *UserInfo) {
 	// Display current information to the user.
 	fmt.Println("Summary:")
-	fmt.Println("Diet start date:", u.Phase.StartDate.Format("2006-01-02"))
-	fmt.Println("Diet end date:", u.Phase.EndDate.Format("2006-01-02"))
+	fmt.Println("Diet start date:", u.Phase.StartDate.Format(dateFormat))
+	fmt.Println("Diet end date:", u.Phase.EndDate.Format(dateFormat))
 	fmt.Println("Diet duration:", u.Phase.Duration)
 
 	switch u.Phase.Name {
