@@ -43,7 +43,7 @@ type PhaseInfo struct {
 	WeeklyChange    float64   `yaml:"weekly_change"`
 	StartDate       time.Time `yaml:"start_date"`
 	EndDate         time.Time `yaml:"end_date"`
-	LastCheckedDate time.Time `yaml:"last_checked_date"`
+	LastCheckedWeek time.Time `yaml:"last_checked_week"`
 	Duration        float64   `yaml:"duration"`
 	MaxDuration     float64   `yaml:"max_duration"`
 	MinDuration     float64   `yaml:"min_duration"`
@@ -571,7 +571,7 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 	totalLossTooLittle := 0.0
 
 	// Iterate over each week of the diet.
-	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
@@ -947,7 +947,7 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenance
 	totalLoss := 0.0
 
 	// Iterate over each week of the diet.
-	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
@@ -1033,7 +1033,7 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 	totalGain := 0.0
 	totalLoss := 0.0
 
-	for date := u.Phase.LastCheckedDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
@@ -1261,9 +1261,9 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 		return 0, false, nil
 	}
 
-	// Update the last checked day in the diet phase to the last day of the
+	// Update the last checked week in the diet phase to the last day of the
 	// week.
-	u.Phase.LastCheckedDate = date
+	u.Phase.LastCheckedWeek = date
 
 	return totalWeightChangeWeek, true, nil
 }
@@ -1451,11 +1451,11 @@ func printDietChoices(phase string) {
 	fmt.Printf("Recommended: ")
 	switch phase {
 	case "cut":
-		fmt.Printf("Lose 4 lbs in 8 weeks.\n")
+		fmt.Printf("Lose 0.5%% of bodyweight per week for 8 weeks.\n")
 	case "maintain":
 		fmt.Printf("Maintain same weight for 5 weeks.\n")
 	case "bulk":
-		fmt.Printf("Gain 2.5 lbs in 10 weeks.\n")
+		fmt.Printf("Gain 0.25%% of bodyweight per week for 10 weeks.\n")
 	}
 
 	fmt.Println("Custom: Choose diet duration and rate of weight change.")
@@ -1485,24 +1485,42 @@ func handleRecommendedDiet(u *UserInfo) {
 	// Get the diet start date.
 	u.Phase.StartDate = getStartDate(u)
 
-	// Get weekly average weight change in calories.
-	totalWeekWeightChangeCals := u.Phase.WeeklyChange * calsPerPound
-	// Calculate daily average weight change in caloric needed for a deficit/surplus.
-	c := totalWeekWeightChangeCals / 7
-
-	// Calculate expected change in weight for cut/bulk.
-	a := u.Phase.StartWeight * u.Phase.WeeklyChange
-
 	switch u.Phase.Name {
 	case "cut":
+		duration := 8.0
+
+		// Find the weekly change in weight needed to reach cut goal
+		weeklyChange := u.Phase.StartWeight * -0.005
+
+		// Calculate expected change in weight for the cut.
+		loss := weeklyChange * duration
+
+		// Get weekly average weight change in calories.
+		totalWeekWeightChangeCals := weeklyChange * calsPerPound
+		// Calculate daily average weight change in caloric needed for a deficit/surplus.
+		c := totalWeekWeightChangeCals / 7
+
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, -1, 8, u.Phase.StartWeight-a, u.TDEE-c)
+		setRecommendedValues(u, weeklyChange, duration, u.Phase.StartWeight+loss, u.TDEE+c)
 	case "maintain":
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
 		setRecommendedValues(u, 0, 5, u.Phase.StartWeight, u.TDEE)
 	case "bulk":
+		duration := 10.0
+
+		// Find the weekly change in weight needed to reach bulk goal
+		weeklyChange := u.Phase.StartWeight * 0.0025
+
+		// Calculate the expected change in weight for the bulk.
+		gain := weeklyChange * duration
+
+		// Get weekly average weight change in calories.
+		totalWeekWeightChangeCals := weeklyChange * calsPerPound
+		// Calculate daily average weight change in caloric needed for a deficit/surplus.
+		c := totalWeekWeightChangeCals / 7
+
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, 0.25, 10, u.Phase.StartWeight+a, u.TDEE+c)
+		setRecommendedValues(u, weeklyChange, duration, u.Phase.StartWeight+gain, u.TDEE+c)
 	}
 
 	// Calculate the diet end date.
@@ -1517,8 +1535,7 @@ func setRecommendedValues(u *UserInfo, w, d, g, c float64) {
 	u.Phase.Duration = d
 	u.Phase.GoalWeight = g
 	u.Phase.GoalCalories = c
-	// Initialize last checked date.
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 }
 
 // calculateEndDate calculates the diet end date given diet start date
@@ -1534,8 +1551,8 @@ func handleCustomDiet(u *UserInfo) {
 	// Get diet start date.
 	u.Phase.StartDate = getStartDate(u)
 
-	// Initialize last checked date.
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	// Initialize last checked week.
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 
 	// set diet end date.
 	setEndDate(u)
