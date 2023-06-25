@@ -144,7 +144,6 @@ func getSex() (s string) {
 
 // promptSex prompts and returns user sex.
 func promptSex() (s string) {
-	// Prompt user for their sex.
 	fmt.Print("Enter sex (male/female): ")
 	fmt.Scanln(&s)
 	return s
@@ -182,11 +181,11 @@ func getWeight() (weight float64) {
 }
 
 // promptWeight prompts the user to enter their weight.
-func promptWeight() (weight string) {
+func promptWeight() (w string) {
 	fmt.Print("Enter weight in lbs: ")
-	fmt.Scanln(&weight)
+	fmt.Scanln(&w)
 
-	return weight
+	return w
 }
 
 // validateWeight validates user response to being
@@ -260,10 +259,10 @@ func getAge() (age int) {
 }
 
 // promptAge prompts user for their age and returns age as a string.
-func promptAge() (ageStr string) {
+func promptAge() (a string) {
 	fmt.Print("Enter age: ")
-	fmt.Scanln(&ageStr)
-	return ageStr
+	fmt.Scanln(&a)
+	return a
 }
 
 // validateAge validates user age and returns conversion from string to
@@ -822,10 +821,10 @@ func getBulkAction() string {
 }
 
 // promptAction prompts the user for the action.
-func promptAction() (option string) {
+func promptAction() (o string) {
 	fmt.Printf("Enter actions (1, 2, or 3): ")
-	fmt.Scanln(&option)
-	return option
+	fmt.Scanln(&o)
+	return o
 }
 
 // validateAction validates and returns the user action.
@@ -925,10 +924,10 @@ func printNextAction(phase string) {
 }
 
 // promptNextAction prompts the user for the next action.
-func promptNextAction() (option string) {
+func promptNextAction() (a string) {
 	fmt.Printf("Enter actions (1 or 2): ")
-	fmt.Scanln(&option)
-	return option
+	fmt.Scanln(&a)
+	return a
 }
 
 // validateNextAction validates the next action.
@@ -1486,9 +1485,10 @@ func handleRecommendedDiet(u *UserInfo) {
 	// Get the diet start date.
 	u.Phase.StartDate = getStartDate(u)
 
-	// TODO: show logic that derives daily calories.
-	// Calculate daily caloric change need to create a deficit/surplus.
-	c := u.Phase.WeeklyChange * 500
+	// Get weekly average weight change in calories.
+	totalWeekWeightChangeCals := u.Phase.WeeklyChange * calsPerPound
+	// Calculate daily average weight change in caloric needed for a deficit/surplus.
+	c := totalWeekWeightChangeCals / 7
 
 	// Calculate expected change in weight for cut/bulk.
 	a := u.Phase.StartWeight * u.Phase.WeeklyChange
@@ -1546,16 +1546,18 @@ func handleCustomDiet(u *UserInfo) {
 	// Calculate weekly weight change rate.
 	u.Phase.WeeklyChange = calculateWeeklyChange(u.Weight, u.Phase.GoalWeight, u.Phase.Duration)
 
-	// Calculate daily caloric change needed for cut or bulk.
-	change := u.Phase.WeeklyChange * 500
+	// Get weekly average weight change in calories.
+	totalWeekWeightChangeCals := u.Phase.WeeklyChange * calsPerPound
+	// Calculate daily average weight change in caloric needed for cut or bulk.
+	avgDayWeightChangeCals := totalWeekWeightChangeCals / 7
 
 	switch u.Phase.Name {
 	case "cut":
-		u.Phase.GoalCalories = u.TDEE - change
+		u.Phase.GoalCalories = u.TDEE - avgDayWeightChangeCals
 	case "maintain":
 		u.Phase.GoalCalories = u.TDEE
 	case "bulk":
-		u.Phase.GoalCalories = u.TDEE + change
+		u.Phase.GoalCalories = u.TDEE + avgDayWeightChangeCals
 	}
 }
 
