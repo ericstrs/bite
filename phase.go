@@ -154,6 +154,7 @@ func validateSex(s string) error {
 	if s == "male" || s == "female" {
 		return nil
 	}
+
 	return errors.New("Invalid sex.")
 }
 
@@ -182,6 +183,7 @@ func getWeight() (weight float64) {
 func promptWeight() (weight string) {
 	fmt.Print("Enter weight in lbs: ")
 	fmt.Scanln(&weight)
+
 	return weight
 }
 
@@ -192,6 +194,7 @@ func validateWeight(weightStr string) (w float64, err error) {
 	if err != nil || w < 0 {
 		return 0, errors.New("Invalid weight.")
 	}
+
 	return w, nil
 }
 
@@ -230,6 +233,7 @@ func validateHeight(heightStr string) (float64, error) {
 	if err != nil || h < 0 {
 		return 0, errors.New("Invalid height.")
 	}
+
 	return h, nil
 }
 
@@ -268,6 +272,7 @@ func validateAge(ageStr string) (int, error) {
 	if err != nil || a < 0 {
 		return 0, errors.New("Invalid age.")
 	}
+
 	return a, nil
 }
 
@@ -297,12 +302,13 @@ func promptActivity() (a string) {
 	return a
 }
 
-// validateActivity and validates their  response.
+// validateActivity validates their user response.
 func validateActivity(a string) error {
 	_, err := activity(a)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -819,12 +825,13 @@ func promptAction() (option string) {
 	return option
 }
 
-// validates and returns the action.
+// validateAction validates and returns the user action.
 func validateAction(option string) error {
-	if option != "1" && option != "2" && option != "3" {
-		return errors.New("Invalid action.")
+	if option == "1" || option == "2" || option == "3" {
+		return nil
 	}
-	return nil
+
+	return errors.New("Invalid action.")
 }
 
 // CheckPhaseStatus checks if the phase is active.
@@ -923,10 +930,11 @@ func promptNextAction() (option string) {
 
 // validateNextAction validates the next action.
 func validateNextAction(a string) error {
-	if a != "1" && a != "2" {
-		return errors.New("Invalid action.")
+	if a == "1" || a == "2" {
+		return nil
 	}
-	return nil
+
+	return errors.New("Invalid action.")
 }
 
 // checkMaintenance ensures user is maintaining the same weight.
@@ -1461,10 +1469,11 @@ func promptDietChoice() (c string) {
 
 // validateDietChoice validates and returns user diet choice.
 func validateDietChoice(c string) error {
-	if c != "recommended" && c != "custom" {
-		return errors.New("Invalid diet choice.")
+	if c == "recommended" || c == "custom" {
+		return nil
 	}
-	return nil
+
+	return errors.New("Invalid diet choice.")
 }
 
 // handleRecommendedDiet sets UserInfo struct fields according to a
