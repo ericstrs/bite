@@ -1854,9 +1854,54 @@ func validateDietPhase(s string) error {
 }
 
 // TODO
-func Summary() {
+func Summary(u *UserInfo, logs *dataframe.DataFrame) {
+	// Check if diet had not started yet or diet has ended.
+	if !u.Phase.Active {
+		log.Println("Diet is not active. Skipping summary.")
+		return
+	}
+
 	fmt.Println("Generating summary.")
-	// Print day summary
-	// Print week summary
-	// Print month summary
+
+	// TODO: Workout how to print the diet info at the end
+
+	m, _ := countEntriesPerWeek(u, logs)
+	totalEntries := 0
+	totalWeeks := 0
+	for _, entries := range *m {
+		totalEntries += entries
+		totalWeeks++
+	}
+
+	// Check if there are any days logged for this diet.
+	if totalEntries == 0 {
+		log.Println("There has yet to be a logged day for this diet phase.")
+		return
+	}
+
+	// TODO: Print day summary
+
+	if totalWeeks < 1 {
+		log.Println("There has yet to be a logged week for this diet phase.")
+		return
+	}
+
+	// TODO: Print most recent week summary
+
+	if totalWeeks < 4 {
+		log.Println("There has yet to be a logged month for this diet phase.")
+		return
+	}
+
+	// TODO: Print most recent month summary
+
+	// TODO: Print diet phase info.
+	// TODO: Think the user would like to see the entire diet phase view
+	// like in you will do for the month. Probably best to split this
+	// function into sub arguments. That is, have user specify
+	// `./calories summary [day|week|month|all]` where `./calories
+	// summary` just calls day, week, and month. This prevent a
+	// constant spam of the entire diet view, but at the same time still
+	// lets the user have the ability to see certain parts of the
+	// diet phase.
 }
