@@ -187,7 +187,7 @@ func ExampleRemoveCals() {
 	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	u.Phase.WeeklyChange = 0.75 // Desired weekly change in weight in pounds.
 	u.Phase.GoalCalories = u.TDEE + (u.Phase.WeeklyChange * 500)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	setMinMaxMacros(&u)
 	u.Macros.Protein, u.Macros.Carbs, u.Macros.Fats = calculateMacros(&u)
 
@@ -237,7 +237,7 @@ func ExampleCheckCutLoss_withinRange() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = -0.5
 
@@ -274,7 +274,7 @@ func ExampleCheckCutLoss_tooLittle() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = -0.5
 
@@ -311,7 +311,7 @@ func ExampleCheckCutLoss_tooMuch() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
 
@@ -360,7 +360,7 @@ func ExampleCheckMaintenance() {
 
 	u.Phase.WeeklyChange = 0
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 
 	status, total, err := checkMaintenance(&u, logs)
@@ -406,7 +406,7 @@ func ExampleCheckBulkGain_withinRange() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
 
@@ -443,7 +443,7 @@ func ExampleCheckBulkGain_tooLittle() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
 
@@ -480,7 +480,7 @@ func ExampleCheckBulkGain_tooMuch() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
 
@@ -520,7 +520,7 @@ func ExampleAddCals() {
 	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	u.Phase.WeeklyChange = 0.75 // Desired weekly change in weight in pounds.
 	u.Phase.GoalCalories = u.TDEE + (u.Phase.WeeklyChange * 500)
-	u.Phase.LastCheckedDate = u.Phase.StartDate
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	setMinMaxMacros(&u)
 	u.Macros.Protein, u.Macros.Carbs, u.Macros.Fats = calculateMacros(&u)
 
@@ -643,7 +643,7 @@ func ExampleSetRecommendedValues() {
 	fmt.Println(u.Phase.Duration)
 	fmt.Println(u.Phase.GoalWeight)
 	fmt.Println(u.Phase.GoalCalories)
-	fmt.Println(u.Phase.LastCheckedDate)
+	fmt.Println(u.Phase.LastCheckedWeek)
 
 	// Output:
 	// 1.25
@@ -854,4 +854,40 @@ func ExampleValidateDietPhase_error() {
 
 	// Output:
 	// Invalid diet phase.
+}
+
+func ExampleSummary() {
+	u := UserInfo{}
+	u.Weight = 180
+	u.Height = 180
+	u.Age = 30
+	u.ActivityLevel = "light"
+	bmr := Mifflin(&u)
+	u.TDEE = TDEE(bmr, u.ActivityLevel)
+
+	weight := dataframe.NewSeriesString("weight", nil,
+		"180", "180.1", "180.2", "180.3", "180.3", "180.4", "180.5",
+		"180.6", "180.5", "180.6", "180.7", "180.8", "180.0", "181",
+		"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
+
+	calories := dataframe.NewSeriesString("calories", nil,
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2300", "2300", "2300", "2300", "2300", "2300", "2300",
+		"2200", "2200", "2200", "2200", "2200", "2200", "2200")
+
+	date := dataframe.NewSeriesString("date", nil,
+		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
+		"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
+		"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
+
+	logs := dataframe.NewDataFrame(weight, calories, date)
+
+	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
+	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
+	u.Phase.Active = true
+
+	Summary(&u, logs)
+
+	// Output:
+	// 0
 }
