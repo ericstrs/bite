@@ -1880,6 +1880,7 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 	}
 
 	// TODO: Print day summary
+	daySummary(u, logs)
 
 	if totalWeeks < 1 {
 		log.Println("There has yet to be a logged week for this diet phase.")
@@ -1904,4 +1905,25 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 	// constant spam of the entire diet view, but at the same time still
 	// lets the user have the ability to see certain parts of the
 	// diet phase.
+}
+
+// daySummary prints a summary of the diet for the current day.
+func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
+	t := time.Now()
+
+	// Get most recent entry date.
+	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+
+	if !t.Equal(tailDate) {
+		fmt.Println("Missing entry for today. Please create today's entry prior to attempting to generate today's diet summary.")
+		return
+	}
+
+	// Print todays date.
+	fmt.Printf("Day Summary for %s\n", tailDate.Format(dateFormat)
+	fmt.Printf("---------------------------\n")
+	// Print current weight.
+	fmt.Printf("Current Weight: %f\n", u.Weight)
+	// Print
+	fmt.Printf("---------------------------\n")
 }
