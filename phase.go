@@ -414,6 +414,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	return nil
 }
 
+/*
 // countEntriesPerWeek returns a map to tracker the number of entires in
 // each weeks of a diet phase.
 func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
@@ -435,6 +436,39 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 		weekNumber++
 	}
 
+	return &entryCountPerWeek, nil
+}
+*/
+
+func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
+	entryCountPerWeek := make(map[int]int)
+	weekNumber := 0
+
+	// Get the first day (user-selected start date) and the upcoming Sunday
+	firstDay := u.Phase.StartDate
+	firstSunday := firstDay.AddDate(0, 0, (int)(7-firstDay.Weekday())%7)
+
+	// Count entries in the first (partial) week
+	entryCount, err := countEntriesInWeek(logs, firstDay, firstSunday)
+	if err != nil {
+		return nil, err
+	}
+	entryCountPerWeek[weekNumber] = entryCount
+	weekNumber++
+
+	// For subsequent weeks
+	for date := firstSunday.AddDate(0, 0, 1); date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+		weekStart := date
+		weekEnd := date.AddDate(0, 0, 6)
+
+		// Count the number of entries within the current week.
+		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+		if err != nil {
+			return nil, err
+		}
+		entryCountPerWeek[weekNumber] = entryCount
+		weekNumber++
+	}
 	return &entryCountPerWeek, nil
 }
 
@@ -868,7 +902,8 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 
 		// Check if goal weight is still valid.
 		_, err := validateGoalWeight(strconv.FormatFloat(u.Phase.GoalWeight, 'f', -1, 64), u)
-		if err != nil { // If weight is now invalid,
+		// If weight is now invalid,
+		if err != nil {
 			option := getNextAction(u)
 
 			switch option {
@@ -1907,13 +1942,13 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 
 // daySummary prints a summary of the diet for the current day.
 func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
-	t := time.Now()
+	today := time.Now()
 	i := logs.NRows() - 1
 
 	// Get most recent entry date.
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 
-	if !isSameDay(t, tailDate) {
+	if !isSameDay(today, tailDate) {
 		fmt.Println("Missing entry for today. Please create today's entry prior to attempting to generate today's diet summary.")
 		return
 	}
@@ -1974,21 +2009,25 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	// Find the most recent entry's date.
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
 
+	// Find the last Monday that comes before tailDate
+	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
+	lastMonday := tailDate.AddDate(0, 0, -diff)
+
 	// Iterate over the entries starting from EndDate - 7 days.
 	for i := 0; i < 7; i++ {
-		date := tailDate.AddDate(0, 0, -6+i)
+		date := lastMonday.AddDate(0, 0, i)
 		d := date.Weekday().String()
 
 		// Bold the value if it's the current day.
 		if date.Equal(tailDate) {
-			d = colorItalic + date.Weekday().String() + colorReset
+			d = colorItalic + date.Weekday().String() + colorReset + "\t"
 		}
 		// Append date in day of the week to array.
 		daysOfWeek = append(daysOfWeek, d)
 
 		idx, _ := findEntryIdx(logs, date)
 		// If date matches a logged entry date,
-		if i != -1 {
+		if idx != -1 {
 			calsStr = logs.Series[calsCol].Value(idx).(string)
 			cals, _ := strconv.ParseFloat(calsStr, 64)
 			s := getAdherenceColor(fmt.Sprintf("%-10s", calsStr), metCalDayGoal(u, cals))
@@ -2012,24 +2051,26 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
 
+	// Find the last Monday that comes before tailDate
+	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
+	lastMonday := tailDate.AddDate(0, 0, -diff)
+
 	// Iterate over the weeks starting from EndDate - 28 days.
-	//	for weekStart := tailDate.AddDate(0, 0, -27); !weekStart.After(u.Phase.EndDate); weekStart = weekStart.AddDate(0, 0, 7) {
 	for week := 0; week < 4; week++ {
-		weekStart := tailDate.AddDate(0, 0, -27+week*7)
+		weekStart := lastMonday.AddDate(0, 0, -21+week*7)
 
 		var daysOfWeek []string
 		var calsOfWeek []string
 		var calsStr string
 
 		// Iterate over the days of the week.
-		//for date := weekStart; date.Before(weekStart.AddDate(0, 0, 7)) && !date.After(u.Phase.EndDate); date = date.AddDate(0, 0, 1) {
 		for i := 0; i < 7; i++ {
 			date := weekStart.AddDate(0, 0, i)
 			d := date.Weekday().String()
 
 			// Bold the value if it's the current day.
 			if date.Equal(tailDate) {
-				d = colorItalic + date.Weekday().String() + colorReset
+				d = colorItalic + date.Weekday().String() + colorReset + "\t"
 			}
 			// Append date in day of the week to array.
 			daysOfWeek = append(daysOfWeek, d)
