@@ -33,6 +33,10 @@ const (
 	maintained      WeightMaintenanceStatus = 0
 	gained          WeightMaintenanceStatus = 1
 	dateFormat                              = "2006-01-02"
+	colorReset                              = "\033[0m"
+	colorItalic                             = "\033[3m"
+	colorRed                                = "\033[31m"
+	colorGreen                              = "\033[32m"
 )
 
 type PhaseInfo struct {
@@ -1269,9 +1273,8 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 }
 
 // findEntryIdx finds the index of an entry given a date.
-func findEntryIdx(logs *dataframe.DataFrame, day time.Time) (int, error) {
-	var startIdx int
-	// Find the index of weekStart in the data frame.
+func findEntryIdx(logs *dataframe.DataFrame, d time.Time) (int, error) {
+	// Find the index of the entry with the date.
 	for i := 0; i < logs.NRows(); i++ {
 		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
@@ -1279,15 +1282,14 @@ func findEntryIdx(logs *dataframe.DataFrame, day time.Time) (int, error) {
 			return 0, err
 		}
 
-		if date.Equal(day) {
-			startIdx = i
-			break
+		if isSameDay(date, d) {
+			return i, nil
 		}
 
 		continue
 	}
 
-	return startIdx, nil
+	return -1, nil
 }
 
 // getPrecedingWeightToDay returns the preceding entry to a given week.
@@ -1861,9 +1863,7 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 		return
 	}
 
-	fmt.Println("Generating summary.")
-
-	// TODO: Workout how to print the diet info at the end
+	defer printDietPhaseInfo(u)
 
 	m, _ := countEntriesPerWeek(u, logs)
 	totalEntries := 0
@@ -1879,7 +1879,6 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 		return
 	}
 
-	// TODO: Print day summary
 	daySummary(u, logs)
 
 	if totalWeeks < 1 {
@@ -1887,16 +1886,15 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 		return
 	}
 
-	// TODO: Print most recent week summary
+	weekSummary(u, logs)
 
 	if totalWeeks < 4 {
 		log.Println("There has yet to be a logged month for this diet phase.")
 		return
 	}
 
-	// TODO: Print most recent month summary
+	monthSummary(u, logs)
 
-	// TODO: Print diet phase info.
 	// TODO: Think the user would like to see the entire diet phase view
 	// like in you will do for the month. Probably best to split this
 	// function into sub arguments. That is, have user specify
@@ -1910,20 +1908,194 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 // daySummary prints a summary of the diet for the current day.
 func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
 	t := time.Now()
+	i := logs.NRows() - 1
 
 	// Get most recent entry date.
-	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 
-	if !t.Equal(tailDate) {
+	if !isSameDay(t, tailDate) {
 		fmt.Println("Missing entry for today. Please create today's entry prior to attempting to generate today's diet summary.")
 		return
 	}
 
-	// Print todays date.
-	fmt.Printf("Day Summary for %s\n", tailDate.Format(dateFormat)
+	calsStr := logs.Series[calsCol].Value(i).(string)
+	cals, _ := strconv.ParseFloat(calsStr, 64)
+
+	fmt.Printf("Day Summary for %s\n", tailDate.Format(dateFormat))
 	fmt.Printf("---------------------------\n")
-	// Print current weight.
 	fmt.Printf("Current Weight: %f\n", u.Weight)
-	// Print
+	fmt.Printf("Calories Consumed: ")
+	c := getAdherenceColor(calsStr, metCalDayGoal(u, cals))
+	fmt.Printf("%s\n", c)
 	fmt.Printf("---------------------------\n")
+}
+
+// metCalDayGoal checks to see if the user met the daily calorie goal
+// given their current diet phase.
+func metCalDayGoal(u *UserInfo, cals float64) bool {
+	tolerance := 0.05 * u.Phase.GoalCalories
+
+	switch u.Phase.Name {
+	case "cut":
+		return cals <= u.Phase.GoalCalories
+	case "maintain":
+		return cals >= u.Phase.GoalCalories
+	case "bulk":
+		return math.Abs(cals-u.Phase.GoalCalories) <= tolerance
+	default:
+		return false
+	}
+}
+
+// getAdherenceColor returns some text in either green or red
+// indicating whether or not user adhered to the diet caloire goal for a
+// particular day.
+func getAdherenceColor(s string, b bool) string {
+	switch b {
+	case true:
+		return colorGreen + s + colorReset
+	case false:
+		return colorRed + s + colorReset
+	default:
+		return ""
+	}
+}
+
+// weekSummary prints a summary of the diet for the most recent week.
+func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
+	fmt.Println()
+	fmt.Println("Week Summary")
+	fmt.Printf("---------------------------\n")
+
+	var daysOfWeek []string
+	var calsOfWeek []string
+	var calsStr string
+
+	// Find the most recent entry's date.
+	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+
+	// Iterate over the entries starting from EndDate - 7 days.
+	for i := 0; i < 7; i++ {
+		date := tailDate.AddDate(0, 0, -6+i)
+		d := date.Weekday().String()
+
+		// Bold the value if it's the current day.
+		if date.Equal(tailDate) {
+			d = colorItalic + date.Weekday().String() + colorReset
+		}
+		// Append date in day of the week to array.
+		daysOfWeek = append(daysOfWeek, d)
+
+		idx, _ := findEntryIdx(logs, date)
+		// If date matches a logged entry date,
+		if i != -1 {
+			calsStr = logs.Series[calsCol].Value(idx).(string)
+			cals, _ := strconv.ParseFloat(calsStr, 64)
+			s := getAdherenceColor(fmt.Sprintf("%-10s", calsStr), metCalDayGoal(u, cals))
+
+			calsOfWeek = append(calsOfWeek, s)
+
+			continue
+		}
+		calsOfWeek = append(calsOfWeek, "")
+	}
+
+	printWeekSummary(daysOfWeek, calsOfWeek)
+	fmt.Printf("---------------------------\n")
+}
+
+// monthSummary prints a summary of the diet for the most recent 4 weeks.
+func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
+	fmt.Println()
+	fmt.Println("Month Summary")
+	fmt.Printf("---------------------------\n")
+
+	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+
+	// Iterate over the weeks starting from EndDate - 28 days.
+	//	for weekStart := tailDate.AddDate(0, 0, -27); !weekStart.After(u.Phase.EndDate); weekStart = weekStart.AddDate(0, 0, 7) {
+	for week := 0; week < 4; week++ {
+		weekStart := tailDate.AddDate(0, 0, -27+week*7)
+
+		var daysOfWeek []string
+		var calsOfWeek []string
+		var calsStr string
+
+		// Iterate over the days of the week.
+		//for date := weekStart; date.Before(weekStart.AddDate(0, 0, 7)) && !date.After(u.Phase.EndDate); date = date.AddDate(0, 0, 1) {
+		for i := 0; i < 7; i++ {
+			date := weekStart.AddDate(0, 0, i)
+			d := date.Weekday().String()
+
+			// Bold the value if it's the current day.
+			if date.Equal(tailDate) {
+				d = colorItalic + date.Weekday().String() + colorReset
+			}
+			// Append date in day of the week to array.
+			daysOfWeek = append(daysOfWeek, d)
+
+			idx, _ := findEntryIdx(logs, date)
+			// If date matches a logged entry date,
+			if idx != -1 {
+				calsStr = logs.Series[calsCol].Value(idx).(string)
+				cals, _ := strconv.ParseFloat(calsStr, 64)
+				s := getAdherenceColor(fmt.Sprintf("%-10s", calsStr), metCalDayGoal(u, cals))
+
+				calsOfWeek = append(calsOfWeek, s)
+
+				continue
+			}
+			calsOfWeek = append(calsOfWeek, "")
+		}
+
+		printWeekSummary(daysOfWeek, calsOfWeek)
+	}
+	fmt.Printf("---------------------------\n")
+}
+
+// printWeekSummary prints a summary of the diet for a week.
+func printWeekSummary(daysOfWeek []string, calsOfWeek []string) {
+	for _, day := range daysOfWeek {
+		fmt.Printf("%-10s", day)
+	}
+	fmt.Println()
+
+	for _, cal := range calsOfWeek {
+		fmt.Printf("%-10s", cal)
+	}
+	fmt.Println()
+}
+
+// isSameDay checks to see if two dates have the same year, month, and
+// day.
+func isSameDay(date1, date2 time.Time) bool {
+	y1, m1, d1 := date1.Date()
+	y2, m2, d2 := date2.Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
+}
+
+// printDietPhaseInfo prints out the information about the diet phase.
+func printDietPhaseInfo(u *UserInfo) {
+	// Print the diet phase information.
+	fmt.Println()
+	fmt.Println("Diet Phase Info:")
+	fmt.Println("---------------------------")
+	fmt.Println("Diet phase:", u.Phase.Name)
+	fmt.Println("Start Date:", u.Phase.StartDate.Format(dateFormat))
+	fmt.Println("End Date:", u.Phase.EndDate.Format(dateFormat))
+	fmt.Println("Duration:", u.Phase.Duration)
+
+	remainingTime := calculateDuration(time.Now(), u.Phase.EndDate)
+
+	// Extract components
+	days := int(remainingTime.Hours() / 24)
+	weeks := int(days / 7)
+	months := int(days / 30) // Approximate calculation assuming 30 days per month
+
+	// Print remaining time
+	fmt.Printf("Remaining time: %d days, %d weeks, %d months\n", days, weeks, months)
+
+	fmt.Println("Goal Weight:", u.Phase.GoalWeight)
+	fmt.Println("Start Weight:", u.Phase.StartWeight)
+	fmt.Println("---------------------------")
 }
