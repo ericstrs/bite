@@ -85,7 +85,7 @@ func Log(u *UserInfo, s string) error {
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, d.Format("2006-01-02"))
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, d.Format(dateFormat))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
@@ -95,4 +95,47 @@ func Log(u *UserInfo, s string) error {
 	fmt.Println("Added entry.")
 
 	return nil
+}
+
+// subset returns a subset of the dataframe containing the entries that
+// were logged during an active diet phase.
+func Subset(logs *dataframe.DataFrame, indices []int) *dataframe.DataFrame {
+	s1 := dataframe.NewSeriesString("weight", nil)
+	s2 := dataframe.NewSeriesString("calories", nil)
+	s3 := dataframe.NewSeriesString("date", nil)
+	s := dataframe.NewDataFrame(s1, s2, s3)
+
+	for _, idx := range indices {
+		row := logs.Row(idx, false, dataframe.SeriesIdx|dataframe.SeriesName)
+		s.Append(nil, row)
+	}
+
+	return s
+}
+
+// getValidLogIndices creates and returns and int array containing the
+// indices of the the valid log entries.
+//
+// Assumptions:
+// * Diet phase activity has been checked. That is, this function should
+// not be called for a diet phase that is not currently active.
+func getValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
+	today := time.Now()
+
+	var validIndices []int
+	for i := 0; i < logs.NRows()-1; i++ {
+		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return nil
+		}
+
+		// Only consider dates that fall somewhere inbetween the diet
+		// start date and the current date.
+		if (date.After(u.Phase.StartDate) || isSameDay(date, u.Phase.StartDate)) && (date.Before(today) || isSameDay(date, today)) {
+			validIndices = append(validIndices, i)
+		}
+	}
+
+	return validIndices
 }
