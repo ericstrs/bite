@@ -414,37 +414,13 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	return nil
 }
 
-/*
 // countEntriesPerWeek returns a map to tracker the number of entires in
 // each weeks of a diet phase.
 func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
 	entryCountPerWeek := make(map[int]int)
-
-	weekNumber := 0
-	// Iterate over weeks within the diet phase.
-	for date := u.Phase.StartDate; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
-		weekStart := date
-		weekEnd := date.AddDate(0, 0, 6)
-
-		// Count the number of entries within the current week.
-		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
-		if err != nil {
-			return nil, err
-		}
-
-		entryCountPerWeek[weekNumber] = entryCount
-		weekNumber++
-	}
-
-	return &entryCountPerWeek, nil
-}
-*/
-
-func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
-	entryCountPerWeek := make(map[int]int)
 	weekNumber := 0
 
-	// Get the first day (user-selected start date) and the upcoming Sunday
+	// Get the first day and the upcoming Sunday
 	firstDay := u.Phase.StartDate
 	firstSunday := firstDay.AddDate(0, 0, (int)(7-firstDay.Weekday())%7)
 
@@ -481,23 +457,27 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 		return 0, err
 	}
 
-	// If start date has passed,
-	if startIdx != -1 {
-		// Starting from the start date index, iterate over the week, and
-		// update counter when an entry is encountered.
-		for i := startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
-			date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-			if err != nil {
-				log.Println("ERROR: Couldn't parse date:", err)
-				return 0, err
-			}
+	// Must have this check. Otherwise weekStart may land within 7 days of
+	// the diet end date, which breaks our assumption that we have
+	// weekStart + 6 days of entries to iterate over.
+	if startIdx == -1 {
+		return count, nil
+	}
 
-			if date.Before(weekStart) || date.After(weekEnd) {
-				break
-			}
-
-			count++
+	// Starting from the start date index, iterate over the week, and
+	// update counter when an entry is encountered.
+	for i := startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
+		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+		if err != nil {
+			log.Println("ERROR: Couldn't parse date:", err)
+			return 0, err
 		}
+
+		if date.Before(weekStart) || date.After(weekEnd) {
+			break
+		}
+
+		count++
 	}
 
 	return count, nil
@@ -507,7 +487,7 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 // given diet phase.
 func countValidWeeks(e map[int]int) int {
 	count := 0
-	for week := 1; week < len(e); week++ {
+	for week := 0; week < len(e); week++ {
 		if e[week] > 2 {
 			count++
 		}
@@ -1330,6 +1310,7 @@ func findEntryIdx(logs *dataframe.DataFrame, d time.Time) (int, error) {
 // getPrecedingWeightToDay returns the preceding entry to a given week.
 func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight float64, startIdx int) (float64, error) {
 	var previousWeight float64
+	var err error
 	// If entry is the first in the dataframe, set previous weight
 	// equal to zero. This is necessary to prevent index out of bounds
 	// error.
@@ -1337,20 +1318,6 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 		previousWeight = weight
 		return previousWeight, nil
 	}
-
-	// Get entry date.
-	date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(startIdx-1).(string))
-	if err != nil {
-		log.Println("ERROR: Couldn't parse date:", err)
-		return 0, err
-	}
-
-	// If date is before the diet start date,
-	if date.Before(u.Phase.StartDate) {
-		previousWeight = weight
-		return previousWeight, nil
-	}
-	// Otherwise, the date is after the start date.
 
 	// Get previous entry's weight.
 	pw := logs.Series[weightCol].Value(startIdx - 1).(string)
@@ -1890,14 +1857,10 @@ func validateDietPhase(s string) error {
 	return errors.New("Invalid diet phase.")
 }
 
-// TODO
+// Assumptions:
+// * Diet phase activity has been checked. That is, this function should
+// not be called for a diet phase that is not currently active.
 func Summary(u *UserInfo, logs *dataframe.DataFrame) {
-	// Check if diet had not started yet or diet has ended.
-	if !u.Phase.Active {
-		log.Println("Diet is not active. Skipping summary.")
-		return
-	}
-
 	defer printDietPhaseInfo(u)
 
 	m, _ := countEntriesPerWeek(u, logs)
