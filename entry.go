@@ -58,6 +58,9 @@ func promptCals() (calories float64, err error) {
 
 // Log appends a new entry to the csv file passed in as an agurment.
 func Log(u *UserInfo, s string) error {
+	var date time.Time
+	var err error
+
 	// Get user weight.
 	u.Weight = getWeight()
 
@@ -67,14 +70,38 @@ func Log(u *UserInfo, s string) error {
 		return err
 	}
 
+	for {
+		// Prompt user entry date.
+		r := promptDate("Enter entry date (YYYY-MM-DD) [Press Enter for today's date]: ")
+
+		// If user entered default date,
+		if r == "" {
+			// set date to today's date.
+			date = time.Now()
+			break
+		}
+
+		// Check if date is a valid date.
+		date, err = validateDate(r)
+		if err != nil {
+			fmt.Printf("%v. Please try again.\n", err)
+			continue
+		}
+
+		// Validate the date is not in the past.
+		if date.Before(time.Now()) {
+			fmt.Println("The entered date is in the past. Please enter today's date or a future date.")
+			continue
+		}
+
+		break
+	}
+
 	// Save updated user info.
 	err = saveUserInfo(u)
 	if err != nil {
 		return err
 	}
-
-	// Get current date.
-	d := time.Now()
 
 	// Open file for append.
 	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -85,7 +112,7 @@ func Log(u *UserInfo, s string) error {
 	}
 
 	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, d.Format(dateFormat))
+	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, date.Format(dateFormat))
 	_, err = f.WriteString(line)
 	if err != nil {
 		log.Println(err)
@@ -119,7 +146,7 @@ func Subset(logs *dataframe.DataFrame, indices []int) *dataframe.DataFrame {
 // Assumptions:
 // * Diet phase activity has been checked. That is, this function should
 // not be called for a diet phase that is not currently active.
-func getValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
+func GetValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
 	today := time.Now()
 
 	var validIndices []int
