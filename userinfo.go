@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -25,8 +24,8 @@ const (
 
 type UserInfo struct {
 	Sex           string    `yaml:"sex"`
-	Weight        float64   `yaml:"weight"`
-	Height        float64   `yaml:"height"`
+	Weight        float64   `yaml:"weight"` // lbs
+	Height        float64   `yaml:"height"` // cm
 	Age           int       `yaml:"age"`
 	ActivityLevel string    `yaml:"activity_level"`
 	TDEE          float64   `yaml:"tdee"`
@@ -123,8 +122,9 @@ func feetInchesToInches(feet int, inches float64) float64 {
 // Mifflin calculates and returns the Basal Metabolic Rate (BMR) which is
 // based on weight (kg), height (cm), age (years), and sex.
 func Mifflin(u *UserInfo) float64 {
-	// Convert weight from pounds to kilograms.
+	// Convert weight in pounds to kilograms.
 	weight := lbsToKg(u.Weight)
+	// Convert height in inches to centimeters.
 	height := inchesToCm(u.Height)
 
 	factor := 5
@@ -152,13 +152,10 @@ func TDEE(bmr float64, a string) float64 {
 // calculateMacros calculates and returns the recommended macronutrients given
 // user weight (lbs) and daily caloric intake.
 //
-// This function prioritizes protein. Once optimal protein and carbs
-// have been calculated, fat is then calculated and checked for minimum
-// value. If fat is below the minimum limit, calories carbs are first to
-// be moved (followed by protein) in an attempt to reach the minimum
-// fat limit. This results in a possibly unbalanced macro split where
-// fats and carbs are at their minimum, but protein sits at its optimal
-// value.
+// Macronutrients are prioritized in the following way:
+// protein > carbs > fats. This may result in an unbalanced
+// macro split where fats and carbs are at their minimum, but protein
+// sits at its optimal value.
 func calculateMacros(u *UserInfo) (float64, float64, float64) {
 	// Get the calories from the minimum macro values.
 	mc := getMacroCals(u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats)
@@ -438,8 +435,12 @@ func getUserInfo(u *UserInfo) {
 	}
 
 	u.Sex = getSex()
-	u.Weight = getWeight()
-	u.Height = getHeight(u.System)
+
+	// Error need not be checked since `u.System` will always either be
+	// "imperial" or "metric".
+	u.Weight, _ = getWeight(u.System)
+	u.Height, _ = getHeight(u.System)
+
 	u.Age = getAge()
 	u.ActivityLevel = getActivity()
 
@@ -468,7 +469,7 @@ func getSystem() (s string) {
 	return s
 }
 
-// promptSystem prompts and returns user's preferred measurement    system.
+// promptSystem prompts and returns user's preferred measurement system.
 func promptSystem() (s string) {
 	fmt.Println("Enter your preferred measurement system")
 	fmt.Println("1. Metric (kg/cm)")
@@ -477,7 +478,7 @@ func promptSystem() (s string) {
 	return s
 }
 
-// validateSystem and returns the user's preferred measurement      system.
+// validateSystem and returns the user's preferred measurement system.
 func validateSystem(s string) error {
 	s = strings.ToLower(s)
 	if s == "1" || s == "2" {
@@ -497,7 +498,7 @@ func getSex() (s string) {
 		// Validate user response.
 		err := validateSex(s)
 		if err != nil {
-			fmt.Println("Must enter \"male\" or \"female\". Please try    again.")
+			fmt.Println("Must enter \"male\" or \"female\". Please try again.")
 			continue
 		}
 
@@ -526,71 +527,65 @@ func validateSex(s string) error {
 
 // getWeight prompts user for weight, validate their response, and
 // returns valid weight.
-func getWeight() (weight float64) {
+//
+// Asumptions:
+// * `u.System` has been initialized.
+func getWeight(system string) (float64, error) {
+	var weight float64
+	var err error
 	for {
-		// Prompt user to enter weight.
-		weightStr := promptWeight()
+		switch system {
+		case "metric":
+			fmt.Print("Enter weight (kgs): ")
+			_, err = fmt.Scan(&weight)
+			if err != nil {
+				fmt.Printf("Error reading weight: %v. Please try again.\n", err)
+				continue
+			}
 
-		var err error
-		// Validate user response.
-		weight, err = validateWeight(weightStr)
-		if err != nil {
-			fmt.Println("Invalid weight. Please try again.")
-			continue
+			weight = kgToLbs(weight)
+		case "imperial":
+			fmt.Print("Enter weight (lbs): ")
+			_, err = fmt.Scan(&weight)
+			if err != nil {
+				fmt.Printf("Error reading weight: %v. Please try again.\n", err)
+				continue
+			}
+		default:
+			return 0, fmt.Errorf("Invalid measurement system: %s", system)
 		}
 
 		break
 	}
 
-	return weight
-}
-
-// promptWeight prompts the user to enter their weight.
-func promptWeight() (w string) {
-	fmt.Print("Enter weight in lbs: ")
-	fmt.Scanln(&w)
-
-	return w
-}
-
-// validateWeight validates user response to being
-// prompted for weight and returns conversion to float64 if valid.
-func validateWeight(weightStr string) (w float64, err error) {
-	w, err = strconv.ParseFloat(weightStr, 64)
-	if err != nil || w < 0 {
-		return 0, errors.New("Invalid weight.")
-	}
-
-	return w, nil
+	return weight, nil
 }
 
 // getHeight prompts user for height, validates their response, and
-// returns valid height in inches.
-func getHeight(system string) (height float64) {
-	var heightStr string
+// returns their height in inches.
+func getHeight(system string) (float64, error) {
+	var height float64
 	var err error
 	for {
-		// Prompt user for height.
-
 		switch system {
 		case "metric":
 			fmt.Print("Enter height (cm): ")
-			fmt.Scanln(&heightStr)
+			_, err = fmt.Scan(&height)
 
-			// Validate their response.
-			height, err = validateHeight(heightStr)
 			if err != nil {
-				fmt.Println("Invalid height. Please try again.")
+				fmt.Printf("Error reading height: %v. Please try again.\n", err)
 				continue
 			}
+
 			height = cmToInches(height)
 		case "imperial":
 			// Prompt for feet portion.
-			fmt.Print("What is your height (feet portion)?")
+			fmt.Print("What is your height (feet portion)? ")
 			var feet int
 			_, err := fmt.Scan(&feet)
 			if err != nil {
-				log.Fatalf("Error reading feet: %v", err)
+				fmt.Printf("Error reading feet: %v. Please try again.", err)
+				continue
 			}
 
 			// Prompt for inches portion
@@ -598,38 +593,23 @@ func getHeight(system string) (height float64) {
 			var inches float64
 			_, err = fmt.Scan(&inches)
 			if err != nil {
-				log.Fatalf("Error reading inches: %v", err)
+				fmt.Printf("Error reading inches: %v. Please try again.", err)
+				continue
 			}
 
 			// Get height in inches.
 			height = feetInchesToInches(feet, inches)
+		default:
+			return 0, fmt.Errorf("Invalid measurement system: %s", system)
 		}
 
 		break
 	}
 
-	return height
+	return height, nil
 }
 
-// promptHeight prompts and returns user height as a string.
-func promptHeight() (heightStr string) {
-	fmt.Print("Enter height (cm): ")
-	fmt.Scanln(&heightStr)
-	return heightStr
-}
-
-// validateHeight validates user height and returns converion to    from
-// string to float64 if valid.
-func validateHeight(heightStr string) (float64, error) {
-	h, err := strconv.ParseFloat(heightStr, 64)
-	if err != nil || h < 0 {
-		return 0, errors.New("Invalid height.")
-	}
-
-	return h, nil
-}
-
-// getAge prompts user for age, validates their response, and       returns
+// getAge prompts user for age, validates their response, and returns
 // valid age.
 func getAge() (age int) {
 	var err error
@@ -656,7 +636,7 @@ func promptAge() (a string) {
 	return a
 }
 
-// validateAge validates user age and returns conversion from       string to
+// validateAge validates user age and returns conversion from string to
 // int if valid.
 func validateAge(ageStr string) (int, error) {
 	// Validate user response.
@@ -689,7 +669,7 @@ func getActivity() (a string) {
 
 // promptActivity prompts and returns user activity level.
 func promptActivity() (a string) {
-	fmt.Print("Enter activity level (sedentary, light, moderate,      active, very): ")
+	fmt.Print("Enter activity level (sedentary, light, moderate, active, very): ")
 	fmt.Scanln(&a)
 	return a
 }
