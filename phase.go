@@ -648,7 +648,7 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 	t := time.Now()
 	// If today comes before diet start date, then phase has not yet begun.
 	if t.Before(u.Phase.StartDate) {
-		fmt.Println("today comes before diet start date, then phase has not yet begun.")
+		log.Println("Diet phase has not yet started. Skipping check on diet phase.")
 		return false, nil
 	}
 
@@ -1585,9 +1585,9 @@ func setMinMaxPhaseDuration(u *UserInfo) {
 func promptConfirmation(u *UserInfo) {
 	// Display current information to the user.
 	fmt.Println("Summary:")
-	fmt.Println("Diet start date:", u.Phase.StartDate.Format(dateFormat))
-	fmt.Println("Diet end date:", u.Phase.EndDate.Format(dateFormat))
-	fmt.Println("Diet duration:", u.Phase.Duration)
+	fmt.Println("Diet Start Date:", u.Phase.StartDate.Format(dateFormat))
+	fmt.Println("Diet End Date:", u.Phase.EndDate.Format(dateFormat))
+	fmt.Printf("Diet Duration: %.1f weeks\n", math.Round(u.Phase.Duration*100)/100)
 
 	switch u.Phase.Name {
 	case "cut":
