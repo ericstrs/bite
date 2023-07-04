@@ -107,217 +107,6 @@ func generateConfig() (*UserInfo, error) {
 	return &u, nil
 }
 
-// getUserInfo prompts for user details.
-func getUserInfo(u *UserInfo) {
-	fmt.Println("Step 1: Your details.")
-	u.Sex = getSex()
-
-	w := getWeight()
-	u.Weight = w
-
-	u.Height = getHeight()
-	u.Age = getAge()
-	u.ActivityLevel = getActivity()
-
-	// Get BMR
-	bmr := Mifflin(u)
-
-	// Set TDEE
-	u.TDEE = TDEE(bmr, u.ActivityLevel)
-}
-
-// getSex prompts user for their sex, validates their response, and
-// returns valid sex.
-func getSex() (s string) {
-	for {
-		// Prompt user for their sex.
-		s = promptSex()
-
-		// Validate user response.
-		err := validateSex(s)
-		if err != nil {
-			fmt.Println("Must enter \"male\" or \"female\". Please try again.")
-			continue
-		}
-
-		break
-	}
-
-	return s
-}
-
-// promptSex prompts and returns user sex.
-func promptSex() (s string) {
-	fmt.Print("Enter sex (male/female): ")
-	fmt.Scanln(&s)
-	return s
-}
-
-// validateSex validates user sex and returns sex if valid.
-func validateSex(s string) error {
-	s = strings.ToLower(s)
-	if s == "male" || s == "female" {
-		return nil
-	}
-
-	return errors.New("Invalid sex.")
-}
-
-// getWeight prompts user for weight, validate their response, and
-// returns valid weight.
-func getWeight() (weight float64) {
-	for {
-		// Prompt user to enter weight.
-		weightStr := promptWeight()
-
-		var err error
-		// Validate user response.
-		weight, err = validateWeight(weightStr)
-		if err != nil {
-			fmt.Println("Invalid weight. Please try again.")
-			continue
-		}
-
-		break
-	}
-
-	return weight
-}
-
-// promptWeight prompts the user to enter their weight.
-func promptWeight() (w string) {
-	fmt.Print("Enter weight in lbs: ")
-	fmt.Scanln(&w)
-
-	return w
-}
-
-// validateWeight validates user response to being
-// prompted for weight and returns conversion to float64 if valid.
-func validateWeight(weightStr string) (w float64, err error) {
-	w, err = strconv.ParseFloat(weightStr, 64)
-	if err != nil || w < 0 {
-		return 0, errors.New("Invalid weight.")
-	}
-
-	return w, nil
-}
-
-// getHeight prompts user for height, validates their response, and
-// returns valid height.
-func getHeight() (height float64) {
-	for {
-		// Prompt user for height.
-		heightStr := promptHeight()
-
-		var err error
-		// Validate their response.
-		height, err = validateHeight(heightStr)
-		if err != nil {
-			fmt.Println("Invalid height. Please try again.")
-			continue
-		}
-
-		break
-	}
-
-	return height
-}
-
-// promptHeight prompts and returns user height as a string.
-func promptHeight() (heightStr string) {
-	fmt.Print("Enter height (cm): ")
-	fmt.Scanln(&heightStr)
-	return heightStr
-}
-
-// validateHeight validates user height and returns converion to from
-// string to float64 if valid.
-func validateHeight(heightStr string) (float64, error) {
-	h, err := strconv.ParseFloat(heightStr, 64)
-	if err != nil || h < 0 {
-		return 0, errors.New("Invalid height.")
-	}
-
-	return h, nil
-}
-
-// getAge prompts user for age, validates their response, and returns
-// valid age.
-func getAge() (age int) {
-	var err error
-	for {
-		// Prompt user for age.
-		ageStr := promptAge()
-
-		// Validate user response.
-		age, err = validateAge(ageStr)
-		if err != nil {
-			fmt.Println("Invalid age. Please try again.")
-			continue
-		}
-
-		break
-	}
-	return age
-}
-
-// promptAge prompts user for their age and returns age as a string.
-func promptAge() (a string) {
-	fmt.Print("Enter age: ")
-	fmt.Scanln(&a)
-	return a
-}
-
-// validateAge validates user age and returns conversion from string to
-// int if valid.
-func validateAge(ageStr string) (int, error) {
-	// Validate user response.
-	a, err := strconv.Atoi(ageStr)
-	if err != nil || a < 0 {
-		return 0, errors.New("Invalid age.")
-	}
-
-	return a, nil
-}
-
-// getActivity prompts user for activity level, validates user
-// response, and returns valid activity level.
-func getActivity() (a string) {
-	for {
-		// Prompt user for activity.
-		a = promptActivity()
-
-		// Validate user response.
-		err := validateActivity(a)
-		if err != nil {
-			fmt.Println("Invalid activity level. Please try again.")
-			continue
-		}
-
-		break
-	}
-	return a
-}
-
-// promptActivity prompts and returns user activity level.
-func promptActivity() (a string) {
-	fmt.Print("Enter activity level (sedentary, light, moderate, active, very): ")
-	fmt.Scanln(&a)
-	return a
-}
-
-// validateActivity validates their user response.
-func validateActivity(a string) error {
-	a = strings.ToLower(a)
-	_, err := activity(a)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // CheckProgress performs checks on the user's current diet phase.
 //
 // Current solution to defining a week is continually adding 7 days to
@@ -859,6 +648,7 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 	t := time.Now()
 	// If today comes before diet start date, then phase has not yet begun.
 	if t.Before(u.Phase.StartDate) {
+		fmt.Println("today comes before diet start date, then phase has not yet begun.")
 		return false, nil
 	}
 
@@ -889,7 +679,6 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 			switch option {
 			case "1": // Get new goal weight.
 				u.Phase.GoalWeight = getGoalWeight(u)
-				u.Phase.Active = true
 			case "2": // Change to different phase.
 				err := processPhaseTransition(u)
 				if err != nil {
@@ -897,6 +686,7 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 				}
 			}
 		}
+		u.Phase.Active = true
 	}
 	return u.Phase.Active, nil
 }
@@ -1632,14 +1422,17 @@ func setEndDate(u *UserInfo) {
 	}
 }
 
-// promptDate prompts and returns diet start date.
+// promptDate prompts and returns diet date.
 func promptDate(promptStr string) string {
 	reader := bufio.NewReader(os.Stdin)
-	// Prompt user for diet stop date.
+	// Prompt user for diet date.
 	fmt.Printf("%s\n", promptStr)
 	response, _ := reader.ReadString('\n')
 
-	return strings.TrimSpace(response)
+	// Trim leading/trailing white space (including newlines)
+	response = strings.TrimSpace(response)
+
+	return response
 }
 
 // validateEndDate prompts user for diet end date, validates user
@@ -1873,21 +1666,21 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 
 	// Check if there are any days logged for this diet.
 	if totalEntries == 0 {
-		log.Println("There has yet to be a logged day for this diet phase.")
+		log.Println("There has yet to be a logged day for this diet phase. Skipping diet day summary.")
 		return
 	}
 
 	daySummary(u, logs)
 
 	if totalWeeks < 1 {
-		log.Println("There has yet to be a logged week for this diet phase.")
+		log.Println("There has yet to be a logged week for this diet phase. Skipping diet week summary.")
 		return
 	}
 
 	weekSummary(u, logs)
 
 	if totalWeeks < 4 {
-		log.Println("There has yet to be a logged month for this diet phase.")
+		log.Println("There has yet to be a logged month for this diet phase. Skipping diet month summary.")
 		return
 	}
 
@@ -2087,17 +1880,11 @@ func printDietPhaseInfo(u *UserInfo) {
 	fmt.Println("Diet phase:", u.Phase.Name)
 	fmt.Println("Start Date:", u.Phase.StartDate.Format(dateFormat))
 	fmt.Println("End Date:", u.Phase.EndDate.Format(dateFormat))
-	fmt.Println("Duration:", u.Phase.Duration)
+	fmt.Printf("Duration: %.1f weeks\n", math.Round(u.Phase.Duration*100)/100)
 
 	remainingTime := calculateDuration(time.Now(), u.Phase.EndDate)
-
-	// Extract components
-	days := int(remainingTime.Hours() / 24)
-	weeks := int(days / 7)
-	months := int(days / 30) // Approximate calculation assuming 30 days per month
-
-	// Print remaining time
-	fmt.Printf("Remaining time: %d days, %d weeks, %d months\n", days, weeks, months)
+	remainingDays := int(remainingTime.Hours() / 24)
+	fmt.Printf("Remaining time: %d days\n", remainingDays)
 
 	fmt.Println("Goal Weight:", u.Phase.GoalWeight)
 	fmt.Println("Start Weight:", u.Phase.StartWeight)
