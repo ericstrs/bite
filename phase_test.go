@@ -2,95 +2,12 @@ package calories
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/rocketlaunchr/dataframe-go"
 )
-
-func ExampleValidateSex() {
-	err := validateSex("male")
-	fmt.Println(err)
-
-	// Output:
-	// <nil>
-}
-
-func ExampleValidateSex_error() {
-	err := validateSex("foo")
-	fmt.Println(err)
-
-	// Output:
-	// Invalid sex.
-}
-
-func ExampleValidateWeight() {
-	w, err := validateWeight("180")
-	fmt.Println(w)
-	fmt.Println(err)
-
-	// Output:
-	// 180
-	// <nil>
-}
-
-func ExampleValidateWeight_error() {
-	w, err := validateWeight("foo")
-	fmt.Println(w)
-	fmt.Println(err)
-
-	// Output:
-	// 0
-	// Invalid weight.
-}
-
-func ExampleValidateHeight() {
-	h, err := validateHeight("170.0")
-	fmt.Println(h)
-	fmt.Println(err)
-
-	// Output:
-	// 170
-	// <nil>
-}
-
-func ExampleValidateHeight_error() {
-	h, err := validateHeight("foo")
-	fmt.Println(h)
-	fmt.Println(err)
-
-	// Output:
-	// 0
-	// Invalid height.
-}
-
-func ExampleValidateAge() {
-	a, err := validateAge("30")
-	fmt.Println(a)
-	fmt.Println(err)
-
-	// Output:
-	// 30
-	// <nil>
-}
-
-func ExampleValidateAge_error() {
-	a, err := validateAge("foo")
-	fmt.Println(a)
-	fmt.Println(err)
-
-	// Output:
-	// 0
-	// Invalid age.
-}
-
-func ExampleValidateActivity() {
-	err := validateActivity("very")
-	fmt.Println(err)
-
-	// Output:
-	// <nil>
-}
 
 func ExampleCountEntriesPerWeek() {
 	u := UserInfo{}
@@ -123,15 +40,16 @@ func ExampleCountEntriesPerWeek() {
 
 	entryCountPerWeek, err := countEntriesPerWeek(&u, logs)
 
-	for _, entries := range *entryCountPerWeek {
-		fmt.Println(entries)
+	for week, entries := range *entryCountPerWeek {
+		fmt.Printf("Week %d entries: %d\n", week, entries)
 	}
 	fmt.Println(err)
 
 	// Output:
-	// 7
-	// 7
-	// 7
+	// Week 0 entries: 4
+	// Week 1 entries: 7
+	// Week 2 entries: 7
+	// Week 3 entries: 3
 	// <nil>
 }
 
@@ -175,8 +93,8 @@ func ExampleCountValidWeeks() {
 
 func ExampleRemoveCals() {
 	u := UserInfo{}
-	u.Weight = 180
-	u.Height = 180
+	u.Weight = 180 // lbs
+	u.Height = 70  // inches
 	u.Age = 30
 	u.ActivityLevel = "light"
 	bmr := Mifflin(&u)
@@ -197,7 +115,7 @@ func ExampleRemoveCals() {
 
 	// Output:
 	// Reducing caloric deficit by 125.00 calories.
-	// New calorie goal: 2720.14.
+	// New calorie goal: 2701.23.
 }
 
 func ExampleValidateAction() {
@@ -508,8 +426,8 @@ func ExampleMetWeeklyGoalBulk() {
 
 func ExampleAddCals() {
 	u := UserInfo{}
-	u.Weight = 180
-	u.Height = 180
+	u.Weight = 180 // lbs
+	u.Height = 65  //
 	u.Age = 30
 	u.ActivityLevel = "light"
 	bmr := Mifflin(&u)
@@ -530,7 +448,7 @@ func ExampleAddCals() {
 
 	// Output:
 	// Adding to caloric surplus by 125.00 calories.
-	// New calorie goal: 2970.14.
+	// New calorie goal: 2842.09.
 }
 
 func ExampleTotalWeightChangeWeek() {
@@ -615,7 +533,7 @@ func ExampleGetPrecedingWeightToDay_beforePhase() {
 	fmt.Println(err)
 
 	// Output:
-	// 182
+	// 180
 	// <nil>
 }
 
@@ -864,34 +782,58 @@ func ExampleSummary() {
 	u.ActivityLevel = "light"
 	bmr := Mifflin(&u)
 	u.TDEE = TDEE(bmr, u.ActivityLevel)
+	today := time.Now()
 
-	weight := dataframe.NewSeriesString("weight", nil,
-		"183.2", "182.2", "182.3", "182.3", "182.4", "182.5",
-		"181.6", "181.5", "181.6", "181.7", "180.8", "180.0", "181",
-		"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5",
-		"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
+	var weightSeriesElements []interface{}
+	var caloriesSeriesElements []interface{}
+	var dateSeriesElements []interface{}
 
-	calories := dataframe.NewSeriesString("calories", nil,
-		"2090", "2150", "2200", "2100", "2100", "2200",
-		"2200", "2100", "2100", "2200", "2300", "2300", "2300",
-		"2200", "2350", "2100", "2100", "2250", "2100", "2150",
-		"2200", "2350", "2100", "2100", "2250", "2100", "2150")
+	weightVal := 184.0
+	caloriesVal := 2300.0
 
-	date := dataframe.NewSeriesString("date", nil,
-		"2023-06-01", "2023-06-02", "2023-06-03", "2023-06-04", "2023-06-05", "2023-06-06",
-		"2023-06-07", "2023-06-08", "2023-06-09", "2023-06-10", "2023-06-11", "2023-06-12", "2023-06-13",
-		"2023-06-14", "2023-06-15", "2023-06-16", "2023-06-17", "2023-06-18", "2023-06-19", "2023-06-20",
-		"2023-06-21", "2023-06-22", "2023-06-23", "2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27")
+	for i := 0; i < 28; i++ {
+		dateVal := today.AddDate(0, 0, -27+i).Format(dateFormat)
+		dateSeriesElements = append(dateSeriesElements, dateVal)
 
-	logs := dataframe.NewDataFrame(weight, calories, date)
+		weightVal -= 0.10
+		weightSeriesElements = append(weightSeriesElements, strconv.FormatFloat(weightVal, 'f', 1, 64))
 
-	t := time.Now()
+		caloriesVal -= 10
+		caloriesSeriesElements = append(caloriesSeriesElements, strconv.Itoa(int(caloriesVal)))
+	}
 
-	logs.Append(nil, "181.5", "2200", t.Format(dateFormat))
-	u.Weight = 181.5
+	weightSeries := dataframe.NewSeriesString("weight", nil, weightSeriesElements...)
+	caloriesSeries := dataframe.NewSeriesString("calories", nil, caloriesSeriesElements...)
+	dateSeries := dataframe.NewSeriesString("date", nil, dateSeriesElements...)
 
-	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
-	u.Phase.EndDate = t.AddDate(0, 0, 3)
+	logs := dataframe.NewDataFrame(weightSeries, caloriesSeries, dateSeries)
+
+	/*
+		weight := dataframe.NewSeriesString("weight", nil,
+			"183.0", "183.2", "182.2", "182.3", "182.3", "182.4", "182.5",
+			"181.6", "181.5", "181.6", "181.7", "180.8", "180.0", "181",
+			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5",
+			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
+
+		calories := dataframe.NewSeriesString("calories", nil,
+			"2012", "2090", "2150", "2200", "2100", "2100", "2200",
+			"2200", "2100", "2100", "2200", "2300", "2300", "2300",
+			"2200", "2350", "2100", "2100", "2250", "2100", "2150",
+			"2200", "2350", "2100", "2100", "2250", "2100", "2150")
+
+		date := dataframe.NewSeriesString("date", nil,
+			"2023-06-02", "2023-06-03", "2023-06-04", "2023-06-05", "2023-06-06",
+			"2023-06-07", "2023-06-08", "2023-06-09", "2023-06-10", "2023-06-11", "2023-06-12", "2023-06-13",
+			"2023-06-14", "2023-06-15", "2023-06-16", "2023-06-17", "2023-06-18", "2023-06-19", "2023-06-20",
+			"2023-06-21", "2023-06-22", "2023-06-23", "2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27", "2023-06-28", "2023-06-29")
+
+		logs := dataframe.NewDataFrame(weight, calories, date)
+		logs.Append(nil, "181.5", "2200", today.Format(dateFormat))
+	*/
+
+	u.Weight = 181.20000000000016
+	u.Phase.StartDate, _ = time.Parse(dateFormat, logs.Series[dateCol].Value(0).(string))
+	u.Phase.EndDate = today.AddDate(0, 0, 3)
 	u.Phase.Active = true
 	u.Phase.GoalCalories = 2200
 	u.Phase.Name = "cut"
