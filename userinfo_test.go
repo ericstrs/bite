@@ -4,17 +4,17 @@ import "fmt"
 
 func ExampleMifflin() {
 	u := UserInfo{
-		Weight: 180.0, // lbs
-		Height: 180.0, // cm
+		Weight: 180.0,    // lbs
+		Height: 70.86614, // inches
 		Age:    30,
 		Sex:    "male",
 	}
 
 	result := Mifflin(&u)
-	fmt.Println(result)
+	fmt.Printf("%.1f\n", result)
 
 	// Output:
-	// 1796.466266
+	// 1796.5
 }
 
 func ExampleUnknownActivity() {
@@ -153,5 +153,94 @@ func ExampleSetMinMaxMacros() {
 	// Maximum daily fat: 88.88888888888889
 }
 
-// TODO: make example tests for when weight has not been set, weight
-// is negative.
+func ExampleValidateSystem() {
+	err := validateSystem("1")
+	fmt.Println(err)
+
+	// Output:
+	// <nil>
+}
+
+func ExampleValidateSex() {
+	err := validateSex("male")
+	fmt.Println(err)
+
+	// Output:
+	// <nil>
+}
+
+func ExampleValidateSex_error() {
+	err := validateSex("foo")
+	fmt.Println(err)
+
+	// Output:
+	// Invalid sex.
+}
+
+func ExampleValidateWeight() {
+	w, err := validateWeight("180")
+	fmt.Println(w)
+	fmt.Println(err)
+
+	// Output:
+	// 180
+	// <nil>
+}
+
+func ExampleValidateWeight_error() {
+	w, err := validateWeight("foo")
+	fmt.Println(w)
+	fmt.Println(err)
+
+	// Output:
+	// 0
+	// Invalid weight.
+}
+
+func ExampleValidateHeight() {
+	h, err := validateHeight("170.0")
+	fmt.Println(h)
+	fmt.Println(err)
+
+	// Output:
+	// 170
+	// <nil>
+}
+
+func ExampleValidateHeight_error() {
+	h, err := validateHeight("foo")
+	fmt.Println(h)
+	fmt.Println(err)
+
+	// Output:
+	// 0
+	// Invalid height.
+}
+
+func ExampleValidateAge() {
+	a, err := validateAge("30")
+	fmt.Println(a)
+	fmt.Println(err)
+
+	// Output:
+	// 30
+	// <nil>
+}
+
+func ExampleValidateAge_error() {
+	a, err := validateAge("foo")
+	fmt.Println(a)
+	fmt.Println(err)
+
+	// Output:
+	// 0
+	// Invalid age.
+}
+
+func ExampleValidateActivity() {
+	err := validateActivity("very")
+	fmt.Println(err)
+
+	// Output:
+	// <nil>
+}
