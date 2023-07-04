@@ -62,7 +62,10 @@ func Log(u *UserInfo, s string) error {
 	var err error
 
 	// Get user weight.
-	u.Weight = getWeight()
+	u.Weight, err = getWeight(u.System)
+	if err != nil {
+		return err
+	}
 
 	// Get user calories for the day.
 	cals, err := promptCals()
