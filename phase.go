@@ -1028,6 +1028,13 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 		return 0, false, err
 	}
 
+	// Must have this check. Otherwise weekStart may land within 7 days of
+	// the diet end date, which breaks our assumption that we have
+	// weekStart + 6 days of entries to iterate over.
+	if startIdx == -1 {
+		return 0, false, nil
+	}
+
 	// Iterate over each day of the week starting from startIdx.
 	for i = startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
 		// Get entry date.
@@ -1124,9 +1131,8 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 // TODO: Handle case where user is brand new. They set diet date start
 // in the future. They don't log any information.
 //
-// processPhaseTransition prompts user for the diet phase to transistion
-// to, validated their response until they enter a valid transistion
-// option, savesd next phase to config file, and returns error to indicate success or failure.
+// processPhaseTransition transitions the user to a new diet phase
+// and saves the next phase to config file.
 func processPhaseTransition(u *UserInfo) error {
 	fmt.Println("Step 1: Diet phase recap")
 	fmt.Printf("Goal weight: %f. Current weight: %f\n", u.Phase.GoalWeight, u.Weight)
