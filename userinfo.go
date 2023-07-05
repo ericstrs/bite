@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -471,9 +472,10 @@ func getSystem() (s string) {
 
 // promptSystem prompts and returns user's preferred measurement system.
 func promptSystem() (s string) {
-	fmt.Println("Enter your preferred measurement system")
+	fmt.Println("Set measurement system to:")
 	fmt.Println("1. Metric (kg/cm)")
 	fmt.Println("2. Imperial (lbs/inches)")
+	fmt.Printf("Choose your preferred measurement system: ")
 	fmt.Scanln(&s)
 	return s
 }
@@ -683,4 +685,52 @@ func validateActivity(a string) error {
 	}
 
 	return nil
+}
+
+// PrintUserInfo prints the users info.
+func PrintUserInfo(u *UserInfo) {
+	fmt.Println(colorUnderline, "User Information:", colorReset)
+	fmt.Printf("Measurement System: %s\n", u.System)
+	fmt.Printf("Sex: %s\n", u.Sex)
+
+	switch u.System {
+	case "metric":
+		fmt.Printf("Weight: %.2f kg\n", lbsToKg(u.Weight))
+		fmt.Printf("Height: %.2f cm\n", inchesToCm(u.Height))
+	case "imperial":
+		feet, inches := inchesToFeetInches(u.Height)
+		fmt.Printf("Weight: %.2f lbs\n", u.Weight)
+		fmt.Printf("Height: %d' %.2f\"\n", feet, inches)
+	default:
+		fmt.Println("Invalid measurement system.")
+	}
+
+	fmt.Printf("Age: %d\n", u.Age)
+	fmt.Printf("Activity Level: %s\n", u.ActivityLevel)
+	fmt.Printf("TDEE: %.2f\n", u.TDEE)
+}
+
+// UpdateUserInfo lets the user update their information.
+func UpdateUserInfo(u *UserInfo) {
+	fmt.Println("Update your information.")
+	getUserInfo(u)
+
+	// Update min and max values for macros.
+	setMinMaxMacros(u)
+
+	// Update suggested macro split.
+	protein, carbs, fats := calculateMacros(u)
+	u.Macros.Protein = protein
+	u.Macros.Carbs = carbs
+	u.Macros.Fats = fats
+
+	// Save the update UserInfo to config file.
+	err := saveUserInfo(u)
+	if err != nil {
+		log.Printf("Failed to save user info: %v\n", err)
+		return
+	}
+
+	fmt.Println("Updated information:")
+	PrintUserInfo(u)
 }
