@@ -22,37 +22,47 @@ type WeightLossStatus int
 type WeightMaintenanceStatus int
 
 const (
-	calsPerPound                            = 3500 // Estimated calories per pound of bodyweight.
-	gainedTooLittle WeightGainStatus        = -1
-	withinGainRange WeightGainStatus        = 0
-	gainedTooMuch   WeightGainStatus        = 1
-	lostTooLittle   WeightLossStatus        = -1
-	withinLossRange WeightLossStatus        = 0
-	lostTooMuch     WeightLossStatus        = 1
-	lost            WeightMaintenanceStatus = -1
-	maintained      WeightMaintenanceStatus = 0
-	gained          WeightMaintenanceStatus = 1
-	dateFormat                              = "2006-01-02"
-	colorReset                              = "\033[0m"
-	colorItalic                             = "\033[3m"
-	colorRed                                = "\033[31m"
-	colorGreen                              = "\033[32m"
-	colorUnderline                          = "\033[4m"
+	calsPerPound                                       = 3500 // Estimated calories per pound of bodyweight.
+	lostTooLittle              WeightLossStatus        = -1
+	withinLossRange            WeightLossStatus        = 0
+	lostTooMuch                WeightLossStatus        = 1
+	lost                       WeightMaintenanceStatus = -1
+	maintained                 WeightMaintenanceStatus = 0
+	gained                     WeightMaintenanceStatus = 1
+	gainedTooLittle            WeightGainStatus        = -1
+	withinGainRange            WeightGainStatus        = 0
+	gainedTooMuch              WeightGainStatus        = 1
+	defaultCutDuration                                 = 8.0    // Weeks.
+	defaultBulkDuration                                = 10.0   // Weeks.
+	defaultCutWeeklyChangePct                          = -0.005 // -0.5% of bodyweight per week.
+	defaultBulkWeeklyChangePct                         = 0.0025 // +0.25% of bodyweight per week.
+	dateFormat                                         = "2006-01-02"
+	colorReset                                         = "\033[0m"
+	colorItalic                                        = "\033[3m"
+	colorRed                                           = "\033[31m"
+	colorGreen                                         = "\033[32m"
+	colorUnderline                                     = "\033[4m"
 )
 
 type PhaseInfo struct {
-	Name            string    `yaml:"name"`
-	GoalCalories    float64   `yaml:"goal_calories"`
-	StartWeight     float64   `yaml:"start_weight"`
-	GoalWeight      float64   `yaml:"goal_weight"`
-	WeeklyChange    float64   `yaml:"weekly_change"`
-	StartDate       time.Time `yaml:"start_date"`
-	EndDate         time.Time `yaml:"end_date"`
-	LastCheckedWeek time.Time `yaml:"last_checked_week"`
-	Duration        float64   `yaml:"duration"`
-	MaxDuration     float64   `yaml:"max_duration"`
-	MinDuration     float64   `yaml:"min_duration"`
-	Active          bool      `yaml:"active"`
+	Name         string  `yaml:"name"`
+	GoalCalories float64 `yaml:"goal_calories"`
+	StartWeight  float64 `yaml:"start_weight"`
+	GoalWeight   float64 `yaml:"goal_weight"`
+	// WeightChangeThreshold is used to ensure the user has not
+	// lost/gained too much weight for a given diet phase.
+	// If the user chooses to continue the current diet phase,
+	// WeightChangeThreshold is updated to the 10% of the user's current
+	// weight, and the process repeats.
+	WeightChangeThreshold float64   `yaml:"weight_change_threshold"`
+	WeeklyChange          float64   `yaml:"weekly_change"`
+	StartDate             time.Time `yaml:"start_date"`
+	EndDate               time.Time `yaml:"end_date"`
+	LastCheckedWeek       time.Time `yaml:"last_checked_week"`
+	Duration              float64   `yaml:"duration"`
+	MaxDuration           float64   `yaml:"max_duration"`
+	MinDuration           float64   `yaml:"min_duration"`
+	Active                bool      `yaml:"active"`
 }
 
 // ReadConfig reads config file or creates it if it doesn't exist and
@@ -286,30 +296,31 @@ func countValidWeeks(e map[int]int) int {
 	return count
 }
 
-// TODO:
-// * Case 1 of ending cut and beginning maintenance phase should be its
-// own function. Particularily, it should be a helper function that
-// encapsulates transistion from a bulk/cut diet to maintenance. That
-// is, a helper function to processPhaseTransistion.
-// * If they decide to continue, how much do you update threshold?
-//
 // checkCutThreshold checks if the user has lost too much weight, in
-// which the cut is stopped and a maintenance phase begins.
+// which the user is presented with different options of moving forward.
 //
-// If they has surpassed the maximum threshold for weight loss, the user
-// is notified, and offered the change to transistion to another phase.
+// Assumptions:
+// * User has lost some amount of weight.
+// * `u.Phase.WeightChangeThreshold` has been initialized.
 func checkCutThreshold(u *UserInfo) error {
+	// If user has gained more weight than starting weight, return early.
+	if u.Weight > u.Phase.StartWeight {
+		return nil
+	}
+
 	// Find the amount of weight the user has lost.
 	weightLost := u.Phase.StartWeight - u.Weight
-	// Find the theshold weight the user is allowed to lose.
-	threshold := u.Phase.StartWeight * 0.10
 
-	// If the user has lost more than 10% of starting weight,
-	if weightLost > threshold {
+	// If the user has lost more than the threshold weight change,
+	if weightLost > u.Phase.WeightChangeThreshold {
 		option := getCutAction()
 
 		switch option {
 		case "1":
+			// TODO: this may not set all the phase fields correctly. For
+			// instance, `u.Phase.WeightChangeThreshold` should not be the
+			// same as it was for the cut.
+
 			// End cut and begin maintenance phase.
 			// Note: diet duration is left unmodified so maintenance phase
 			// lasts as long as the cut.
@@ -340,6 +351,15 @@ func checkCutThreshold(u *UserInfo) error {
 				return err
 			}
 		case "3": // Continue with the cut.
+			u.Phase.WeightChangeThreshold += u.Weight * 0.10 // 10% of current weight.
+			// Save user info to config file.
+			err := saveUserInfo(u)
+			if err != nil {
+				log.Println("Failed to update phase start weight:", err)
+				return err
+			}
+			percentage := (u.Phase.WeightChangeThreshold / u.Phase.StartWeight) * 100.0
+			fmt.Printf("Maximum threshold updated to %.1f%% of starting weight, you can continue with the cut.\n", percentage)
 		}
 	}
 
@@ -350,7 +370,7 @@ func checkCutThreshold(u *UserInfo) error {
 // already surpassed cut threshold, validates their reponse
 // until they've entered a valid action, and returns the valid action.
 func getCutAction() string {
-	fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
+	fmt.Println("You've reached the maximum threshold for weight loss (you've lost more than 10%% of your starting weight in a single cutting phase). Stopping your cut and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
 	fmt.Println("1. End cut and begin maintenance phase")
 	fmt.Println("2. Choose a different diet phase.")
 	fmt.Println("3. Continue with the cut.")
@@ -542,32 +562,33 @@ func removeCals(u *UserInfo, totalWeekWeightChange float64) {
 	}
 }
 
-// TODO:
-// * Case 1 of ending bulk and beginning maintenance phase should be its
-// own function. Particularily, it should be a helper function that
-// encapsulates transistion from a bulk/cut diet to maintenance. That
-// is, a helper function to processPhaseTransistion.
-// * If they decide to continue, how much do you update threshold?
-//
 // checkBulkThreshold checks if the user has gained too much weight, in
 // which the bulk is stopped and a maintenance phase begins.
 //
-// Note: diet duration is left unmodified so maintenance phase
-// lasts as long as the bulk and threshold is for beginner's by default.
+// Assumptions:
+// * User has gained some amount of weight.
+// * `u.Phase.WeightChangeThreshold` has been initialized.
 func checkBulkThreshold(u *UserInfo) error {
+	// If user has lost more weight than starting weight, return early.
+	if u.Weight < u.Phase.StartWeight {
+		return nil
+	}
+
 	// Find the amount of weight the user has gained.
 	weightGain := u.Weight - u.Phase.StartWeight
-	// Find the theshold weight the user is allowed to gain.
-	threshold := u.Phase.StartWeight * 0.10
 
 	// If the user has gained more than 10% of starting weight,
-	if weightGain > threshold {
+	if weightGain > u.Phase.WeightChangeThreshold {
 		option := getBulkAction()
 
 		switch option {
 		case "1":
+			// TODO: this may not set all the phase fields correctly. For
+			// instance, `u.Phase.WeightChangeThreshold` should not be the
+			// same as it was for the bulk.
+
 			// End bulk and begin maintenance phase.
-			// Note: diet duration is left unmodified so maintenance phase
+			// Note: diet duration is left unmodified so the maintenance phase
 			// lasts as long as the bulk.
 
 			// Set phase to maintenance.
@@ -596,7 +617,16 @@ func checkBulkThreshold(u *UserInfo) error {
 			if err != nil {
 				return err
 			}
-		case "3": // Continue with the cut.
+		case "3": // Continue with the bulk.
+			u.Phase.WeightChangeThreshold += u.Weight * 0.10 // 10% of current weight.
+			// Save user info to config file.
+			err := saveUserInfo(u)
+			if err != nil {
+				log.Println("Failed to update phase start weight:", err)
+				return err
+			}
+			percentage := (u.Phase.WeightChangeThreshold / u.Phase.StartWeight) * 100.0
+			fmt.Printf("Maximum threshold updated to %.1f%% of starting weight, continuing with the bulk.\n", percentage)
 		}
 	}
 
@@ -607,7 +637,7 @@ func checkBulkThreshold(u *UserInfo) error {
 // already surpassed bulk thresholds, validates their reponse
 // until they've entered a valid action, and returns the valid action.
 func getBulkAction() string {
-	fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
+	fmt.Println("You've reached the maximum threshold for weight gain (you've gained more than 10%% of your starting weight in a single bulking phase). Stopping your bulk and beginning a maintenance phase is highly recommended. Please choose one of the following actions:")
 	fmt.Println("1. End bulk and begin maintenance phase")
 	fmt.Println("2. Choose a different diet phase.")
 	fmt.Println("3. Continue with the bulk.")
@@ -630,7 +660,7 @@ func getBulkAction() string {
 
 // promptAction prompts the user for the action.
 func promptAction() (o string) {
-	fmt.Printf("Enter actions (1, 2, or 3): ")
+	fmt.Printf("Type number and <Enter>: ")
 	fmt.Scanln(&o)
 	return o
 }
@@ -735,7 +765,7 @@ func printNextAction(phase string) {
 
 // promptNextAction prompts the user for the next action.
 func promptNextAction() (a string) {
-	fmt.Printf("Enter actions (1 or 2): ")
+	fmt.Printf("Type number and <Enter>: ")
 	fmt.Scanln(&a)
 	return a
 }
@@ -1184,6 +1214,9 @@ func processUserInfo(u *UserInfo) {
 	// to the weight of the user when the user begins the diet.
 	u.Phase.StartWeight = u.Weight
 
+	// Set initial diet weight change theshold.
+	u.Phase.WeightChangeThreshold = u.Weight * 0.10
+
 	getPhaseInfo(u)
 
 	// Set min and max diet phase duration.
@@ -1280,6 +1313,7 @@ func validateDietChoice(c string) error {
 	return errors.New("Invalid diet choice.")
 }
 
+/*
 // handleRecommendedDiet sets UserInfo struct fields according to a
 // reccomended diet.
 func handleRecommendedDiet(u *UserInfo) {
@@ -1293,8 +1327,8 @@ func handleRecommendedDiet(u *UserInfo) {
 		// Find the weekly change in weight needed to reach cut goal
 		weeklyChange := u.Phase.StartWeight * -0.005
 
-		// Calculate expected change in weight for the cut.
-		loss := weeklyChange * duration
+		// Calculate expected weight for the cut.
+		goalWeight := calculateGoalWeight(u.Phase.StartWeight, duration, weeklyChange)
 
 		// Get weekly average weight change in calories.
 		totalWeekWeightChangeCals := weeklyChange * calsPerPound
@@ -1302,7 +1336,7 @@ func handleRecommendedDiet(u *UserInfo) {
 		c := totalWeekWeightChangeCals / 7
 
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, weeklyChange, duration, u.Phase.StartWeight+loss, u.TDEE+c)
+		setRecommendedValues(u, weeklyChange, duration, goalWeight, u.TDEE+c)
 	case "maintain":
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
 		setRecommendedValues(u, 0, 5, u.Phase.StartWeight, u.TDEE)
@@ -1312,8 +1346,8 @@ func handleRecommendedDiet(u *UserInfo) {
 		// Find the weekly change in weight needed to reach bulk goal
 		weeklyChange := u.Phase.StartWeight * 0.0025
 
-		// Calculate the expected change in weight for the bulk.
-		gain := weeklyChange * duration
+		// Calculate the expected weight for the bulk.
+		goalWeight := calculateGoalWeight(u.Phase.StartWeight, duration, weeklyChange)
 
 		// Get weekly average weight change in calories.
 		totalWeekWeightChangeCals := weeklyChange * calsPerPound
@@ -1321,11 +1355,72 @@ func handleRecommendedDiet(u *UserInfo) {
 		c := totalWeekWeightChangeCals / 7
 
 		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, weeklyChange, duration, u.Phase.StartWeight+gain, u.TDEE+c)
+		setRecommendedValues(u, weeklyChange, duration, goalWeight, u.TDEE+c)
 	}
 
 	// Calculate the diet end date.
 	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
+}
+*/
+
+func handleRecommendedDiet(u *UserInfo) {
+	u.Phase.StartDate = getStartDate(u)
+
+	switch u.Phase.Name {
+	case "cut":
+		goalWeight, dailyCaloricChange := calculateDietPlan(u.Phase.StartWeight, defaultCutDuration, defaultCutWeeklyChangePct)
+		setRecommendedValues(u, defaultCutWeeklyChangePct*u.Phase.StartWeight, defaultCutDuration, goalWeight, u.TDEE+dailyCaloricChange)
+	case "maintain":
+		setRecommendedValues(u, 0, 5, u.Phase.StartWeight, u.TDEE)
+	case "bulk":
+		goalWeight, dailyCaloricChange := calculateDietPlan(u.Phase.StartWeight, defaultBulkDuration, defaultBulkWeeklyChangePct)
+		setRecommendedValues(u, defaultBulkWeeklyChangePct*u.Phase.StartWeight, defaultBulkDuration, goalWeight, u.TDEE+dailyCaloricChange)
+	}
+
+	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
+}
+
+// calculateDietPlan calculates the goal weight and daily caloric change needed
+// to achieve the goal weight in the given duration.
+func calculateDietPlan(startWeight, duration, weeklyChangePct float64) (goalWeight, dailyCaloricChange float64) {
+	goalWeight = calculateGoalWeight(startWeight, duration, weeklyChangePct)
+	totalWeekWeightChangeCals := weeklyChangePct * startWeight * calsPerPound
+	dailyCaloricChange = totalWeekWeightChangeCals / 7.0
+	return goalWeight, dailyCaloricChange
+}
+
+// calculateGoalWeight calculates the estimated goal weight for a given
+// diet phase.
+func calculateGoalWeight(startWeight, duration, weeklyChange float64) float64 {
+	// Start with the current weight.
+	currentWeight := startWeight
+
+	// Calculate total weeks and remaining days.
+	totalWeeks := int(duration)
+	remainingDays := duration - float64(totalWeeks)
+
+	// For each full week in the diet phase.
+	for i := 0; i < totalWeeks; i++ {
+		// Calculate the change for this week as a percentage of the
+		// current weight.
+		changeThisWeek := currentWeight * weeklyChange
+
+		// Add this week's change to the current weight.
+		currentWeight += changeThisWeek
+	}
+
+	// If there are remaining days in the last week.
+	if remainingDays > 0 {
+		// Calculate the change for remaining days as a proportion of
+		// the weekly change.
+		changeRemainingDays := (currentWeight * weeklyChange) * (remainingDays / 7.0)
+
+		// Add remaining days' change to the current weight.
+		currentWeight += changeRemainingDays
+	}
+
+	// Return the final expected weight
+	return math.Round(currentWeight*100) / 100
 }
 
 // setRecommendedValues sets the recommended values for the UserInfo
