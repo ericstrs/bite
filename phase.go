@@ -37,6 +37,7 @@ const (
 	colorItalic                             = "\033[3m"
 	colorRed                                = "\033[31m"
 	colorGreen                              = "\033[32m"
+	colorUnderline                          = "\033[4m"
 )
 
 type PhaseInfo struct {
@@ -1712,13 +1713,11 @@ func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
 	calsStr := logs.Series[calsCol].Value(i).(string)
 	cals, _ := strconv.ParseFloat(calsStr, 64)
 
-	fmt.Printf("Day Summary for %s\n", tailDate.Format(dateFormat))
-	fmt.Printf("---------------------------\n")
+	fmt.Printf("%sDay Summary for %s%s\n", colorUnderline, tailDate.Format(dateFormat), colorReset)
 	fmt.Printf("Current Weight: %f\n", u.Weight)
 	fmt.Printf("Calories Consumed: ")
 	c := getAdherenceColor(calsStr, metCalDayGoal(u, cals))
 	fmt.Printf("%s\n", c)
-	fmt.Printf("---------------------------\n")
 }
 
 // metCalDayGoal checks to see if the user met the daily calorie goal
@@ -1755,8 +1754,7 @@ func getAdherenceColor(s string, b bool) string {
 // weekSummary prints a summary of the diet for the most recent week.
 func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	fmt.Println()
-	fmt.Println("Week Summary")
-	fmt.Printf("---------------------------\n")
+	fmt.Println(colorUnderline, "Week Summary", colorReset)
 
 	var daysOfWeek []string
 	var calsOfWeek []string
@@ -1796,14 +1794,12 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	}
 
 	printWeekSummary(daysOfWeek, calsOfWeek)
-	fmt.Printf("---------------------------\n")
 }
 
 // monthSummary prints a summary of the diet for the most recent 4 weeks.
 func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	fmt.Println()
-	fmt.Println("Month Summary")
-	fmt.Printf("---------------------------\n")
+	fmt.Println(colorUnderline, "Month Summary", colorReset)
 
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
 
@@ -1847,7 +1843,6 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 
 		printWeekSummary(daysOfWeek, calsOfWeek)
 	}
-	fmt.Printf("---------------------------\n")
 }
 
 // printWeekSummary prints a summary of the diet for a week.
@@ -1875,8 +1870,7 @@ func isSameDay(date1, date2 time.Time) bool {
 func printDietPhaseInfo(u *UserInfo) {
 	// Print the diet phase information.
 	fmt.Println()
-	fmt.Println("Diet Phase Info:")
-	fmt.Println("---------------------------")
+	fmt.Println(colorUnderline, "Diet Phase Info:", colorReset)
 	fmt.Println("Diet phase:", u.Phase.Name)
 	fmt.Println("Start Date:", u.Phase.StartDate.Format(dateFormat))
 	fmt.Println("End Date:", u.Phase.EndDate.Format(dateFormat))
@@ -1888,5 +1882,4 @@ func printDietPhaseInfo(u *UserInfo) {
 
 	fmt.Println("Goal Weight:", u.Phase.GoalWeight)
 	fmt.Println("Start Weight:", u.Phase.StartWeight)
-	fmt.Println("---------------------------")
 }
