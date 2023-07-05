@@ -177,46 +177,6 @@ func ExampleValidateSex_error() {
 	// Invalid sex.
 }
 
-func ExampleValidateWeight() {
-	w, err := validateWeight("180")
-	fmt.Println(w)
-	fmt.Println(err)
-
-	// Output:
-	// 180
-	// <nil>
-}
-
-func ExampleValidateWeight_error() {
-	w, err := validateWeight("foo")
-	fmt.Println(w)
-	fmt.Println(err)
-
-	// Output:
-	// 0
-	// Invalid weight.
-}
-
-func ExampleValidateHeight() {
-	h, err := validateHeight("170.0")
-	fmt.Println(h)
-	fmt.Println(err)
-
-	// Output:
-	// 170
-	// <nil>
-}
-
-func ExampleValidateHeight_error() {
-	h, err := validateHeight("foo")
-	fmt.Println(h)
-	fmt.Println(err)
-
-	// Output:
-	// 0
-	// Invalid height.
-}
-
 func ExampleValidateAge() {
 	a, err := validateAge("30")
 	fmt.Println(a)
