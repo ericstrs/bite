@@ -64,6 +64,20 @@ func main() {
 			return
 		}
 		log.Println("Diet is not active. Skipping summary.")
+	case "info":
+		if len(os.Args) < 3 {
+			c.PrintUserInfo(u)
+			return
+		}
+
+		switch os.Args[2] {
+		case "update":
+			c.UpdateUserInfo(u)
+
+		default:
+			fmt.Printf("Unknown subcommand: %s\n", os.Args[2])
+		}
+
 	default:
 		log.Println("Error: usage")
 	}
