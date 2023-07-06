@@ -553,6 +553,12 @@ func ExampleValidateDietChoice() {
 	// <nil>
 }
 
+func ExampleCalculateGoalWeight() {
+	fmt.Println(calculateGoalWeight(180, 8, defaultBulkWeeklyChangePct))
+	// Output:
+	// 183.63
+}
+
 func ExampleSetRecommendedValues() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 01, 0, 0, 0, 0, time.UTC)
