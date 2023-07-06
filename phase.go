@@ -317,36 +317,10 @@ func checkCutThreshold(u *UserInfo) error {
 
 		switch option {
 		case "1":
-			// End cut and begin maintenance phase.
-			// Note: diet duration is left unmodified so maintenance phase
-			// lasts as long as the cut.
-
-			// Set phase to maintenance.
-			u.Phase.Name = "maintain"
-			u.Phase.GoalCalories = u.TDEE
-			u.Phase.StartWeight = u.Weight
-			u.Phase.WeightChangeThreshold = 0
-
-			// Immediately start maintenance phase.
-			u.Phase.StartDate = time.Now()
-			u.Phase.WeeklyChange = 0
-			u.Phase.GoalWeight = u.Phase.StartWeight
-			u.Phase.LastCheckedWeek = u.Phase.StartDate
-			setMinMaxPhaseDuration(u)
-			u.Phase.Active = true
-
-			// Calculate the diet end date.
-			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
-
-			promptConfirmation(u)
-
-			// Save user info to config file.
-			err := saveUserInfo(u)
+			err := transitionToMaintenance(u)
 			if err != nil {
-				log.Println("Failed to update phase to maintenance:", err)
 				return err
 			}
-			fmt.Println("Saved user information.")
 		case "2": // Change to different phase.
 			err := processPhaseTransition(u)
 			if err != nil {
@@ -582,40 +556,12 @@ func checkBulkThreshold(u *UserInfo) error {
 	// If the user has gained more than 10% of starting weight,
 	if weightGain > u.Phase.WeightChangeThreshold {
 		option := getBulkAction()
-
 		switch option {
 		case "1":
-			// End bulk and begin maintenance phase.
-			// Note: diet duration is left unmodified so the maintenance phase
-			// lasts as long as the bulk.
-
-			// Set phase to maintenance.
-			u.Phase.Name = "maintain"
-			u.Phase.GoalCalories = u.TDEE
-			u.Phase.StartWeight = u.Weight
-			u.Phase.WeightChangeThreshold = 0
-
-			// Immediately start maintenance phase.
-			u.Phase.StartDate = time.Now()
-			u.Phase.WeeklyChange = 0
-			u.Phase.GoalWeight = u.Phase.StartWeight
-			u.Phase.LastCheckedWeek = u.Phase.StartDate
-			setMinMaxPhaseDuration(u)
-			u.Phase.Active = true
-
-			// Calculate the diet end date.
-			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
-
-			promptConfirmation(u)
-
-			// Get option.
-			// Save user info to config file.
-			err := saveUserInfo(u)
+			err := transitionToMaintenance(u)
 			if err != nil {
-				log.Println("Failed to update phase to maintenance:", err)
-				return err
+				return nil
 			}
-			fmt.Println("Saved user information.")
 		case "2": // Change to different phase.
 			err := processPhaseTransition(u)
 			if err != nil {
@@ -634,6 +580,33 @@ func checkBulkThreshold(u *UserInfo) error {
 		}
 	}
 
+	return nil
+}
+
+// transitionToMaintenance starts a new maintienance phase.
+// Note: diet duration is left unmodified so the maintenance phase
+// lasts as long as the previous diet phase.
+func transitionToMaintenance(u *UserInfo) error {
+	u.Phase.Name = "maintain"
+	u.Phase.GoalCalories = u.TDEE
+	u.Phase.StartWeight = u.Weight
+	u.Phase.WeightChangeThreshold = 0
+	u.Phase.WeeklyChange = 0
+	u.Phase.GoalWeight = u.Phase.StartWeight
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
+	u.Phase.Active = true
+	u.Phase.StartDate = time.Now()
+	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
+	setMinMaxPhaseDuration(u)
+	promptConfirmation(u)
+
+	// Save user info to config file.
+	err := saveUserInfo(u)
+	if err != nil {
+		log.Println("Failed to update phase to maintenance:", err)
+		return err
+	}
+	fmt.Println("Saved user information.")
 	return nil
 }
 
@@ -1827,12 +1800,13 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	// Iterate over the entries starting from EndDate - 7 days.
 	for i := 0; i < 7; i++ {
 		date := lastMonday.AddDate(0, 0, i)
-		d := date.Weekday().String()
+		d := date.Weekday().String() + " "
 
 		// Bold the value if it's the current day.
 		if date.Equal(tailDate) {
-			d = colorItalic + date.Weekday().String() + colorReset + "\t"
+			d = colorItalic + date.Weekday().String() + colorReset + " "
 		}
+
 		// Append date in day of the week to array.
 		daysOfWeek = append(daysOfWeek, d)
 
@@ -1879,7 +1853,7 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 
 			// Bold the value if it's the current day.
 			if date.Equal(tailDate) {
-				d = colorItalic + date.Weekday().String() + colorReset + "\t"
+				d = colorItalic + date.Weekday().String() + colorReset + " "
 			}
 			// Append date in day of the week to array.
 			daysOfWeek = append(daysOfWeek, d)
