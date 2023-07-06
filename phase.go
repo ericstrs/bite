@@ -325,13 +325,13 @@ func checkCutThreshold(u *UserInfo) error {
 			u.Phase.Name = "maintain"
 			u.Phase.GoalCalories = u.TDEE
 			u.Phase.StartWeight = u.Weight
-			WeightChangeThreshold = 0
+			u.Phase.WeightChangeThreshold = 0
 
 			// Immediately start maintenance phase.
 			u.Phase.StartDate = time.Now()
 			u.Phase.WeeklyChange = 0
 			u.Phase.GoalWeight = u.Phase.StartWeight
-			u.Phase.LastCheckedWeek
+			u.Phase.LastCheckedWeek = u.Phase.StartDate
 			setMinMaxPhaseDuration(u)
 			u.Phase.Active = true
 
@@ -593,13 +593,13 @@ func checkBulkThreshold(u *UserInfo) error {
 			u.Phase.Name = "maintain"
 			u.Phase.GoalCalories = u.TDEE
 			u.Phase.StartWeight = u.Weight
-			WeightChangeThreshold = 0
+			u.Phase.WeightChangeThreshold = 0
 
 			// Immediately start maintenance phase.
 			u.Phase.StartDate = time.Now()
 			u.Phase.WeeklyChange = 0
 			u.Phase.GoalWeight = u.Phase.StartWeight
-			u.Phase.LastCheckedWeek
+			u.Phase.LastCheckedWeek = u.Phase.StartDate
 			setMinMaxPhaseDuration(u)
 			u.Phase.Active = true
 
