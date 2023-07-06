@@ -317,21 +317,23 @@ func checkCutThreshold(u *UserInfo) error {
 
 		switch option {
 		case "1":
-			// TODO: this may not set all the phase fields correctly. For
-			// instance, `u.Phase.WeightChangeThreshold` should not be the
-			// same as it was for the cut.
-
 			// End cut and begin maintenance phase.
 			// Note: diet duration is left unmodified so maintenance phase
 			// lasts as long as the cut.
 
 			// Set phase to maintenance.
 			u.Phase.Name = "maintain"
+			u.Phase.GoalCalories = u.TDEE
+			u.Phase.StartWeight = u.Weight
+			WeightChangeThreshold = 0
 
 			// Immediately start maintenance phase.
 			u.Phase.StartDate = time.Now()
 			u.Phase.WeeklyChange = 0
 			u.Phase.GoalWeight = u.Phase.StartWeight
+			u.Phase.LastCheckedWeek
+			setMinMaxPhaseDuration(u)
+			u.Phase.Active = true
 
 			// Calculate the diet end date.
 			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
@@ -583,21 +585,23 @@ func checkBulkThreshold(u *UserInfo) error {
 
 		switch option {
 		case "1":
-			// TODO: this may not set all the phase fields correctly. For
-			// instance, `u.Phase.WeightChangeThreshold` should not be the
-			// same as it was for the bulk.
-
 			// End bulk and begin maintenance phase.
 			// Note: diet duration is left unmodified so the maintenance phase
 			// lasts as long as the bulk.
 
 			// Set phase to maintenance.
 			u.Phase.Name = "maintain"
+			u.Phase.GoalCalories = u.TDEE
+			u.Phase.StartWeight = u.Weight
+			WeightChangeThreshold = 0
 
 			// Immediately start maintenance phase.
 			u.Phase.StartDate = time.Now()
 			u.Phase.WeeklyChange = 0
 			u.Phase.GoalWeight = u.Phase.StartWeight
+			u.Phase.LastCheckedWeek
+			setMinMaxPhaseDuration(u)
+			u.Phase.Active = true
 
 			// Calculate the diet end date.
 			u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
@@ -1313,56 +1317,8 @@ func validateDietChoice(c string) error {
 	return errors.New("Invalid diet choice.")
 }
 
-/*
 // handleRecommendedDiet sets UserInfo struct fields according to a
 // reccomended diet.
-func handleRecommendedDiet(u *UserInfo) {
-	// Get the diet start date.
-	u.Phase.StartDate = getStartDate(u)
-
-	switch u.Phase.Name {
-	case "cut":
-		duration := 8.0
-
-		// Find the weekly change in weight needed to reach cut goal
-		weeklyChange := u.Phase.StartWeight * -0.005
-
-		// Calculate expected weight for the cut.
-		goalWeight := calculateGoalWeight(u.Phase.StartWeight, duration, weeklyChange)
-
-		// Get weekly average weight change in calories.
-		totalWeekWeightChangeCals := weeklyChange * calsPerPound
-		// Calculate daily average weight change in caloric needed for a deficit/surplus.
-		c := totalWeekWeightChangeCals / 7
-
-		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, weeklyChange, duration, goalWeight, u.TDEE+c)
-	case "maintain":
-		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, 0, 5, u.Phase.StartWeight, u.TDEE)
-	case "bulk":
-		duration := 10.0
-
-		// Find the weekly change in weight needed to reach bulk goal
-		weeklyChange := u.Phase.StartWeight * 0.0025
-
-		// Calculate the expected weight for the bulk.
-		goalWeight := calculateGoalWeight(u.Phase.StartWeight, duration, weeklyChange)
-
-		// Get weekly average weight change in calories.
-		totalWeekWeightChangeCals := weeklyChange * calsPerPound
-		// Calculate daily average weight change in caloric needed for a deficit/surplus.
-		c := totalWeekWeightChangeCals / 7
-
-		// Set WeeklyChange, Duration, GoalWeight, and GoalCalories.
-		setRecommendedValues(u, weeklyChange, duration, goalWeight, u.TDEE+c)
-	}
-
-	// Calculate the diet end date.
-	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
-}
-*/
-
 func handleRecommendedDiet(u *UserInfo) {
 	u.Phase.StartDate = getStartDate(u)
 
