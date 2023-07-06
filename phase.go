@@ -121,11 +121,8 @@ func generateConfig() (*UserInfo, error) {
 // CheckProgress performs checks on the user's current diet phase.
 //
 // Current solution to defining a week is continually adding 7 days to
-// the start date. We consider weeks where the user has a consistency of
-// adding at least two entries for a given week.
-//
-// Note: Converting duration in weeks (float64) to int is taking the
-// floor which may truncate days and this may lead to some issues.
+// the start date. Weeks are only considered that contain at least two
+// two entries for a given week.
 func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	// Make a map to track the numbers of entries in each week.
 	entryCountPerWeek, err := countEntriesPerWeek(u, logs)
@@ -134,28 +131,26 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 	}
 
 	// Count number of valid weeks.
-	count := countValidWeeks(*entryCountPerWeek)
+	validWeeks := countValidWeeks(*entryCountPerWeek)
 
-	// If there is less than 2 weeks of entries after the diet start date,
+	// If less than 2 valid weeks after the diet start date,
 	// then do nothing, and return early.
-	if count < 2 {
+	if validWeeks < 2 {
 		log.Println("There is less than 2 weeks of entries after the diet start date. Skipping remaining checks on user progress.")
 		return nil
 	}
 
 	switch u.Phase.Name {
 	case "cut":
-		// Ensure user has not lost too much weight.
-		err := checkCutThreshold(u)
+		var total float64
+		var status WeightLossStatus
+
+		err := checkCutThreshold(u) // Ensure user hasn't lost too much weight.
 		if err != nil {
 			return err
 		}
 
-		var total float64
-		var status WeightLossStatus
-
-		// Ensure user is meeting weekly weight loss.
-		status, total, err = checkCutLoss(u, logs)
+		status, total, err = checkCutLoss(u, logs) // Ensure weekly weight loss.
 		if err != nil {
 			return err
 		}
@@ -170,8 +165,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		case withinLossRange: // Do nothing
 		}
 	case "maintain":
-		// Ensure user is maintaing weight.
-		status, total, err := checkMaintenance(u, logs)
+		status, total, err := checkMaintenance(u, logs) // Ensure maintenance.
 		if err != nil {
 			return err
 		}
@@ -186,16 +180,15 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		case maintained: // Do nothing
 		}
 	case "bulk":
-		// Ensure user has not gained too much weight.
-		err := checkBulkThreshold(u)
+		var total float64
+		var status WeightGainStatus
+
+		err := checkBulkThreshold(u) // Ensure user hasn't gained too much weight.
 		if err != nil {
 			return err
 		}
 
-		var total float64
-		var status WeightGainStatus
-		// Ensure user is metting weekly weight gain.
-		status, total, err = checkBulkGain(u, logs)
+		status, total, err = checkBulkGain(u, logs) // Ensure weekly weight gain.
 		if err != nil {
 			return err
 		}
@@ -379,10 +372,21 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
+		// TODO: Need to first check if week has at least 2 entries.
+
 		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
+
+		// Did the user adhere to the daily calorie goal for this week?
+		var dailyCalories []float64
+		dailyCalories, valid, err = getCalsWeek(logs, weekStart, weekEnd)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		valid = metWeeklyCalGoal(u, dailyCalories)
 
 		if !valid {
 			weeksLostTooLittle = 0
@@ -425,6 +429,62 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 	}
 
 	return withinLossRange, 0, nil
+}
+
+// getCalsWeek returns an float64 array containing calorie count for
+// each day in a given week.
+func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]float64, bool, error) {
+	var calsWeek []float64
+	var err error
+	var startIdx int
+	var i int
+
+	// Get the dataframe index of the entry with the start date of the
+	// diet.
+	startIdx, err = findEntryIdx(logs, weekStart)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Must have this check. Otherwise weekStart may land within 7 days of
+	// the diet end date, which breaks our assumption that we have
+	// weekStart + 6 days of entries to iterate over.
+	if startIdx == -1 {
+		return nil, false, nil
+	}
+
+	// Iterate over each day of the week starting from startIdx.
+	for i = startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
+		// Get entry date.
+		c := logs.Series[calsCol].Value(i).(string)
+		cal, err := strconv.ParseFloat(c, 64)
+		if err != nil {
+			log.Printf("ERROR: %v\n", err)
+			return nil, false, err
+		}
+		calsWeek = append(calsWeek, cal) // Append recorded daily calorie.
+	}
+
+	// If there were zero entries found in the week, then return early.
+	if i == startIdx {
+		fmt.Println("Zero entries found this week.")
+		return nil, false, nil
+	}
+
+	return calsWeek, true, nil
+}
+
+// metWeeklyCalGoal calculates whether the user met their daily calorie
+// goal on at least 70% of the days in the week.
+func metWeeklyCalGoal(u *UserInfo, dailyCalories []float64) bool {
+	daysMetGoal := 0
+	for _, cal := range dailyCalories {
+		if metCalDayGoal(u, cal) {
+			daysMetGoal++
+		}
+	}
+	// Compare to 70% of the week.
+	return float64(daysMetGoal)/float64(len(dailyCalories)) >= 0.7
 }
 
 // metWeeklyGoalCut checks to see if a given week has met the weekly
@@ -768,6 +828,8 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenance
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
+		// TODO: Need to first check if week has at least 2 entries.
+
 		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
@@ -853,6 +915,8 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
+
+		// TODO: Need to first check if week has at least 2 entries.
 
 		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
@@ -1186,18 +1250,16 @@ func processUserInfo(u *UserInfo) {
 	// Get the phase the user wants to start.
 	u.Phase.Name = getDietPhase()
 
-	// Set initial start weight.
-	// Note: If diet is sometime in the future, this field will be upated
-	// to the weight of the user when the user begins the diet.
+	// Set min and max diet phase duration.
+	setMinMaxPhaseDuration(u)
+
+	// Set initial diet start weight.
 	u.Phase.StartWeight = u.Weight
 
 	// Set initial diet weight change theshold.
 	u.Phase.WeightChangeThreshold = u.Weight * 0.10
 
 	getPhaseInfo(u)
-
-	// Set min and max diet phase duration.
-	setMinMaxPhaseDuration(u)
 
 	// Set min and max values for macros.
 	setMinMaxMacros(u)
@@ -1217,9 +1279,6 @@ func processUserInfo(u *UserInfo) {
 // sets their value to the corresponding struct field. Some fields are
 // simply calculated.
 func getPhaseInfo(u *UserInfo) {
-	// Set min and max diet durations.
-	setMinMaxPhaseDuration(u)
-
 	// Fill out remaining userInfo struct fields given user preference on
 	// recommended or custom diet pace.
 	switch getDietChoice(u) {
