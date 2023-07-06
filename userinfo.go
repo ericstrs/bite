@@ -475,7 +475,7 @@ func promptSystem() (s string) {
 	fmt.Println("Set measurement system to:")
 	fmt.Println("1. Metric (kg/cm)")
 	fmt.Println("2. Imperial (lbs/inches)")
-	fmt.Printf("Choose your preferred measurement system: ")
+	fmt.Printf("Type number and <Enter>: ")
 	fmt.Scanln(&s)
 	return s
 }
