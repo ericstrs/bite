@@ -158,6 +158,8 @@ func ExampleCheckCutLoss_withinRange() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = -0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "cut"
 
 	status, avgTotal, err := checkCutLoss(&u, logs)
 
@@ -234,6 +236,8 @@ func ExampleCheckCutLoss_tooMuch() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "cut"
 
 	status, total, err := checkCutLoss(&u, logs)
 
@@ -257,7 +261,7 @@ func ExampleMetWeeklyGoalCut() {
 	// 0
 }
 
-func ExampleCheckMaintenance() {
+func ExampleCheckMaintenance_within() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
 
@@ -268,8 +272,8 @@ func ExampleCheckMaintenance() {
 
 	calories := dataframe.NewSeriesString("calories", nil,
 		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-		"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-		"2200", "2200", "2200", "2200", "2200", "2200", "2200")
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400")
 
 	date := dataframe.NewSeriesString("date", nil,
 		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
@@ -282,6 +286,8 @@ func ExampleCheckMaintenance() {
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "maintenance"
 
 	status, total, err := checkMaintenance(&u, logs)
 
@@ -292,6 +298,86 @@ func ExampleCheckMaintenance() {
 	// Output:
 	// 0
 	// 0
+	// <nil>
+}
+
+func ExampleCheckMaintenance_gained() {
+	u := UserInfo{}
+	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
+
+	weight := dataframe.NewSeriesString("weight", nil,
+		"180.3", "180.1", "180.1", "180.2", "180.55", "180.82", "180.82", // Gained
+		"181.4", "181.1", "182.2", "182.2", "181.4", "182.39", "182.4", // Gained
+		"182.3", "183.2", "182.2", "183.2", "183.1", "183.3", "183.1")
+
+	calories := dataframe.NewSeriesString("calories", nil,
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400")
+
+	date := dataframe.NewSeriesString("date", nil,
+		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
+		"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
+		"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
+
+	logs := dataframe.NewDataFrame(weight, calories, date)
+
+	u.Phase.WeeklyChange = 0
+	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
+	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "maintain"
+
+	status, total, err := checkMaintenance(&u, logs)
+
+	fmt.Println(status)
+	fmt.Printf("%.2f\n", total)
+	fmt.Println(err)
+
+	// Output:
+	// 1
+	// 2.10
+	// <nil>
+}
+
+func ExampleCheckMaintenance_lost() {
+	u := UserInfo{}
+	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
+
+	weight := dataframe.NewSeriesString("weight", nil,
+		"182.4", "181.1", "181.2", "181.2", "181.4", "181.09", "181.0", // Lost
+		"180.9", "180.7", "180.5", "180.5", "180.55", "180.22", "180.12", // Lost
+		"182.3", "183.2", "182.2", "183.2", "183.1", "183.3", "183.1")
+
+	calories := dataframe.NewSeriesString("calories", nil,
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400")
+
+	date := dataframe.NewSeriesString("date", nil,
+		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
+		"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
+		"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
+
+	logs := dataframe.NewDataFrame(weight, calories, date)
+
+	u.Phase.WeeklyChange = 0
+	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
+	u.Phase.LastCheckedWeek = u.Phase.StartDate
+	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "maintain"
+
+	status, total, err := checkMaintenance(&u, logs)
+
+	fmt.Println(status)
+	fmt.Printf("%.2f\n", total)
+	fmt.Println(err)
+
+	// Output:
+	// -1
+	// -2.28
 	// <nil>
 }
 
@@ -315,8 +401,8 @@ func ExampleCheckBulkGain_withinRange() {
 
 	calories := dataframe.NewSeriesString("calories", nil,
 		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-		"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-		"2200", "2200", "2200", "2200", "2200", "2200", "2200")
+		"2400", "2400", "2400", "2400", "2400", "2500", "2400",
+		"2500", "2500", "2500", "2550", "2550", "2450", "2500")
 
 	date := dataframe.NewSeriesString("date", nil,
 		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
@@ -329,6 +415,8 @@ func ExampleCheckBulkGain_withinRange() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "bulk"
 
 	status, avgTotal, err := checkBulkGain(&u, logs)
 
@@ -352,8 +440,8 @@ func ExampleCheckBulkGain_tooLittle() {
 
 	calories := dataframe.NewSeriesString("calories", nil,
 		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-		"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-		"2200", "2200", "2200", "2200", "2200", "2200", "2200")
+		"2300", "2400", "2400", "2450", "2400", "2400", "2350",
+		"2450", "2400", "2450", "2400", "2400", "2400", "2500")
 
 	date := dataframe.NewSeriesString("date", nil,
 		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
@@ -366,6 +454,8 @@ func ExampleCheckBulkGain_tooLittle() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "bulk"
 
 	status, avgTotal, err := checkBulkGain(&u, logs)
 
@@ -389,8 +479,8 @@ func ExampleCheckBulkGain_tooMuch() {
 
 	calories := dataframe.NewSeriesString("calories", nil,
 		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-		"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-		"2200", "2200", "2200", "2200", "2200", "2200", "2200")
+		"2400", "2400", "2400", "2400", "2400", "2400", "2400",
+		"2500", "2500", "2500", "2500", "2500", "2200", "2500")
 
 	date := dataframe.NewSeriesString("date", nil,
 		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
@@ -403,6 +493,8 @@ func ExampleCheckBulkGain_tooMuch() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = 0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "bulk"
 
 	status, total, err := checkBulkGain(&u, logs)
 
@@ -458,13 +550,13 @@ func ExampleTotalWeightChangeWeek() {
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 
 	weight := dataframe.NewSeriesString("weight", nil,
-		"180", "181", "182", "183", "184", "185", "186")
+		"180", "181", "183", "184", "185", "186")
 
 	calories := dataframe.NewSeriesString("calories", nil,
-		"2400", "2400", "2400", "2400", "2400", "2400", "2400")
+		"2400", "2400", "2400", "2400", "2400", "2400")
 
 	date := dataframe.NewSeriesString("date", nil,
-		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11")
+		"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10")
 
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
