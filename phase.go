@@ -845,23 +845,25 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenance
 	totalGain := 0.0
 	totalLoss := 0.0
 
+	resetCounters := func() {
+		weeksGained = 0
+		weeksLost = 0
+		totalGain = 0
+		totalLoss = 0
+	}
+
 	// Iterate over each week of the diet.
 	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		// TODO: Need to first check if week has at least 2 entries.
-
-		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
 
 		if !valid {
-			weeksGained = 0
-			weeksLost = 0
-			totalGain = 0
-			totalLoss = 0
+			resetCounters()
 			continue
 		}
 
@@ -871,20 +873,15 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenance
 		case lost:
 			weeksLost++
 			totalLoss += totalWeekWeightChange
-
 			weeksGained = 0
 			totalGain = 0
 		case gained:
 			weeksGained++
 			totalGain += totalWeekWeightChange
-
 			weeksLost = 0
 			totalLoss = 0
 		case maintained:
-			weeksLost = 0
-			weeksGained = 0
-			totalGain = 0
-			totalLoss = 0
+			resetCounters()
 		}
 
 		if weeksLost >= 2 {
@@ -929,27 +926,30 @@ func metWeeklyGoalMainenance(u *UserInfo, totalWeekWeightChange float64) WeightM
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
 func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, float64, error) {
-	weeksGainedTooMuch := 0   // Consecutive weeks where the user gained too much weight.
-	weeksGainedTooLittle := 0 // Consecutive weeks where the user gained too little weight.
-	totalGain := 0.0
-	totalLoss := 0.0
+	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
+	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
+	totalGainUnderGoal := 0.0
+	totalGainOverGoal := 0.0
 
+	resetCounters := func() {
+		weeksUnderGoal = 0
+		weeksOverGoal = 0
+		totalGainUnderGoal = 0
+		totalGainOverGoal = 0
+	}
+
+	// Iterate over each week of the diet.
 	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		// TODO: Need to first check if week has at least 2 entries.
-
-		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
-			return -2, 0, err
+			return 0, 0, err
 		}
 
 		if !valid {
-			weeksGainedTooLittle = 0
-			weeksGainedTooMuch = 0
-			totalGain = 0
-			totalLoss = 0
+			resetCounters()
 			continue
 		}
 
@@ -957,30 +957,25 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 
 		switch status {
 		case gainedTooLittle:
-			weeksGainedTooLittle++
-			totalLoss += totalWeekWeightChange
-
-			weeksGainedTooMuch = 0
-			totalGain = 0
+			weeksUnderGoal++
+			totalGainUnderGoal += totalWeekWeightChange
+			weeksOverGoal = 0
+			totalGainOverGoal = 0
 		case gainedTooMuch:
-			weeksGainedTooMuch++
-			totalGain += totalWeekWeightChange
-
-			weeksGainedTooLittle = 0
-			totalLoss = 0
+			weeksOverGoal++
+			totalGainOverGoal += totalWeekWeightChange
+			weeksUnderGoal = 0
+			totalGainUnderGoal = 0
 		case withinGainRange:
-			weeksGainedTooLittle = 0
-			weeksGainedTooMuch = 0
-			totalGain = 0
-			totalLoss = 0
+			resetCounters()
 		}
 
-		if weeksGainedTooLittle >= 2 {
-			return status, totalLoss, nil
+		if weeksUnderGoal >= 2 {
+			return status, totalGainUnderGoal, nil
 		}
 
-		if weeksGainedTooMuch >= 2 {
-			return status, totalGain, nil
+		if weeksOverGoal >= 2 {
+			return status, totalGainOverGoal, nil
 		}
 	}
 
@@ -1835,9 +1830,9 @@ func metCalDayGoal(u *UserInfo, cals float64) bool {
 	switch u.Phase.Name {
 	case "cut":
 		return cals <= u.Phase.GoalCalories
-	case "maintain":
-		return cals >= u.Phase.GoalCalories
 	case "bulk":
+		return cals >= u.Phase.GoalCalories
+	case "maintain":
 		return math.Abs(cals-u.Phase.GoalCalories) <= tolerance
 	default:
 		return false
