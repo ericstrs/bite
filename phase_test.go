@@ -195,6 +195,8 @@ func ExampleCheckCutLoss_tooLittle() {
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = -0.5
+	u.Phase.GoalCalories = 2400
+	u.Phase.Name = "cut"
 
 	status, avgTotal, err := checkCutLoss(&u, logs)
 
