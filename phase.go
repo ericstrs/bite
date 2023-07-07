@@ -372,11 +372,30 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		// TODO: Need to first check if week has at least 2 entries.
+		// Check if this week has at least 2 entries.
+		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+		if err != nil {
+			return 0, 0, err
+		}
+		if entryCount < 2 {
+			weeksLostTooLittle = 0
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
+			totalLossTooLittle = 0
+			continue
+		}
 
 		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
+		}
+
+		if !valid {
+			weeksLostTooLittle = 0
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
+			totalLossTooLittle = 0
+			continue
 		}
 
 		// Did the user adhere to the daily calorie goal for this week?
@@ -384,6 +403,14 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 		dailyCalories, valid, err = getCalsWeek(logs, weekStart, weekEnd)
 		if err != nil {
 			return 0, 0, err
+		}
+
+		if !valid {
+			weeksLostTooLittle = 0
+			weeksLostTooMuch = 0
+			totalLossTooMuch = 0
+			totalLossTooLittle = 0
+			continue
 		}
 
 		valid = metWeeklyCalGoal(u, dailyCalories)
