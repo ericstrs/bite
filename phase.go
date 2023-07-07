@@ -32,6 +32,7 @@ const (
 	gainedTooLittle            WeightGainStatus        = -1
 	withinGainRange            WeightGainStatus        = 0
 	gainedTooMuch              WeightGainStatus        = 1
+	minEntriesPerWeek                                  = 2
 	defaultCutDuration                                 = 8.0    // Weeks.
 	defaultBulkDuration                                = 10.0   // Weeks.
 	defaultCutWeeklyChangePct                          = -0.005 // -0.5% of bodyweight per week.
@@ -249,10 +250,6 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 	if err != nil {
 		return 0, err
 	}
-
-	// Must have this check. Otherwise weekStart may land within 7 days of
-	// the diet end date, which breaks our assumption that we have
-	// weekStart + 6 days of entries to iterate over.
 	if startIdx == -1 {
 		return count, nil
 	}
@@ -277,11 +274,13 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 }
 
 // countValidWeeks counts ands returns the number of valid weeks in a
-// given diet phase.
+// given diet phase. A strict definition of a valid week need not be
+// performed here. This is because its only used to ensure the diet has
+// `minEntriesPerWeek` entries.
 func countValidWeeks(e map[int]int) int {
 	count := 0
 	for week := 0; week < len(e); week++ {
-		if e[week] > 2 {
+		if e[week] > minEntriesPerWeek {
 			count++
 		}
 	}
@@ -362,64 +361,30 @@ func getCutAction() string {
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
 func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, float64, error) {
-	weeksLostTooMuch := 0   // Consecutive weeks where the user gained too much weight.
-	weeksLostTooLittle := 0 // Consecutive weeks where the user gained too little weight.
-	totalLossTooMuch := 0.0
-	totalLossTooLittle := 0.0
+	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
+	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
+	totalLossUnderGoal := 0.0
+	totalLossOverGoal := 0.0
+
+	resetCounters := func() {
+		weeksUnderGoal = 0
+		weeksOverGoal = 0
+		totalLossUnderGoal = 0
+		totalLossOverGoal = 0
+	}
 
 	// Iterate over each week of the diet.
 	for date := u.Phase.LastCheckedWeek; date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		// Check if this week has at least 2 entries.
-		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
-		if err != nil {
-			return 0, 0, err
-		}
-		if entryCount < 2 {
-			weeksLostTooLittle = 0
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
-			totalLossTooLittle = 0
-			continue
-		}
-
-		totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
 
 		if !valid {
-			weeksLostTooLittle = 0
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
-			totalLossTooLittle = 0
-			continue
-		}
-
-		// Did the user adhere to the daily calorie goal for this week?
-		var dailyCalories []float64
-		dailyCalories, valid, err = getCalsWeek(logs, weekStart, weekEnd)
-		if err != nil {
-			return 0, 0, err
-		}
-
-		if !valid {
-			weeksLostTooLittle = 0
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
-			totalLossTooLittle = 0
-			continue
-		}
-
-		valid = metWeeklyCalGoal(u, dailyCalories)
-
-		if !valid {
-			weeksLostTooLittle = 0
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
-			totalLossTooLittle = 0
+			resetCounters()
 			continue
 		}
 
@@ -427,40 +392,75 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 
 		switch status {
 		case lostTooLittle:
-			weeksLostTooLittle++
-			totalLossTooLittle += totalWeekWeightChange
-
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
+			weeksUnderGoal++
+			totalLossUnderGoal += totalWeekWeightChange
+			weeksOverGoal = 0
+			totalLossOverGoal = 0
 		case lostTooMuch:
-			weeksLostTooMuch++
-			totalLossTooMuch += totalWeekWeightChange
-
-			weeksLostTooLittle = 0
-			totalLossTooLittle = 0
+			weeksOverGoal++
+			totalLossOverGoal += totalWeekWeightChange
+			weeksUnderGoal = 0
+			totalLossUnderGoal = 0
 		case withinLossRange:
-			weeksLostTooLittle = 0
-			totalLossTooLittle = 0
-
-			weeksLostTooMuch = 0
-			totalLossTooMuch = 0
+			resetCounters()
 		}
 
-		if weeksLostTooLittle >= 2 {
-			return status, totalLossTooLittle, nil
+		if weeksUnderGoal >= 2 {
+			return status, totalLossUnderGoal, nil
 		}
 
-		if weeksLostTooMuch >= 2 {
-			return status, totalLossTooMuch, nil
+		if weeksOverGoal >= 2 {
+			return status, totalLossOverGoal, nil
 		}
 	}
 
 	return withinLossRange, 0, nil
 }
 
+// validWeek determines if a given week fits the definition of a
+// week, retrives total change in weight, and array of calories for
+// the given week.
+func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
+	entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+	if err != nil {
+		return false, 0, nil, err
+	}
+	// Does this week contain has at least `minEntriesPerWeek` entries?
+	if entryCount < minEntriesPerWeek {
+		return false, 0, nil, nil
+	}
+
+	// Does `weekStart` fall within the diet phase?
+	totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+	if err != nil {
+		return false, 0, nil, err
+	}
+	if !valid {
+		return false, 0, nil, nil
+	}
+
+	// Get array of calories for given week.
+	dailyCalories, err := getCalsWeek(logs, weekStart, weekEnd)
+	if err != nil {
+		log.Println(err)
+		return false, 0, nil, err
+	}
+
+	// Did the user adhere to the daily calorie goal for this week?
+	valid = metWeeklyCalGoal(u, dailyCalories)
+	if !valid {
+		return false, 0, nil, nil
+	}
+
+	return true, totalWeekWeightChange, dailyCalories, nil
+}
+
 // getCalsWeek returns an float64 array containing calorie count for
 // each day in a given week.
-func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]float64, bool, error) {
+//
+// Assumptions:
+// * Given week has at least `minEntriesPerWeek` entries.
+func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]float64, error) {
 	var calsWeek []float64
 	var err error
 	var startIdx int
@@ -470,14 +470,10 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 	// diet.
 	startIdx, err = findEntryIdx(logs, weekStart)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-
-	// Must have this check. Otherwise weekStart may land within 7 days of
-	// the diet end date, which breaks our assumption that we have
-	// weekStart + 6 days of entries to iterate over.
 	if startIdx == -1 {
-		return nil, false, nil
+		return nil, fmt.Errorf("ERROR: No matching entry for date %s\n", weekStart)
 	}
 
 	// Iterate over each day of the week starting from startIdx.
@@ -487,18 +483,17 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 		cal, err := strconv.ParseFloat(c, 64)
 		if err != nil {
 			log.Printf("ERROR: %v\n", err)
-			return nil, false, err
+			return nil, err
 		}
 		calsWeek = append(calsWeek, cal) // Append recorded daily calorie.
 	}
 
 	// If there were zero entries found in the week, then return early.
-	if i == startIdx {
-		fmt.Println("Zero entries found this week.")
-		return nil, false, nil
+	if i-startIdx < minEntriesPerWeek {
+		return nil, fmt.Errorf("ERROR: Given week has less than %d entries.\n", minEntriesPerWeek)
 	}
 
-	return calsWeek, true, nil
+	return calsWeek, nil
 }
 
 // metWeeklyCalGoal calculates whether the user met their daily calorie
@@ -1125,10 +1120,6 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 	if err != nil {
 		return 0, false, err
 	}
-
-	// Must have this check. Otherwise weekStart may land within 7 days of
-	// the diet end date, which breaks our assumption that we have
-	// weekStart + 6 days of entries to iterate over.
 	if startIdx == -1 {
 		return 0, false, nil
 	}
