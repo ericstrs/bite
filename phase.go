@@ -254,9 +254,11 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 		return count, nil
 	}
 
+	endIdx := min(startIdx+7, logs.NRows())
+
 	// Starting from the start date index, iterate over the week, and
 	// update counter when an entry is encountered.
-	for i := startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
+	for i := startIdx; i < endIdx; i++ {
 		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
@@ -446,6 +448,10 @@ func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserI
 		return false, 0, nil, nil
 	}
 
+	// Once the week has passed all the checks, update the last checked
+	// week in the diet phase to the last day of the week.
+	u.Phase.LastCheckedWeek = weekEnd
+
 	return true, totalWeekWeightChange, dailyCalories, nil
 }
 
@@ -456,13 +462,10 @@ func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserI
 // * Given week has at least `minEntriesPerWeek` entries.
 func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]float64, error) {
 	var calsWeek []float64
-	var err error
-	var startIdx int
-	var i int
 
 	// Get the dataframe index of the entry with the start date of the
 	// diet.
-	startIdx, err = findEntryIdx(logs, weekStart)
+	startIdx, err := findEntryIdx(logs, weekStart)
 	if err != nil {
 		return nil, err
 	}
@@ -470,8 +473,17 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 		return nil, fmt.Errorf("ERROR: No matching entry for date %s\n", weekStart)
 	}
 
+	endIdx := min(startIdx+7, logs.NRows())
+
+	// If there were less than `minEntriesPerWeek` entries found in this
+	// week, then return early.
+	if endIdx-startIdx < minEntriesPerWeek {
+		log.Printf("Given week has less than %d entries.\n", minEntriesPerWeek)
+		return nil, fmt.Errorf("ERROR: Given week has less than %d entries.\n", minEntriesPerWeek)
+	}
+
 	// Iterate over each day of the week starting from startIdx.
-	for i = startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
+	for i := startIdx; i < endIdx; i++ {
 		// Get entry date.
 		c := logs.Series[calsCol].Value(i).(string)
 		cal, err := strconv.ParseFloat(c, 64)
@@ -480,11 +492,6 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 			return nil, err
 		}
 		calsWeek = append(calsWeek, cal) // Append recorded daily calorie.
-	}
-
-	// If there were zero entries found in the week, then return early.
-	if i-startIdx < minEntriesPerWeek {
-		return nil, fmt.Errorf("ERROR: Given week has less than %d entries.\n", minEntriesPerWeek)
 	}
 
 	return calsWeek, nil
@@ -1099,7 +1106,6 @@ func addCals(u *UserInfo, totalWeekWeightChange float64) {
 // Assumptions:
 // * The given week has been checked for minEntriesPerWeek.
 func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
-	var date time.Time
 	totalWeightChangeWeek := 0.0
 
 	// Get the dataframe index of the entry with the start date of the
@@ -1151,10 +1157,6 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 		// Update total weight change
 		totalWeightChangeWeek += weightChange
 	}
-
-	// Update the last checked week in the diet phase to the last day of the
-	// week.
-	u.Phase.LastCheckedWeek = date
 
 	return totalWeightChangeWeek, true, nil
 }
@@ -1805,6 +1807,7 @@ func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
 	// Get most recent entry date.
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 
+	// Ensure most recent entry date is equal to today's date.
 	if !isSameDay(today, tailDate) {
 		fmt.Println("Missing entry for today. Please create today's entry prior to attempting to generate today's diet summary.")
 		return
@@ -1867,6 +1870,8 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
 	lastMonday := tailDate.AddDate(0, 0, -diff)
 
+	// TODO: Ensure tail week is equal to this week.
+
 	// Iterate over the entries starting from EndDate - 7 days.
 	for i := 0; i < 7; i++ {
 		date := lastMonday.AddDate(0, 0, i)
@@ -1907,6 +1912,8 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	// Find the last Monday that comes before tailDate
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
 	lastMonday := tailDate.AddDate(0, 0, -diff)
+
+	// TODO: Ensure tail month is equal to this month.
 
 	// Iterate over the weeks starting from EndDate - 28 days.
 	for week := 0; week < 4; week++ {
