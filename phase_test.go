@@ -2,6 +2,7 @@ package calories
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -40,9 +41,24 @@ func ExampleCountEntriesPerWeek() {
 
 	entryCountPerWeek, err := countEntriesPerWeek(&u, logs)
 
-	for week, entries := range *entryCountPerWeek {
+	// Get the keys and sort them.
+	weeks := make([]int, 0, len(*entryCountPerWeek))
+	for week := range *entryCountPerWeek {
+		weeks = append(weeks, week)
+	}
+	sort.Ints(weeks)
+
+	// Print the entries in the order of the sorted keys.
+	for _, week := range weeks {
+		entries := (*entryCountPerWeek)[week]
 		fmt.Printf("Week %d entries: %d\n", week, entries)
 	}
+
+	/*
+		for week, entries := range *entryCountPerWeek {
+			fmt.Printf("Week %d entries: %d\n", week, entries)
+		}
+	*/
 	fmt.Println(err)
 
 	// Output:
