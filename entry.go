@@ -153,7 +153,7 @@ func GetValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
 	today := time.Now()
 
 	var validIndices []int
-	for i := 0; i < logs.NRows()-1; i++ {
+	for i := 0; i < logs.NRows(); i++ {
 		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
