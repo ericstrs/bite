@@ -421,22 +421,16 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 // week, retrives total change in weight, and array of calories for
 // the given week.
 func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
-	entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
-	if err != nil {
-		return false, 0, nil, err
-	}
 	// Does this week contain has at least `minEntriesPerWeek` entries?
-	if entryCount < minEntriesPerWeek {
-		return false, 0, nil, nil
+	entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+	if err != nil || entryCount < minEntriesPerWeek {
+		return false, 0, nil, err
 	}
 
 	// Does `weekStart` fall within the diet phase?
 	totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
-	if err != nil {
+	if err != nil || !valid {
 		return false, 0, nil, err
-	}
-	if !valid {
-		return false, 0, nil, nil
 	}
 
 	// Get array of calories for given week.
@@ -1101,43 +1095,45 @@ func addCals(u *UserInfo, totalWeekWeightChange float64) {
 
 // totalWeightChangeWeek calculates and returns the total change in
 // weight for a given week.
+//
+// Assumptions:
+// * The given week has been checked for minEntriesPerWeek.
 func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
 	var date time.Time
-	var err error
-	var weight float64
-	var startIdx int
-	var i int
 	totalWeightChangeWeek := 0.0
 
 	// Get the dataframe index of the entry with the start date of the
 	// diet.
-	startIdx, err = findEntryIdx(logs, weekStart)
-	if err != nil {
+	startIdx, err := findEntryIdx(logs, weekStart)
+	if err != nil || startIdx == -1 {
 		return 0, false, err
 	}
-	if startIdx == -1 {
-		return 0, false, nil
+
+	endIdx := min(startIdx+7, logs.NRows())
+
+	// If there were zero entries found in the week, then return early.
+	if endIdx-startIdx < minEntriesPerWeek {
+		log.Println("Zero entries found this week.")
+		return 0, false, fmt.Errorf("ERROR: Zero entries found this week.")
 	}
 
 	// Iterate over each day of the week starting from startIdx.
-	for i = startIdx; i < startIdx+7 && i < logs.NRows(); i++ {
+	for i := startIdx; i < endIdx; i++ {
 		// Get entry date.
-		date, err = time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
 			return 0, false, err
 		}
 
-		// If date falls after the end of the week, return setting `valid`
-		// week variable to false. This ensures we only consider entry's
-		// that are within a full week.
+		// If date falls after the end of the week, break out of loop.
 		if date.After(weekEnd) {
-			return 0, false, nil
+			break
 		}
 
 		// Get entry weight.
 		w := logs.Series[weightCol].Value(i).(string)
-		weight, err = strconv.ParseFloat(w, 64)
+		weight, err := strconv.ParseFloat(w, 64)
 		if err != nil {
 			log.Println("ERROR: Failed to convert string to float64:", err)
 			return 0, false, err
@@ -1156,17 +1152,19 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 		totalWeightChangeWeek += weightChange
 	}
 
-	// If there were zero entries found in the week, then return early.
-	if i == startIdx {
-		fmt.Println("Zero entries found this week.")
-		return 0, false, nil
-	}
-
 	// Update the last checked week in the diet phase to the last day of the
 	// week.
 	u.Phase.LastCheckedWeek = date
 
 	return totalWeightChangeWeek, true, nil
+}
+
+// min finds and returns the smaller integer.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // findEntryIdx finds the index of an entry given a date.
