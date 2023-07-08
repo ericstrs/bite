@@ -59,11 +59,12 @@ type PhaseInfo struct {
 	WeeklyChange          float64   `yaml:"weekly_change"`
 	StartDate             time.Time `yaml:"start_date"`
 	EndDate               time.Time `yaml:"end_date"`
-	LastCheckedWeek       time.Time `yaml:"last_checked_week"`
-	Duration              float64   `yaml:"duration"`
-	MaxDuration           float64   `yaml:"max_duration"`
-	MinDuration           float64   `yaml:"min_duration"`
-	Active                bool      `yaml:"active"`
+	// First day of the most recent valid week.
+	LastCheckedWeek time.Time `yaml:"last_checked_week"`
+	Duration        float64   `yaml:"duration"`
+	MaxDuration     float64   `yaml:"max_duration"`
+	MinDuration     float64   `yaml:"min_duration"`
+	Active          bool      `yaml:"active"`
 }
 
 // ReadConfig reads config file or creates it if it doesn't exist and
@@ -451,6 +452,14 @@ func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserI
 	// Once the week has passed all the checks, update the last checked
 	// week in the diet phase to the last day of the week.
 	u.Phase.LastCheckedWeek = weekEnd
+
+	// Save the updated last checked week to config file.
+	err = saveUserInfo(u)
+	if err != nil {
+		log.Printf("Failed to save user info: %v\n", err)
+		return false, 0, nil, err
+	}
+	log.Println("Updated last checked week to:", weekEnd)
 
 	return true, totalWeekWeightChange, dailyCalories, nil
 }
