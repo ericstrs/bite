@@ -1862,6 +1862,10 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	var daysOfWeek []string
 	var calsOfWeek []string
 	var calsStr string
+	today := time.Now()
+
+	// Find the current ISO week.
+	_, currentWeek := today.ISOWeek()
 
 	// Find the most recent entry's date.
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
@@ -1870,7 +1874,14 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
 	lastMonday := tailDate.AddDate(0, 0, -diff)
 
-	// TODO: Ensure tail week is equal to this week.
+	// Find the tail ISO week.
+	_, tailWeek := lastMonday.ISOWeek()
+
+	// Ensure tail week is equal to this week.
+	if tailWeek != currentWeek {
+		fmt.Println("Missing entries for this week. Please create today's entry prior to attempting to generate this week's diet summary.")
+		return
+	}
 
 	// Iterate over the entries starting from EndDate - 7 days.
 	for i := 0; i < 7; i++ {
@@ -1906,6 +1917,9 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	fmt.Println()
 	fmt.Println(colorUnderline, "Month Summary", colorReset)
+	today := time.Now()
+
+	currentYear, currentMonth, _ := today.Date()
 
 	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
 
@@ -1913,7 +1927,15 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
 	lastMonday := tailDate.AddDate(0, 0, -diff)
 
-	// TODO: Ensure tail month is equal to this month.
+	tailYear, tailMonth, _ := lastMonday.Date()
+
+	// Ensure tail month is equal to this month.
+	// If tailMonth is not equal to the current month or tailYear is not
+	// the current year, then don't print the summary
+	if tailMonth != currentMonth || tailYear != currentYear {
+		fmt.Println("Missing entries for this month. Please create today's entry prior to attempting to generate this month's diet summary.")
+		return
+	}
 
 	// Iterate over the weeks starting from EndDate - 28 days.
 	for week := 0; week < 4; week++ {
