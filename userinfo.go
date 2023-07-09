@@ -158,32 +158,14 @@ func TDEE(bmr float64, a string) float64 {
 // macro split where fats and carbs are at their minimum, but protein
 // sits at its optimal value.
 func calculateMacros(u *UserInfo) (float64, float64, float64) {
-	// Get the calories from the minimum macro values.
-	mc := getMacroCals(u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats)
-	if mc > u.Phase.GoalCalories {
-		// Let the user know their daily calories are too low and update
-		// daily calories to the minimum allowed.
-		fmt.Printf("Minimum macro values in calories exceed original calorie goal of %.2f\n", u.Phase.GoalCalories)
-
-		// Update phase daily goal calories.
-		u.Phase.GoalCalories = mc
-		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
-
-		return u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats
+	minProtein, minCarbs, minFats := handleMinMacros(u)
+	if minProtein != 0 && minCarbs != 0 && minFats != 0 {
+		return minProtein, minCarbs, minFats
 	}
 
-	// Get the calories from the maximum macro values.
-	mc = getMacroCals(u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats)
-	if mc < u.Phase.GoalCalories {
-		// Let the user know their daily calories are too high and update
-		// daily calories to the maximum allowed.
-		fmt.Printf("Maximum macro values exceed original calorie goal of %f\n", u.Phase.GoalCalories)
-
-		// Update phase daily goal calories.
-		u.Phase.GoalCalories = mc
-		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
-
-		return u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats
+	maxProtein, maxCarbs, maxFats := handleMaxMacros(u)
+	if maxProtein != 0 && maxCarbs != 0 && maxFats != 0 {
+		return maxProtein, maxCarbs, maxFats
 	}
 
 	// Calculate optimal protein and carb amounts.
@@ -201,10 +183,11 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 			u.Macros.MinProtein, protein, u.Macros.MaxProtein, u.Macros.MinCarbs, carbs, u.Macros.MaxCarbs, u.Macros.MinFats, fats, u.Macros.MaxFats)
 	*/
 
-	// If fat caculation is less than minimum allowed fats.
+	// If fat calculation is less than minimum allowed fats,
 	if u.Macros.MinFats > fats {
 		fmt.Println("Fats are below minimum limit. Taking calories from carbs and moving them to fats.")
-		// Get some calories from carbs and add to fats to reach minimum.
+		// move calories from carbs to fats in an attempt to reach minimum
+		// fat.
 
 		fatsNeeded := u.Macros.MinFats - fats
 
@@ -263,8 +246,7 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 			fats += fatsNeeded
 			return protein, carbs, fats
 		}
-		// Otherwise, we have reached the each minimum carb and protein
-		// limit.
+		// Otherwise, we have reached the minimum carb and protein limit.
 
 		// Calculate the protein we are allowed to remove.
 		proteinToRemove = protein - u.Macros.MinProtein
@@ -287,9 +269,9 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 
 	// If fat caculation is greater than maximum allowed fats.
 	if u.Macros.MaxFats < fats {
+		// move calories from carbs and add to fats to reach maximum fats.
 
 		fmt.Println("Calculated fats are above maximum amount. Taking calories from fats and moving them to carbs.")
-		// Get some calories from carbs and add to fats to reach maximum.
 
 		fatsToRemove := fats - u.Macros.MaxFats
 
@@ -373,6 +355,52 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 	fats = math.Round(fats*100) / 100
 
 	return protein, carbs, fats
+}
+
+// handleMinMacros checks to see if the minimum macronutrient values in
+// calories exceeds the original calorie goal.
+func handleMinMacros(u *UserInfo) (float64, float64, float64) {
+	// Get the calories from the minimum macro values.
+	mc := getMacroCals(u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats)
+	// If minimum macro values in calories is greater than the daily
+	// calorie goal,
+	if mc > u.Phase.GoalCalories {
+		// Let the user know their daily calories are too low and update
+		// daily calories to the minimum allowed.
+		fmt.Printf("Minimum macro values in calories exceed original calorie goal of %.2f\n", u.Phase.GoalCalories)
+
+		// Update phase daily goal calories.
+		u.Phase.GoalCalories = mc
+		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
+
+		return u.Macros.MinProtein, u.Macros.MinCarbs, u.Macros.MinFats
+	}
+
+	// Indicates calorie goal is greater than the calories in the minimum
+	// macros.
+	return 0, 0, 0
+}
+
+// handleMaxMacros checks to see if the maximum macronutrient values in
+// calories exceeds the  original calorie goal.
+func handleMaxMacros(u *UserInfo) (float64, float64, float64) {
+	// Get the calories from the maximum macro values.
+	mc := getMacroCals(u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats)
+	if mc < u.Phase.GoalCalories {
+		// Let the user know their daily calories are too high and update
+		// daily calories to the maximum allowed.
+		fmt.Printf("Maximum macro values exceed original calorie goal of %f\n", u.Phase.GoalCalories)
+
+		// Update phase daily goal calories.
+		u.Phase.GoalCalories = mc
+		fmt.Println("New daily calorie goal:", u.Phase.GoalCalories)
+
+		return u.Macros.MaxProtein, u.Macros.MaxCarbs, u.Macros.MaxFats
+	}
+
+	// Indicates calorie goal is greater than the calories in the maximum
+	// macros.
+	return 0, 0, 0
 }
 
 // getMacroCals calculates and returns the amount of calories given macronutrients.
