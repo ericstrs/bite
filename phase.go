@@ -244,6 +244,7 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 }
 
 // countEntriesInWeek finds the number of entires within a given week.
+// TODO: endIdx should not be startIdx+7.
 func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time) (int, error) {
 	count := 0
 
@@ -251,9 +252,28 @@ func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time)
 	if err != nil {
 		return 0, err
 	}
+	// TODO: should not return early (0); Even if weekStart is not be
+	// logged, we don't care. Still need to check the rest of the days
+	// of the days of the week.
 	if startIdx == -1 {
 		return count, nil
 	}
+
+	/*
+		endIdx, err := findEntryIdx(logs, weekEnd)
+		if err != nil {
+			return 0, err
+		}
+		if endIdx == -1 {
+			return count, nil
+		}
+
+		days := endIdx - startIdx
+		if days < 0 {
+			log.Println("ERROR: weekEnd comes before weekStart.")
+			return 0, fmt.Errorf("weekEnd comes before weekStart.")
+		}
+	*/
 
 	endIdx := min(startIdx+7, logs.NRows())
 
@@ -650,6 +670,7 @@ func checkBulkThreshold(u *UserInfo) error {
 		option := getBulkAction()
 		switch option {
 		case "1":
+			fmt.Println("Going from a bulk to a maintenance phase, you should gradually drop your calories down to your TDEE.")
 			err := transitionToMaintenance(u)
 			if err != nil {
 				return nil
@@ -1128,8 +1149,8 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 
 	// If there were zero entries found in the week, then return early.
 	if endIdx-startIdx < minEntriesPerWeek {
-		log.Println("Zero entries found this week.")
-		return 0, false, fmt.Errorf("ERROR: Zero entries found this week.")
+		log.Printf("Less than %d entries found this week.\n", minEntriesPerWeek)
+		return 0, false, fmt.Errorf("ERROR: Less than %d entries found this week.\n", minEntriesPerWeek)
 	}
 
 	// Iterate over each day of the week starting from startIdx.
@@ -1221,9 +1242,6 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 	return previousWeight, nil
 }
 
-// TODO: Handle case where user is brand new. They set diet date start
-// in the future. They don't log any information.
-//
 // processPhaseTransition transitions the user to a new diet phase
 // and saves the next phase to config file.
 func processPhaseTransition(u *UserInfo) error {
@@ -1233,12 +1251,6 @@ func processPhaseTransition(u *UserInfo) error {
 	printTransitionSuggestion(u.Phase.Name)
 
 	processUserInfo(u)
-
-	// TODO: If the user does follow recommendation of a maintenance
-	// phase coming from a bulk that has just ended, then
-	// 1. Calculate your weekly calorie surplus based on the average weight
-	// gain over the final two weeks of bulking.
-	// 2. Start out phase by decreasing your caloric intake by that amount.
 
 	// Save user info to config file.
 	err := saveUserInfo(u)
@@ -1654,7 +1666,7 @@ func validateGoalWeight(weightStr string, u *UserInfo) (g float64, err error) {
 
 		lowerBound := u.Phase.StartWeight * 0.10
 		if g < u.Phase.StartWeight-lowerBound {
-			return 0, errors.New("Invalid goal weight. For a cut, goal weight cannot be less than 10% of starting body weight.")
+			return 0, errors.New("Invalid goal weight. For a cut, goal weight cannot be less than 10%% of starting body weight.")
 		}
 	case "bulk":
 		if g < u.Phase.StartWeight {
@@ -1663,7 +1675,7 @@ func validateGoalWeight(weightStr string, u *UserInfo) (g float64, err error) {
 
 		upperBound := u.Phase.StartWeight * 0.10
 		if g > u.Phase.StartWeight+upperBound {
-			return 0, errors.New("Invalid goal weight. For a bulk, goal weight cannot exceed 10% of starting body weight.")
+			return 0, errors.New("Invalid goal weight. For a bulk, goal weight cannot exceed 10%% of starting body weight.")
 		}
 	}
 
@@ -1797,15 +1809,6 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 	}
 
 	monthSummary(u, logs)
-
-	// TODO: Think the user would like to see the entire diet phase view
-	// like in you will do for the month. Probably best to split this
-	// function into sub arguments. That is, have user specify
-	// `./calories summary [day|week|month|all]` where `./calories
-	// summary` just calls day, week, and month. This prevent a
-	// constant spam of the entire diet view, but at the same time still
-	// lets the user have the ability to see certain parts of the
-	// diet phase.
 }
 
 // daySummary prints a summary of the diet for the current day.
