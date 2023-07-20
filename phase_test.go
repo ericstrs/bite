@@ -41,6 +41,8 @@ func ExampleCountEntriesPerWeek() {
 
 	entryCountPerWeek, err := countEntriesPerWeek(&u, logs)
 
+	// Must sort the keys since iteration over maps is not guaranteed.
+
 	// Get the keys and sort them.
 	weeks := make([]int, 0, len(*entryCountPerWeek))
 	for week := range *entryCountPerWeek {
@@ -70,7 +72,6 @@ func ExampleCountEntriesPerWeek() {
 }
 
 func ExampleCountEntriesInWeek() {
-
 	weight := dataframe.NewSeriesString("weight", nil,
 		"180", "182", "183", "184", "185")
 
@@ -83,6 +84,31 @@ func ExampleCountEntriesInWeek() {
 	logs := dataframe.NewDataFrame(weight, calories, date)
 
 	start := time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2023, time.January, 11, 0, 0, 0, 0, time.UTC)
+
+	c, err := countEntriesInWeek(logs, start, end)
+
+	fmt.Println(c)
+	fmt.Println(err)
+
+	// Output:
+	// 5
+	// <nil>
+}
+
+func ExampleCountEntriesInWeek_startDate() {
+	weight := dataframe.NewSeriesString("weight", nil,
+		"180", "182", "183", "184", "185")
+
+	calories := dataframe.NewSeriesString("calories", nil,
+		"2400", "2400", "2400", "2400", "2400")
+
+	date := dataframe.NewSeriesString("date", nil,
+		"2023-01-05", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10")
+
+	logs := dataframe.NewDataFrame(weight, calories, date)
+
+	start := time.Date(2023, time.January, 4, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2023, time.January, 11, 0, 0, 0, 0, time.UTC)
 
 	c, err := countEntriesInWeek(logs, start, end)
