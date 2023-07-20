@@ -28,7 +28,7 @@ func main() {
 
 	/* ---------- Database ----------- */
 	// Create a new SQLite database
-	db, err := sqlx.Connect("sqlite", "./database/mydata.db")
+	db, err := sqlx.Connect("sqlite", "../../database/mydata.db")
 	if err != nil {
 		log.Println(err)
 		return
@@ -36,7 +36,7 @@ func main() {
 	defer db.Close()
 
 	// Read SQL file
-	sqlBytes, err := ioutil.ReadFile("./database/sql/setup.sql")
+	sqlBytes, err := ioutil.ReadFile("../../database/sql/setup.sql")
 	if err != nil {
 		log.Println(err)
 		return
@@ -76,6 +76,24 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "log":
+		if len(os.Args) < 3 {
+			log.Println("Usage: ./calories log [weight|food|meal]")
+			return
+		}
+
+		// Execute subcommand
+		switch os.Args[2] {
+		case "meal":
+			// TODO
+		case "food":
+			// TODO
+		case "weight":
+			// TODO
+		default:
+			log.Println("Usage: ./calories log [weight|food|meal]")
+			return
+		}
 	case "add":
 		if len(os.Args) < 3 {
 			log.Println("Usage: ./calories add [log|food|meal]")
@@ -84,7 +102,7 @@ func main() {
 
 		// Execute subcommand
 		switch os.Args[2] {
-		case "log":
+		case "log": // TODO: remove case once ./cmd log is made
 			err := c.Log(u, c.EntriesFilePath)
 			if err != nil {
 				fmt.Println(err)
@@ -186,7 +204,8 @@ func main() {
 			log.Println("Usage: ./calories stop [phase]")
 			return
 		}
-
+	case "test": // TODO: REMOVE AFTER TESTING.
+		c.Run(db)
 	default:
 		log.Println("Usage: ./calories [add|delete|update|summary|start|stop]")
 	}
