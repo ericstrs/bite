@@ -32,7 +32,7 @@ type Food struct {
 	ServingSize      float64 `db:"serving_size"`
 	HouseholdServing string  `db:"household_serving"`
 	PortionCals      float64
-	Macros           *Macros
+	FoodMacros       *FoodMacros
 }
 
 type FoodPref struct {
@@ -48,7 +48,7 @@ type MealFoodPref struct {
 	ServingSize      float64 `db:"serving_size"`
 }
 
-type Macros struct {
+type FoodMacros struct {
 	Protein float64
 	Fat     float64
 	Carbs   float64
@@ -56,16 +56,47 @@ type Macros struct {
 
 const usage = "Usage: ./m [add|display]"
 
-func promptDeleteMeal(db *sqlx.DB) {
-	// Get all meals
-	meals, err := getAllMeals(db)
+// TODO: REMOVE AFTER TESTING
+func Run(db *sqlx.DB) {
+	sf, _ := selectFood(db)
+	f, err := getOneFood(db, sf.ID)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
-	m := selectMeal(db, meals)
-	deleteMeal(db, m.ID)
+
+	fmt.Println("ID:", f.ID)
+	fmt.Println("Name:", f.Name)
+	fmt.Println("Serving size:", f.ServingSize, f.ServingUnit)
+	fmt.Println("PortionCals:", f.PortionCals)
+	fmt.Println("Protein:", f.FoodMacros.Protein)
+	fmt.Println("Carbs:", f.FoodMacros.Carbs)
+	fmt.Println("Fats:", f.FoodMacros.Fat)
+
+	/*
+		meal := Meal{}
+		meal.Name = promptMeal()
+		addMeal(db, meal)
+
+		m, _ := selectMeal(db)
+		printMeal(m)
+	*/
 }
 
+// promptDeleteMeal prompts a user to select a meal and removes the meal
+// from the database.
+func promptDeleteMeal(db *sqlx.DB) error {
+	// Select a meal.
+	m, err := selectMeal(db)
+	if err != nil {
+		return err
+	}
+
+	// Delete selected meal.
+	deleteMeal(db, m.ID)
+	return nil
+}
+
+/*
 // selectMeal prints the user's meals, prompts them to select a meal,
 // and returns the selected meal.
 func selectMeal(db *sqlx.DB, meals []Meal) Meal {
@@ -86,7 +117,7 @@ func selectMeal(db *sqlx.DB, meals []Meal) Meal {
 
 		// Get the filtered meals
 		filteredMeals := searchMeals(db, meals, response)
-		// If there were no matchs found,
+		// If there were no matches found,
 		if len(filteredMeals) == 0 {
 			fmt.Println("No matches found. Please try again.")
 			continue
@@ -103,40 +134,107 @@ func selectMeal(db *sqlx.DB, meals []Meal) Meal {
 		// Con: User may have to type long numbers.
 	}
 }
+*/
 
-// selectFood prints the foods, prompts user to select a food, and
-// returns the selected food.
-//
-// TODO
-// * Simplify code.
-func selectFood(db *sqlx.DB) Food {
+// selectMeal prints the user's meals, prompts them to select a meal,
+// and returns the selected meal.
+func selectMeal(db *sqlx.DB) (Meal, error) {
+	// Get all meals.
+	meals, err := getAllMeals(db)
+	if err != nil {
+		return Meal{}, err
+	}
+
+	// Print all meals.
+	for i, meal := range meals {
+		fmt.Printf("[%d] %s\n", i+1, meal.Name)
+	}
+
+	// Get response.
+	response := promptSelectResponse("meal")
+	idx, err := strconv.Atoi(response)
+
+	// While response is an integer
+	for err == nil {
+		// If integer is invalid,
+		if 1 > idx || idx > len(meals) {
+			fmt.Println("Number must be between 0 and number of meals. Please try again.")
+			response = promptSelectResponse("meal")
+			idx, err = strconv.Atoi(response)
+			continue
+		}
+		// Otherwise, return food at valid index.
+		return meals[idx-1], nil
+	}
+	// User response was a search term.
+
+	// While user reponse is not an integer
+	for {
+		// Get the filtered meals.
+		filteredMeals, err := searchMeals(db, response)
+		if err != nil {
+			return Meal{}, err
+		}
+
+		// If no matches found,
+		if len(*filteredMeals) == 0 {
+			fmt.Println("No matches found. Please try again.")
+			response = promptSelectResponse("meal")
+			continue
+		}
+
+		// Print meals.
+		for i, meal := range *filteredMeals {
+			fmt.Printf("[%d] %s\n", i+1, meal.Name)
+		}
+
+		response = promptSelectResponse("meal")
+		idx, err := strconv.Atoi(response)
+
+		// While response is an integer
+		for err == nil {
+			// If integer is invalid,
+			if 1 > idx || idx > len(*filteredMeals) {
+				fmt.Println("Number must be between 0 and number of meals. Please try again.")
+				response = promptSelectResponse("meal")
+				idx, err = strconv.Atoi(response)
+				continue
+			}
+			// Otherwise, return food at valid index.
+			return (*filteredMeals)[idx-1], nil
+		}
+		// User response was a search term. Continue to next loop.
+	}
+	// Otherwise, the user's response was a search term.
+}
+
+// selectFood prompts user to enter a search term, prints the matched
+// foods, prompts user to enter an index to select a food or another
+// serach term for a different food. This repeats until user enters a
+// valid index.
+func selectFood(db *sqlx.DB) (Food, error) {
+	// Get initial search term.
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Enter food name: ")
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Remove the newline character at the end of the string
+	// Remove the newline character at the end of the string.
 	response = strings.TrimSpace(response)
 
+	// While user response is not an integer
 	for {
-		// Get the filtered foods
+		// Get filtered foods.
 		filteredFoods, err := searchFoods(db, response)
 		if err != nil {
-			log.Fatal(err)
+			return Food{}, err
 		}
 
 		// If no matches found,
 		if len(*filteredFoods) == 0 {
 			fmt.Println("No matches found. Please try again.")
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Printf("Enter food name: ")
-			response, err = reader.ReadString('\n')
-			if err != nil {
-				log.Fatal(err)
-			}
-			// Remove the newline character at the end of the string
-			response = strings.TrimSpace(response)
+			response = promptSelectResponse("food")
 			continue
 		}
 
@@ -145,37 +243,22 @@ func selectFood(db *sqlx.DB) Food {
 			fmt.Printf("[%d] %s\n", i+1, food.Name)
 		}
 
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("Enter either of the food or a search term: ")
-		response, err = reader.ReadString('\n')
-		if err != nil {
-			log.Fatal(err)
-		}
-		// Remove the newline character at the end of the string
-		response = strings.TrimSpace(response)
-
+		response = promptSelectResponse("food")
 		idx, err := strconv.Atoi(response)
-		// While response is a number
+
+		// While response is an integer
 		for err == nil {
-			// If number is invalid,
+			// If integer is invalid,
 			if 1 > idx || idx > len(*filteredFoods) {
 				fmt.Println("Number must be between 0 and number of foods. Please try again.")
-				// prompt for response.
-				reader := bufio.NewReader(os.Stdin)
-				fmt.Printf("Enter either of the food or a search term: ")
-				response, err = reader.ReadString('\n')
-				if err != nil {
-					log.Fatal(err)
-				}
-				// Remove the newline character at the end of the string
-				response = strings.TrimSpace(response)
-
+				response = promptSelectResponse("food")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
 			// Otherwise, return food at valid index.
-			return (*filteredFoods)[idx-1]
+			return (*filteredFoods)[idx-1], nil
 		}
+		// User response was a search term. Continue to next loop.
 	}
 	// Otherwise, the user's response was a search term
 }
@@ -197,13 +280,16 @@ func getSelectResponse(itemsLen int, itemName string) (r string) {
 }
 
 // promptSelectResponse returns meal to select or a search term.
-func promptSelectResponse(item string) (s string) {
+func promptSelectResponse(item string) string {
+	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Enter either the index of the %s to select or a search term: ", item)
-	_, err := fmt.Scanln(&s)
+	response, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
-	return s
+	// Remove the newline character at the end of the string
+	response = strings.TrimSpace(response)
+	return response
 }
 
 // validateSelectResponse validates meal to select.
@@ -231,14 +317,31 @@ func promptDeleteResponse() (r string) {
 
 // searchMeals searches through meals slice and returns meals that
 // contain the search term.
-func searchMeals(db *sqlx.DB, meals []Meal, term string) []Meal {
-	filteredMeals := []Meal{}
-	for _, meal := range meals {
-		if strings.Contains(strings.ToLower(meal.Name), strings.ToLower(term)) {
-			filteredMeals = append(filteredMeals, meal)
-		}
+func searchMeals(db *sqlx.DB, response string) (*[]Meal, error) {
+	var meals []Meal
+
+	// Prioritize exact match, then match meals where `meal_name` starts
+	// with the search term, and finally any meals where the `meal_name`
+	// contains the search term.
+	query := `
+        SELECT * FROM meals
+        WHERE meal_name LIKE $1
+        ORDER BY
+            CASE
+                WHEN meal_name = $2 THEN 1
+                WHEN meal_name LIKE $3 THEN 2
+                ELSE 3
+            END
+        LIMIT $4`
+
+	// Search for meals in the database
+	err := db.Select(&meals, query, "%"+response+"%", response, response+"%", searchLimit)
+	if err != nil {
+		log.Printf("Search for meals failed: %v\n", err)
+		return nil, err
 	}
-	return filteredMeals
+
+	return &meals, nil
 }
 
 // searchFoods searchs through all foods and returns food that contain
@@ -282,15 +385,16 @@ func promptMeal() (m string) {
 
 func addMeal(db *sqlx.DB, meal Meal) {
 	// Insert the new meal into the database
-	_, err := db.Exec(`INSERT INTO meals (name, frequency) VALUES (?, ?)`, meal.Name, meal.Frequency)
+	_, err := db.Exec(`INSERT INTO meals (meal_name) VALUES (?)`, meal.Name)
 	if err != nil {
 		log.Fatal("ERROR: ", err)
 	}
 }
 
+// getAllMeals returns all the user's meals from the database.
 func getAllMeals(db *sqlx.DB) ([]Meal, error) {
 	m := []Meal{}
-	err := db.Select(&m, "SELECT meal_id, meal_name FROM meals")
+	err := db.Select(&m, "SELECT * FROM meals")
 	if err != nil {
 		return nil, err
 	}
@@ -325,34 +429,44 @@ func getOneMeal(db *sqlx.DB, mealID int) (*Meal, error) {
 	return &m, nil
 }
 
-func printMeals(m []Meal) {
-	// Print the data
-	for _, meal := range m {
-		fmt.Printf("ID: %d, Name: \"%s\", Frequency: %d\n", meal.ID, meal.Name, meal.Frequency)
-	}
-}
-
-func displayAllMeals(db *sqlx.DB) {
+// displayAllMeals gets and prints all the user's meals.
+func displayAllMeals(db *sqlx.DB) error {
 	m, err := getAllMeals(db)
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
-
 	printMeals(m)
+	return nil
 }
 
-func displayOneMeal(db *sqlx.DB, mealID int) {
+// displayOneMeal gets and prints one user meal given the meal id.
+func displayOneMeal(db *sqlx.DB, mealID int) error {
 	m, err := getOneMeal(db, mealID)
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
-
-	// TODO: update print to include rest of the fields.
-	fmt.Printf("ID: %d, Name: %s\n", m.ID, m.Name)
+	printMeal(*m)
+	return nil
 }
 
+// printMeals prints the fields of each meal in the given slice.
+func printMeals(meals []Meal) {
+	// TODO: ensure meals not empty
+
+	// Print the meals.
+	for _, meal := range meals {
+		printMeal(meal)
+	}
+}
+
+// printMeal prints the fields of the meal.
+func printMeal(meal Meal) {
+	// TODO: update print to include rest of the fields.
+	fmt.Printf("ID: %d, Name: \"%s\"\n", meal.ID, meal.Name)
+}
+
+// TODO: this function should delete mealID from related tables. E.g.,
+// meal_foods table.
 func deleteMeal(db *sqlx.DB, mealID int) error {
 	_, err := db.Exec("DELETE FROM meals WHERE id=?", mealID)
 	return err
@@ -363,9 +477,6 @@ func incrementMealFrequency(db *sqlx.DB, mealID int) error {
 	return err
 }
 
-// TODO: function to get the slice `food_id`'s specifed by search term.
-// Then iterate over slice calling to getOneFood for each iteration.
-
 // TODO: displayFood takes in a slice of meal id's to prints its contents.
 
 // getFoodPref prompts user for food perferences, validates their
@@ -373,15 +484,15 @@ func incrementMealFrequency(db *sqlx.DB, mealID int) error {
 // valid response.
 //
 // TODO:
+// * This should be named updateFoodPref and should execute the sql code
+// to make the update to the perferences.
 // * Let user press <enter> to keep old values.
 // * Would be nice to see manufacturer's values.
 func getFoodPref(foodID int) *FoodPref {
 	pref := &FoodPref{}
 
 	pref.FoodId = foodID
-
 	pref.ServingSize = getServingSize()
-
 	pref.NumberOfServings = getNumServings()
 
 	return pref
@@ -514,7 +625,7 @@ func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
 		return nil, err
 	}
 
-	f.Macros, err = getMacros(db, foodID)
+	f.FoodMacros, err = getFoodMacros(db, foodID)
 	if err != nil {
 		return nil, err
 	}
@@ -522,9 +633,9 @@ func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
 	return &f, nil
 }
 
-// getMacros retrieves the macronutrients for a given food.
-func getMacros(db *sqlx.DB, foodID int) (*Macros, error) {
-	m := Macros{}
+// getFoodMacros retrieves the macronutrients for a given food.
+func getFoodMacros(db *sqlx.DB, foodID int) (*FoodMacros, error) {
+	m := FoodMacros{}
 
 	nID, err := getNutrientId(db, "Protein")
 	if err != nil {
