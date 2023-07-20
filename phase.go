@@ -228,6 +228,7 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 	weekNumber++
 
 	// For subsequent weeks
+	// TODO: should condition be <= and NOT just <
 	for date := firstSunday.AddDate(0, 0, 1); date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
@@ -244,53 +245,20 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 }
 
 // countEntriesInWeek finds the number of entires within a given week.
-// TODO: endIdx should not be startIdx+7.
 func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time) (int, error) {
 	count := 0
-
-	startIdx, err := findEntryIdx(logs, weekStart)
-	if err != nil {
-		return 0, err
-	}
-	// TODO: should not return early (0); Even if weekStart is not be
-	// logged, we don't care. Still need to check the rest of the days
-	// of the days of the week.
-	if startIdx == -1 {
-		return count, nil
-	}
-
-	/*
-		endIdx, err := findEntryIdx(logs, weekEnd)
+	// Starting from the start date, iterate over the days of the week,
+	// and count the number of logged days.
+	for i := weekStart; i.Before(weekEnd) || isSameDay(i, weekEnd); i = i.AddDate(0, 0, 1) {
+		idx, err := findEntryIdx(logs, i)
 		if err != nil {
-			return 0, err
-		}
-		if endIdx == -1 {
-			return count, nil
+			return -1, err
 		}
 
-		days := endIdx - startIdx
-		if days < 0 {
-			log.Println("ERROR: weekEnd comes before weekStart.")
-			return 0, fmt.Errorf("weekEnd comes before weekStart.")
+		// If entry exists with `i` date,
+		if idx != -1 {
+			count++
 		}
-	*/
-
-	endIdx := min(startIdx+7, logs.NRows())
-
-	// Starting from the start date index, iterate over the week, and
-	// update counter when an entry is encountered.
-	for i := startIdx; i < endIdx; i++ {
-		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return 0, err
-		}
-
-		if date.Before(weekStart) || date.After(weekEnd) {
-			break
-		}
-
-		count++
 	}
 
 	return count, nil
@@ -1206,7 +1174,7 @@ func findEntryIdx(logs *dataframe.DataFrame, d time.Time) (int, error) {
 		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 		if err != nil {
 			log.Println("ERROR: Couldn't parse date:", err)
-			return 0, err
+			return -1, err
 		}
 
 		if isSameDay(date, d) {
@@ -1666,7 +1634,7 @@ func validateGoalWeight(weightStr string, u *UserInfo) (g float64, err error) {
 
 		lowerBound := u.Phase.StartWeight * 0.10
 		if g < u.Phase.StartWeight-lowerBound {
-			return 0, errors.New("Invalid goal weight. For a cut, goal weight cannot be less than 10%% of starting body weight.")
+			return 0, errors.New("Invalid goal weight. For a cut, goal weight cannot be less than 10% of starting body weight.")
 		}
 	case "bulk":
 		if g < u.Phase.StartWeight {
@@ -1675,7 +1643,7 @@ func validateGoalWeight(weightStr string, u *UserInfo) (g float64, err error) {
 
 		upperBound := u.Phase.StartWeight * 0.10
 		if g > u.Phase.StartWeight+upperBound {
-			return 0, errors.New("Invalid goal weight. For a bulk, goal weight cannot exceed 10%% of starting body weight.")
+			return 0, errors.New("Invalid goal weight. For a bulk, goal weight cannot exceed 10% of starting body weight.")
 		}
 	}
 
