@@ -8,9 +8,85 @@ import (
 	"os"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/rocketlaunchr/dataframe-go"
 	"github.com/rocketlaunchr/dataframe-go/imports"
 )
+
+// Entry fields will be constructed from daily_weights and daily_foods
+// table during runtime.
+/*
+type Entry struct {
+	UserWeight float64 // User weight for a single day.
+	UserCals   float64 // Consumed calories for a single day.
+	Date       time.Time
+	Protein    float64 // Consumed protein for a single day.
+	Carbs      float64 // Consumed carbohydrate  for a single day.
+	Fat        float64 // Consumed fat for a single day.
+}
+*/
+
+// Nutrient are for portion size (100 serving unit)
+type Entry struct {
+	UserWeight float64   `db:"user_weight"`
+	UserCals   float64   `db:"user_cals"`
+	Date       time.Time `db:"date"`
+	Protein    float64   `db:"protein"`
+	Carbs      float64   `db:"carbs"`
+	Fat        float64   `db:"fat"`
+}
+
+// GetAllEntries returns all the user's entries from the database.
+func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
+	// TODO: should probably get number_of_serving from `food_prefs` table
+	//in its own SQL statement before hand.
+
+	query := `
+	SELECT
+		-- Select date and user's weight for each day.
+		dw.date,
+  	dw.weight as user_weight,
+
+		-- Calculate sum of calories and macros for each day.
+		-- If nutrient is not logged for a particular day, its amount is treated as 0.
+		-- Nutrient amount is multiplied by number of servings which has a default of 1.
+  	SUM(CASE WHEN fn.nutrient_id = 1008 THEN fn.amount * df.number_of_servings ELSE 0 END) as user_cals,
+  	SUM(CASE WHEN fn.nutrient_id = 1003 THEN fn.amount * df.number_of_servings ELSE 0 END) as protein,
+  	SUM(CASE WHEN fn.nutrient_id = 1005 THEN fn.amount * df.number_of_servings ELSE 0 END) as carbs,
+  	SUM(CASE WHEN fn.nutrient_id = 1004 THEN fn.amount * df.number_of_servings ELSE 0 END) as fat
+
+		FROM daily_weights dw -- User's weight data.
+
+			-- Join with daily food data on date.
+  		-- Only join if food_id is not null (i.e., at least one food is logged for that day).
+			JOIN daily_foods df ON dw.date = df.date AND df.food_id IS NOT NULL
+
+			-- Join with food nutrients data on food_id.
+			JOIN food_nutrients fn ON df.food_id = fn.food_id
+
+  -- Only include specific nutrient_ids in the result.
+	WHERE fn.nutrient_id IN (1008, 1003, 1005, 1004)
+
+	GROUP BY 
+	  -- Group by date and user weight to aggregate nutrition data by day.
+		dw.date,
+		dw.weight
+
+	-- Only include groups where at least one food_id is not null
+  -- (i.e., at least one food was logged for that day).
+	HAVING SUM(df.food_id) IS NOT NULL
+
+	-- Order results by date.
+	ORDER BY dw.date`
+
+	var entries []Entry
+	err := db.Select(&entries, query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &entries, nil
+}
 
 // ReadEntries reads user entries from CSV file into a dataframe.
 func ReadEntries() (*dataframe.DataFrame, error) {
