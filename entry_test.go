@@ -3,8 +3,143 @@ package calories
 import (
 	"fmt"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/rocketlaunchr/dataframe-go"
 )
+
+func ExampleGetAllEntries() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+
+	// Create the food_nutrient_derivation table
+	db.MustExec(`CREATE TABLE food_nutrient_derivation (
+  id INT PRIMARY KEY,
+  code VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL
+)`)
+	// Insert a derivation code and description
+	db.MustExec(`INSERT INTO food_nutrient_derivation (code, description) VALUES (71, "portion size")`)
+
+	// Create the foods table
+	db.MustExec(`CREATE TABLE foods (
+  food_id INTEGER PRIMARY KEY,
+  food_name TEXT NOT NULL,
+  serving_size REAL NOT NULL,
+  serving_unit TEXT NOT NULL,
+  household_serving TEXT NOT NULL
+)`)
+	// Insert foods
+	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+(1, 'Chicken Breast', 100, 'g', '1/2 piece'),
+(2, 'Broccoli', 156, 'g', '1 cup'),
+(3, 'Brown Rice', 100, 'g', '1/2 cup cooked'),
+(4, 'Pizza', 124, 'g', '1 slice'),
+(5, 'Taco', 170, 'g', '1 taco')
+`)
+
+	// Create the nutrients table
+	db.MustExec(`CREATE TABLE IF NOT EXISTS nutrients (
+  nutrient_id INTEGER PRIMARY KEY,
+  nutrient_name TEXT NOT NULL,
+  unit_name TEXT NOT NULL
+)`)
+	// Insert nutrients
+	db.MustExec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+(1003, 'Protein', 'G'),
+(1004, 'Total lipid (fat)', 'G'),
+(1005, 'Carbohydrate, by difference', 'G'),
+(1008, 'Energy, KCAL', 'G')
+	`)
+
+	// Create the food_nutrients table
+	db.MustExec(`CREATE TABLE food_nutrients (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER NOT NULL,
+  nutrient_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  derivation_id REAL NOT NULL,
+  FOREIGN KEY (food_id) REFERENCES foods(food_id),
+  FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
+  FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
+)`)
+	// Insert food_nutrients
+	db.MustExec(`INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES
+(1, 1003, 31, 71),
+(1, 1004, 3.6, 71),
+(1, 1005, 0, 71),
+(1, 1008, 165, 71),
+(2, 1003, 2.8, 71),
+(2, 1004, 0.4, 71),
+(2, 1005, 7, 71),
+(2, 1008, 34, 71),
+(3, 1003, 2.73, 71),
+(3, 1004, 0.96, 71),
+(3, 1005, 25.5, 71),
+(3, 1008, 122, 71),
+(4, 1003, 11, 71),
+(4, 1004, 10, 71),
+(4, 1005, 33, 71),
+(4, 1008, 266, 71),
+(5, 1003, 12, 71),
+(5, 1004, 12, 71),
+(5, 1005, 15, 71),
+(5, 1008, 216, 71)
+`)
+
+	// Create the daily_foods table
+	db.MustExec(`CREATE TABLE daily_foods (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER REFERENCES foods(food_id),
+  date DATE NOT NULL,
+  number_of_servings REAL DEFAULT 1 NOT NULL
+)`)
+
+	// Note: 5th day user did not log any foods.
+	db.MustExec(`INSERT INTO daily_foods (food_id, date, number_of_servings) VALUES
+(1, '2023-01-01', 1),
+(2, '2023-01-01', 1),
+(2, '2023-01-02', 1),
+(4, '2023-01-02', 1),
+(5, '2023-01-03', 1),
+(1, '2023-01-03', 1),
+(3, '2023-01-04', 1),
+(4, '2023-01-04', 1)
+`)
+
+	// Create the daily_weights table
+	db.MustExec(`CREATE TABLE daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	db.MustExec(`INSERT INTO daily_weights (date, weight) VALUES
+('2023-01-01', 180),
+('2023-01-02', 181),
+('2023-01-03', 182),
+('2023-01-04', 183),
+('2023-01-05', 184)
+`)
+
+	// Get all entries
+	entries, err := GetAllEntries(db)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, entry := range *entries {
+		fmt.Println("Weight: ", entry.UserWeight)
+		fmt.Println("Calories: ", entry.UserCals)
+		fmt.Println("Calories: ", entry.UserCals)
+		fmt.Println("Date: ", entry.Date)
+	}
+
+	// Output:
+	// 0
+}
 
 func ExampleSubset() {
 	s1 := dataframe.NewSeriesString("weight", nil, "170", "170", "170", "170", "170", "170", "170", "170")
