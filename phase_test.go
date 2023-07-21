@@ -758,9 +758,18 @@ func ExampleValidateEndDate_error() {
 	// Invalid diet phase end date. Diet duration of 12.86 weeks exceeds the maximum duration of 12.00.
 }
 
+func ExampleValidateDateIsNotPast() {
+	today := time.Now()
+	date := today.AddDate(0, 0, 1)
+	fmt.Println(validateDateIsNotPast(date))
+
+	// Output:
+	// true
+}
+
 func ExampleValidateDate() {
 	dateStr := "2023-01-23"
-	date, err := validateDate(dateStr)
+	date, err := validateDateStr(dateStr)
 	fmt.Println(date)
 	fmt.Println(err)
 
@@ -771,7 +780,7 @@ func ExampleValidateDate() {
 
 func TestValidateDate_parseError(t *testing.T) {
 	dateStr := "2023 01 23"
-	_, err := validateDate(dateStr)
+	_, err := validateDateStr(dateStr)
 
 	if err == nil {
 		t.Error("Expected error, but got nil")
