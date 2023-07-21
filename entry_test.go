@@ -2,6 +2,7 @@ package calories
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rocketlaunchr/dataframe-go"
@@ -13,6 +14,8 @@ func ExampleGetAllEntries() {
 	if err != nil {
 		panic(err)
 	}
+
+	defer db.Close()
 
 	// Create the food_nutrient_derivation table
 	db.MustExec(`CREATE TABLE food_nutrient_derivation (
@@ -159,13 +162,117 @@ func ExampleGetAllEntries() {
 	}
 
 	for _, entry := range *entries {
+		fmt.Println("Date: ", entry.Date.Format(dateFormat))
 		fmt.Println("Weight: ", entry.UserWeight)
 		fmt.Println("Calories: ", entry.UserCals)
-		fmt.Println("Date: ", entry.Date)
 	}
 
 	// Output:
-	// 0
+	// Date:  2023-01-01
+	// Weight:  180
+	// Calories:  199
+	// Date:  2023-01-02
+	// Weight:  181
+	// Calories:  300
+	// Date:  2023-01-03
+	// Weight:  182
+	// Calories:  381
+	// Date:  2023-01-04
+	// Weight:  183
+	// Calories:  388
+}
+
+func ExampleAddWeightLog() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	testWeight := 220.2
+	date := time.Now()
+
+	err = addWeightLog(db, date, testWeight)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Verify the weight was logged correctly
+	var weight float64
+	err = db.Get(&weight, `SELECT weight FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+
+	fmt.Println(weight)
+	fmt.Println(err)
+
+	// Output:
+	// Added weight entry.
+	// 220.2
+	// <nil>
+}
+
+func ExampleAddWeightLog_exists() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	testWeight := 220.2
+	date := time.Now()
+
+	// Insert a weight for date.
+	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+
+	// Attempt to insert another weight for same date.
+	err = addWeightLog(db, date, testWeight)
+	fmt.Println(err)
+
+	// Output:
+	// Weight for this date has already been logged.
+}
+
+func ExampleCheckWeightExists() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	testWeight := 220.2
+	date := time.Now()
+
+	// Insert a weight for date.
+	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+
+	exists, err := checkWeightExists(db, date)
+	fmt.Println(exists)
+	fmt.Println(err)
+
+	// Output:
+	// true
+	// <nil>
 }
 
 func ExampleSubset() {
