@@ -1480,17 +1480,35 @@ func getStartDate(u *UserInfo) (date time.Time) {
 			u.Phase.Active = true
 		}
 
-		// Validate user response.
+		// Ensure user response is a date.
 		var err error
-		date, err = validateDate(r)
+		date, err = validateDateStr(r)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
+			continue
+		}
+
+		// Ensure date is not in the past.
+		if !validateDateIsNotPast(date) {
+			fmt.Println("Date must be today or future date. Please try again.")
 			continue
 		}
 
 		break
 	}
 	return date
+}
+
+// validateDateIsNotPast validates a given date to ensure it does not
+// fall in the past. The function returns `true` if the input date is
+// equal to or later than the current date (today) and `false`
+// otherwise.
+func validateDateIsNotPast(date time.Time) bool {
+	today := time.Now()
+	if date.After(today) || isSameDay(date, today) {
+		return true // Date is today or later
+	}
+	return false // Date is earlier than today
 }
 
 // setEndDate prompts user for diet end date, validates user response
@@ -1532,7 +1550,7 @@ func promptDate(promptStr string) string {
 // valid.
 func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 	// Ensure user response is a date.
-	d, err := validateDate(r)
+	d, err := validateDateStr(r)
 	if err != nil {
 		return time.Time{}, 0, errors.New("Invalid date.")
 	}
@@ -1560,9 +1578,9 @@ func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 	return d, dur, nil
 }
 
-// validateDate validates the given date string and returns date if
+// validateDateStr validates the given date string and returns date if
 // valid.
-func validateDate(dateStr string) (time.Time, error) {
+func validateDateStr(dateStr string) (time.Time, error) {
 	// Validate user response.
 	date, err := time.Parse(dateFormat, dateStr)
 	if err != nil {
