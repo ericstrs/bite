@@ -134,6 +134,88 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 	return logs, nil
 }
 
+// LogWeight gets weight and date from user to create a new weight log.
+func LogWeight(u *UserInfo, db *sqlx.DB) {
+	for {
+		date := getWeightDate()
+		weight, err := getWeight(u.System)
+		if err != nil {
+			fmt.Printf("%v. Please try again.\n", err)
+			continue
+		}
+		err = addWeightLog(db, date, weight)
+		if err != nil {
+			fmt.Printf("%v. Please try again.\n", err)
+			continue
+		}
+		break
+	}
+}
+
+// addWeightLog inserts a weight log into the database.
+func addWeightLog(db *sqlx.DB, date time.Time, weight float64) error {
+	// Ensure weight hasn't already been logged for given date.
+	exists, err := checkWeightExists(db, date)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("Weight for this date has already been logged.")
+	}
+
+	// Insert the new weight entry into the weight database.
+	_, err = db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), weight)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Added weight entry.")
+	return nil
+}
+
+// checkWeightExists checks if a weight entry already exists for the
+// given date.
+func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
+	var count int
+	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// getWeightDate prompts user for weight log date, validates user
+// response until user enters a valid date, and return the valid date.
+func getWeightDate() (date time.Time) {
+	for {
+		// Prompt user for diet start date.
+		r := promptDate("Enter weight log date (YYYY-MM-DD) [Press Enter for today's date]: ")
+
+		// If user entered default date,
+		if r == "" {
+			// set date to today's date.
+			r = time.Now().Format(dateFormat)
+		}
+
+		// Ensure user response is a date.
+		var err error
+		date, err = validateDateStr(r)
+		if err != nil {
+			fmt.Printf("%v. Please try again.\n", err)
+			continue
+		}
+
+		// Ensure date is not in the past.
+		if !validateDateIsNotPast(date) {
+			fmt.Println("Date must be today or future date. Please try again.")
+			continue
+		}
+
+		break
+	}
+	return date
+}
+
 // checkInput checks if the user input is positive
 func checkInput(n float64) error {
 	if n < 0 {
@@ -180,7 +262,7 @@ func Log(u *UserInfo, s string) error {
 		}
 
 		// Check if date is a valid date.
-		date, err = validateDate(r)
+		date, err = validateDateStr(r)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
