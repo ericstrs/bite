@@ -42,42 +42,45 @@ func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	//in its own SQL statement before hand.
 
 	query := `
+	-- Select the date and user's weight, and calculate the sum of calories and macros for each day.
 	SELECT
-		-- Select date and user's weight for each day.
+		-- User's weight for each day.
 		dw.date,
-  	dw.weight as user_weight,
+		dw.weight AS user_weight,
 
-		-- Calculate sum of calories and macros for each day.
+		-- Sum of calories and macros for each day, considering the number of servings in the meal or food preference.
 		-- If nutrient is not logged for a particular day, its amount is treated as 0.
-		-- Nutrient amount is multiplied by number of servings which has a default of 1.
-  	SUM(CASE WHEN fn.nutrient_id = 1008 THEN fn.amount * df.number_of_servings ELSE 0 END) as user_cals,
-  	SUM(CASE WHEN fn.nutrient_id = 1003 THEN fn.amount * df.number_of_servings ELSE 0 END) as protein,
-  	SUM(CASE WHEN fn.nutrient_id = 1005 THEN fn.amount * df.number_of_servings ELSE 0 END) as carbs,
-  	SUM(CASE WHEN fn.nutrient_id = 1004 THEN fn.amount * df.number_of_servings ELSE 0 END) as fat
+		SUM(CASE WHEN fn.nutrient_id = 1008 THEN fn.amount * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) ELSE 0 END) AS user_cals,
+		SUM(CASE WHEN fn.nutrient_id = 1003 THEN fn.amount * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) ELSE 0 END) AS protein,
+		SUM(CASE WHEN fn.nutrient_id = 1005 THEN fn.amount * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) ELSE 0 END) AS carbs,
+		SUM(CASE WHEN fn.nutrient_id = 1004 THEN fn.amount * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) ELSE 0 END) AS fat
 
-		FROM daily_weights dw -- User's weight data.
+	FROM daily_weights dw -- User's weight data.
 
-			-- Join with daily food data on date.
-  		-- Only join if food_id is not null (i.e., at least one food is logged for that day).
-			JOIN daily_foods df ON dw.date = df.date AND df.food_id IS NOT NULL
+		-- Join daily food data on date. Only if food_id is not null.
+		JOIN daily_foods df ON dw.date = df.date AND df.food_id IS NOT NULL
 
-			-- Join with food nutrients data on food_id.
-			JOIN food_nutrients fn ON df.food_id = fn.food_id
+		-- Join with food nutrients data on food_id.
+		JOIN food_nutrients fn ON df.food_id = fn.food_id
 
-  -- Only include specific nutrient_ids in the result.
+		-- Join with food preferences data on food_id. This data is used when food is consumed outside of a meal.
+		LEFT JOIN food_prefs fp ON df.food_id = fp.food_id
+
+		-- Join with meal food preferences data on food_id and meal_id. This data is used when food is consumed as part of a meal.
+		LEFT JOIN meal_food_prefs mfp ON df.food_id = mfp.food_id AND df.meal_id = mfp.meal_id
+
+	-- Filter only specific nutrient_ids.
 	WHERE fn.nutrient_id IN (1008, 1003, 1005, 1004)
 
-	GROUP BY 
-	  -- Group by date and user weight to aggregate nutrition data by day.
-		dw.date,
-		dw.weight
+	-- Group by date and user weight to aggregate nutrition data by day.
+	GROUP BY dw.date, dw.weight
 
-	-- Only include groups where at least one food_id is not null
-  -- (i.e., at least one food was logged for that day).
+	-- Ensure groups include at least one food_id, which indicates at least one food was logged for that day.
 	HAVING SUM(df.food_id) IS NOT NULL
 
-	-- Order results by date.
-	ORDER BY dw.date`
+	-- Sort results by date.
+	ORDER BY dw.date
+	`
 
 	var entries []Entry
 	err := db.Select(&entries, query)
