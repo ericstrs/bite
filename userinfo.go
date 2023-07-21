@@ -557,9 +557,6 @@ func validateSex(s string) error {
 
 // getWeight prompts user for weight, validate their response, and
 // returns valid weight.
-//
-// Asumptions:
-// * `u.System` has been initialized.
 func getWeight(system string) (float64, error) {
 	var weight float64
 	var err error
