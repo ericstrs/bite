@@ -89,9 +89,50 @@ func main() {
 		case "food":
 			// TODO
 		case "weight":
-			// TODO
+			c.LogWeight(u, db)
+		case "update":
+			if len(os.Args) < 4 {
+				log.Println("Usage: ./calories log update [weight|food|meal]")
+				return
+			}
+			switch os.Args[3] {
+			case "meal":
+				// TODO
+			case "food":
+				// TODO
+			case "weight":
+				// TODO
+			}
+		case "delete":
+			if len(os.Args) < 4 {
+				log.Println("Usage: ./calories log delete [weight|food|meal]")
+				return
+			}
+			switch os.Args[3] {
+			case "meal":
+				// TODO
+			case "food":
+				// TODO
+			case "weight":
+				// TODO
+			}
+		case "show":
+			if len(os.Args) < 4 {
+				log.Println("Usage: ./calories log show [all|weight|food|meal]")
+				return
+			}
+			switch os.Args[3] {
+			case "all":
+				// TODO
+			case "meal":
+				// TODO
+			case "food":
+				// TODO
+			case "weight":
+				// TODO
+			}
 		default:
-			log.Println("Usage: ./calories log [weight|food|meal]")
+			log.Println("Usage: ./calories log [weight|food|meal|update|delete]")
 			return
 		}
 	case "add":
