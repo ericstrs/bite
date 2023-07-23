@@ -96,46 +96,6 @@ func promptDeleteMeal(db *sqlx.DB) error {
 	return nil
 }
 
-/*
-// selectMeal prints the user's meals, prompts them to select a meal,
-// and returns the selected meal.
-func selectMeal(db *sqlx.DB, meals []Meal) Meal {
-	for {
-		// Print meals.
-		for i, meal := range meals {
-			fmt.Printf("[%d] %s\n", i+1, meal.Name)
-		}
-
-		response := getSelectResponse(len(meals), "meal")
-
-		idx, err := strconv.Atoi(response)
-		// If the user's input was a number,
-		if err == nil {
-			return meals[idx-1]
-		}
-		// Otherwise, the user's input was not a number
-
-		// Get the filtered meals
-		filteredMeals := searchMeals(db, meals, response)
-		// If there were no matches found,
-		if len(filteredMeals) == 0 {
-			fmt.Println("No matches found. Please try again.")
-			continue
-		}
-		// Otherwise, update meals to the filtered meals
-		meals = filteredMeals
-		// TODO: This is not ideal. Updating to filtered meals will mean
-		// that the printed options will get smaller and smaller.
-		// Solution: search terms print idxs starting from where all meal
-		// print left off.
-		// Pro: Lets the user not have to restart the process over again
-		// when they searched so much that there are very little meals to
-		// print.
-		// Con: User may have to type long numbers.
-	}
-}
-*/
-
 // selectMeal prints the user's meals, prompts them to select a meal,
 // and returns the selected meal.
 func selectMeal(db *sqlx.DB) (Meal, error) {
@@ -205,7 +165,6 @@ func selectMeal(db *sqlx.DB) (Meal, error) {
 		}
 		// User response was a search term. Continue to next loop.
 	}
-	// Otherwise, the user's response was a search term.
 }
 
 // selectFood prompts user to enter a search term, prints the matched
@@ -260,7 +219,6 @@ func selectFood(db *sqlx.DB) (Food, error) {
 		}
 		// User response was a search term. Continue to next loop.
 	}
-	// Otherwise, the user's response was a search term
 }
 
 // getSelectResponse prompts user to select an item (meal or food),
@@ -279,7 +237,7 @@ func getSelectResponse(itemsLen int, itemName string) (r string) {
 	return r
 }
 
-// promptSelectResponse returns meal to select or a search term.
+// promptSelectResponse prompts and returns meal to select or a search term.
 func promptSelectResponse(item string) string {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Enter either the index of the %s to select or a search term: ", item)
