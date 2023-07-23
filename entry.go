@@ -1,11 +1,14 @@
 package calories
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -26,6 +29,10 @@ type Entry struct {
 }
 */
 
+const (
+	weightSearchLimit = 10
+)
+
 // Nutrient are for portion size (100 serving unit)
 type Entry struct {
 	UserWeight float64   `db:"user_weight"`
@@ -34,6 +41,12 @@ type Entry struct {
 	Protein    float64   `db:"protein"`
 	Carbs      float64   `db:"carbs"`
 	Fat        float64   `db:"fat"`
+}
+
+type WeightEntry struct {
+	ID     int       `db:"id"`
+	Date   time.Time `db:"date"`
+	Weight float64   `db:"weight"`
 }
 
 // GetAllEntries returns all the user's entries from the database.
@@ -173,17 +186,6 @@ func addWeightLog(db *sqlx.DB, date time.Time, weight float64) error {
 	return nil
 }
 
-// checkWeightExists checks if a weight entry already exists for the
-// given date.
-func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
-	var count int
-	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
 // getWeightDate prompts user for weight log date, validates user
 // response until user enters a valid date, and return the valid date.
 func getWeightDate() (date time.Time) {
@@ -214,6 +216,205 @@ func getWeightDate() (date time.Time) {
 		break
 	}
 	return date
+}
+
+// ShowWeightLog prints entire weight log.
+func ShowWeightLog(db *sqlx.DB) error {
+	log, err := getAllWeightEntries(db)
+	if err != nil {
+		return err
+	}
+	printWeightEntries(log)
+	return nil
+}
+
+// UpdateWeightLog updates the weight value for a given weight log.
+func UpdateWeightLog(db *sqlx.DB, u *UserInfo) error {
+	// Let user select weight entry to update.
+	entry, err := selectWeightEntry(db)
+	if err != nil {
+		return err
+	}
+
+	// Get new weight.
+	weight, err := getWeight(u.System)
+
+	// Update entry.
+	err = updateWeightEntry(db, entry.ID, weight)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Updated weight entry.")
+
+	return nil
+}
+
+func updateWeightEntry(db *sqlx.DB, id int, newWeight float64) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the update statement
+	_, err = tx.Exec(`
+			UDPATE daily_weights
+			SET weight = $1
+			WHERE id = $2
+			`, newWeight, id)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
+}
+
+// selectWeightEntry prints the user's weight entries, prompts them to select
+// a weight entry, and returns the selected weight entry.
+func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
+	// Get all weight logs.
+	log, err := getRecentWeightEntries(db)
+	if err != nil {
+		return WeightEntry{}, err
+	}
+
+	// Print recent weight entries.
+	printWeightEntries(log)
+
+	// Get response.
+	response := promptSelectEntry()
+	idx, err := strconv.Atoi(response)
+
+	// While response is an integer
+	for err == nil {
+		// If integer is invalid,
+		if 1 > idx || idx > len(log) {
+			fmt.Println("Number must be between 0 and number of entries. Please try again.")
+			response = promptSelectEntry()
+			idx, err = strconv.Atoi(response)
+			continue
+		}
+		// Otherwise, return food at valid index.
+		return log[idx-1], nil
+	}
+	// User response was a date to search.
+	// While user reponse is not an integer,
+	for {
+		// Validate user response.
+		date, err := validateDateStr(response)
+		if err != nil {
+			fmt.Println("%v. Please try again.")
+			response = promptSelectEntry()
+			continue
+		}
+
+		// Get the filtered entries.
+		entry, err := searchWeightLog(db, date)
+		if err != nil {
+			return WeightEntry{}, err
+		}
+
+		// If no match found,
+		if entry == nil {
+			fmt.Println("No match found. Please try again.")
+			response = promptSelectEntry()
+			continue
+		}
+
+		// Print entry.
+		fmt.Printf("[1] %s %f\n", entry.Date.Format(dateFormat), entry.Weight)
+
+		response = promptSelectEntry()
+		idx, err := strconv.Atoi(response)
+
+		// While response is an integer
+		for err == nil {
+			// If integer is invalid,
+			if idx != 1 {
+				fmt.Println("Number must be 1. Please try again.")
+				response = promptSelectEntry()
+				idx, err = strconv.Atoi(response)
+				continue
+			}
+			// Otherwise, return entry at valid index.
+			return *entry, nil
+		}
+		// User response was a search term. Continue to next loop.
+	}
+}
+
+// printWeightEntries prints out specified weight entries.
+func printWeightEntries(entries []WeightEntry) {
+	for i, entry := range entries {
+		fmt.Printf("[%d] %s %f\n", i+1, entry.Date.Format(dateFormat), entry.Weight)
+	}
+}
+
+// getAllWeightEntries returns all the user's logged weight entries.
+func getAllWeightEntries(db *sqlx.DB) ([]WeightEntry, error) {
+	wl := []WeightEntry{}
+	err := db.Select(&wl, "SELECT * FROM daily_weights ORDER BY date DESC")
+	if err != nil {
+		return nil, err
+	}
+	return wl, nil
+}
+
+// getRecentWeightEntries returns the user's logged weight entries up to
+// a limit.
+func getRecentWeightEntries(db *sqlx.DB) ([]WeightEntry, error) {
+	wl := []WeightEntry{}
+	err := db.Select(&wl, "SELECT * FROM daily_weights ORDER BY date DESC LIMIT $1", weightSearchLimit)
+	if err != nil {
+		return nil, err
+	}
+	return wl, nil
+}
+
+// promptSelectEntry prompts and returns entry to select or a search
+// term.
+func promptSelectEntry() string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("Enter entry index to select or date to search (YYYY-MM-DD): ")
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Remove the newline character at the end of the string
+	response = strings.TrimSpace(response)
+	return response
+}
+
+// searchWeightLog searchs through all weight entries and returns the
+// entry that matches the entered date.
+func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
+	var entry WeightEntry
+	query := ` SELECT * FROM daily_weights WHERE date = $1 LIMIT 1`
+
+	// Search for weight entry in the database
+	err := db.Get(&entry, query, d.Format(dateFormat))
+	if err != nil {
+		log.Printf("Search for foods failed: %v\n", err)
+		return nil, err
+	}
+
+	return &entry, nil
+}
+
+// checkWeightExists checks if a weight entry already exists for the
+// given date.
+func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
+	var count int
+	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // checkInput checks if the user input is positive
