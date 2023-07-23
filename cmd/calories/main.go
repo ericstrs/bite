@@ -78,7 +78,7 @@ func main() {
 	switch os.Args[1] {
 	case "log":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories log [weight|food|meal]")
+			log.Println("Usage: ./calories log [weight|food|meal|update|delete|show]")
 			return
 		}
 
@@ -95,19 +95,27 @@ func main() {
 				log.Println("Usage: ./calories log update [weight|food|meal]")
 				return
 			}
+
 			switch os.Args[3] {
 			case "meal":
 				// TODO
 			case "food":
 				// TODO
 			case "weight":
-				// TODO
+				err := c.UpdateWeightLog(db, u)
+				if err != nil {
+					return
+				}
+			default:
+				log.Println("Usage: ./calories log update [weight|food|meal]")
+				return
 			}
 		case "delete":
 			if len(os.Args) < 4 {
 				log.Println("Usage: ./calories log delete [weight|food|meal]")
 				return
 			}
+
 			switch os.Args[3] {
 			case "meal":
 				// TODO
@@ -115,12 +123,16 @@ func main() {
 				// TODO
 			case "weight":
 				// TODO
+			default:
+				log.Println("Usage: ./calories log delete [weight|food|meal]")
+				return
 			}
 		case "show":
 			if len(os.Args) < 4 {
 				log.Println("Usage: ./calories log show [all|weight|food|meal]")
 				return
 			}
+
 			switch os.Args[3] {
 			case "all":
 				// TODO
@@ -129,10 +141,13 @@ func main() {
 			case "food":
 				// TODO
 			case "weight":
-				// TODO
+				c.ShowWeightLog(db)
+			default:
+				log.Println("Usage: ./calories log show [all|weight|food|meal]")
+				return
 			}
 		default:
-			log.Println("Usage: ./calories log [weight|food|meal|update|delete]")
+			log.Println("Usage: ./calories log [weight|food|meal|update|delete|show]")
 			return
 		}
 	case "add":
@@ -179,18 +194,16 @@ func main() {
 		}
 	case "update":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories update [user|log]")
+			log.Println("Usage: ./calories update [user]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
-		case "log":
-			// TODO
 		case "user":
 			c.UpdateUserInfo(u)
 		default:
-			log.Println("Usage: ./calories update [user|log]")
+			log.Println("Usage: ./calories update [user]")
 			return
 		}
 	case "summary":
@@ -248,7 +261,7 @@ func main() {
 	case "test": // TODO: REMOVE AFTER TESTING.
 		c.Run(db)
 	default:
-		log.Println("Usage: ./calories [add|delete|update|summary|start|stop]")
+		log.Println("Usage: ./calories [log|add|delete|update|summary|start|stop]")
 	}
 
 	return
