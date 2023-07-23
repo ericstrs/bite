@@ -18,9 +18,10 @@ CREATE TABLE IF NOT EXISTS meals (
 -- logs.
 CREATE TABLE IF NOT EXISTS daily_foods (
   id INTEGER PRIMARY KEY,
-  food_id INTEGER REFERENCES foods(food_id),
+  food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  meal_ID INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
-  serving_size REAL DEFAULT 1 NOT NULL
+  number_of_servings REAL DEFAULT 1 NOT NULL
 );
 
 -- user_meals contains the user's meal consumption logs.
@@ -73,7 +74,7 @@ CREATE TABLE IF NOT EXISTS food_nutrients (
 CREATE TABLE IF NOT EXISTS food_prefs (
   food_id INTEGER PRIMARY KEY,
   serving_size REAL,
-  number_of_servings REAL,
+  number_of_servings REAL DEFAULT 1 NOT NULL,
   FOREIGN KEY(food_id) REFERENCES foods(food_id)
 );
 
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS meal_food_prefs (
   meal_id INTEGER,
   food_id INTEGER,
   serving_size REAL,
-  number_of_servings REAL,
+  number_of_servings REAL DEFAULT 1 NOT NULL,
   PRIMARY KEY(meal_id, food_id),
   FOREIGN KEY(food_id) REFERENCES foods(food_id),
   FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
