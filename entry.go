@@ -3,6 +3,7 @@ package calories
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -150,13 +151,13 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 // LogWeight gets weight and date from user to create a new weight entry.
 func LogWeight(u *UserInfo, db *sqlx.DB) {
 	for {
-		date := getWeightDate()
+		date := getDateNotPast("Enter weight entry date")
 		weight, err := getWeight(u.System)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
 		}
-		err = addWeightLog(db, date, weight)
+		err = addWeightEntry(db, date, weight)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
@@ -165,8 +166,8 @@ func LogWeight(u *UserInfo, db *sqlx.DB) {
 	}
 }
 
-// addWeightLog inserts a weight log into the database.
-func addWeightLog(db *sqlx.DB, date time.Time, weight float64) error {
+// addWeightEntry inserts a weight entry into the database.
+func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 	// Ensure weight hasn't already been logged for given date.
 	exists, err := checkWeightExists(db, date)
 	if err != nil {
@@ -186,12 +187,12 @@ func addWeightLog(db *sqlx.DB, date time.Time, weight float64) error {
 	return nil
 }
 
-// getWeightDate prompts user for weight log date, validates user
+// getDateNotPast prompts user for date that it not in the past, validates user
 // response until user enters a valid date, and return the valid date.
-func getWeightDate() (date time.Time) {
+func getDateNotPast() (date time.Time) {
 	for {
 		// Prompt user for diet start date.
-		r := promptDate("Enter weight log date (YYYY-MM-DD) [Press Enter for today's date]: ")
+		r := promptDate(fmt.Sprintf("%s (YYYY-MM-DD) [Press Enter for today's date]: "))
 
 		// If user entered default date,
 		if r == "" {
@@ -470,21 +471,45 @@ func LogFood(db *sqlx.DB) error {
 
 	// Get selected food
 	food, err := selectFood(db)
+	if err != nil {
+		return err
+	}
+
+	// Get any existing preferences for the selected food.
+	f, err := getFoodPref(db, food.ID)
+	if err != nil {
+		return err
+	}
 
 	// Display any existing preferences for the selected food.
+	printFoodPref(f)
+
+	var s string
+	fmt.Printf("Do you want to update these values? (y/n): ")
+	fmt.Scan(&s)
 
 	// If the user decides to change existing food preferences,
+	if strings.ToLower(s) == "y" {
+		// Get updated food preferences.
+		f = getFoodPrefUserInput(food.ID)
+		// Make database update for food preferences.
+		err := updateFoodPrefs(db, f)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Get date of food entry.
+	date := getDateNotPast("Enter food entry date")
 
 	// Log selected food to the food log database table. Taking into
 	// account food preferences.
-}
+	err = addFoodEntry(db, f, date)
+	if err != nil {
+		return err
+	}
 
-// isFoodPartOfMeal checks if a logged food is part of a logged meal.
-func isFoodPartOfMeal(db *sqlx.DB, foodID int) (bool, error) {
-}
-
-// printLoggedFoodPrefs prints the any user's preference for the given food.
-func printLoggedFoodPrefs(db *sqlx.DB, foodID int) {
+	return nil
 }
 
 // selectFood prompts user to enter a search term, prints the matched
@@ -581,6 +606,48 @@ func promptSelectResponse(item string) string {
 	// Remove the newline character at the end of the string
 	response = strings.TrimSpace(response)
 	return response
+}
+
+// getFoodPref gets the food preferences for the given food.
+func getFoodPref(db *sqlx.DB, foodID int) (FoodPref, error) {
+	query := `
+    SELECT
+      f.food_id,
+      COALESCE(fp.serving_size, f.default_serving_size) AS serving_size,
+      COALESCE(fp.number_of_servings, f.default_number_of_servings) AS number_of_servings
+    FROM foods f
+    LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
+    WHERE f.food_id = ?
+  `
+
+	var pref FoodPref
+	err := db.Get(&pref, query, foodID)
+
+	if err != nil {
+		// Handle a case when no preference found
+		if err == sql.ErrNoRows {
+			// If no rows are found, return an empty FoodPref struct with a custom error
+			return FoodPref{}, fmt.Errorf("no preference found for food ID %d", foodID)
+		}
+		return FoodPref{}, fmt.Errorf("unable to execute query: %w", err)
+	}
+
+	return pref, nil
+}
+
+// addFoodEntry inserts a food entry into the database.
+func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
+	query := `
+		INSERT INTO daily_foods	(food_id, date, serving_size, number_of_servings)
+		VALUES ($1, $2, $3, $4)
+		`
+
+	_, err := db.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // checkInput checks if the user input is positive
