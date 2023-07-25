@@ -147,7 +147,7 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 	return logs, nil
 }
 
-// LogWeight gets weight and date from user to create a new weight log.
+// LogWeight gets weight and date from user to create a new weight entry.
 func LogWeight(u *UserInfo, db *sqlx.DB) {
 	for {
 		date := getWeightDate()
@@ -249,6 +249,10 @@ func UpdateWeightLog(db *sqlx.DB, u *UserInfo) error {
 	return nil
 }
 
+// updateWeightEntry performs the database update operation.
+//
+// Assumptions:
+// * Weight id exists in the database table.
 func updateWeightEntry(db *sqlx.DB, id int, newWeight float64) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
@@ -260,10 +264,53 @@ func updateWeightEntry(db *sqlx.DB, id int, newWeight float64) error {
 
 	// Execute the update statement
 	_, err = tx.Exec(`
-			UDPATE daily_weights
+			UPDATE daily_weights
 			SET weight = $1
 			WHERE id = $2
 			`, newWeight, id)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
+}
+
+// DeleteWeightEntry deletes a weight entry.
+func DeleteWeightEntry(db *sqlx.DB) error {
+	// Get selected weight entry.
+	entry, err := selectWeightEntry(db)
+	if err != nil {
+		return err
+	}
+
+	// Delete selected entry.
+	err = deleteOneWeightEntry(db, entry.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Deleted weight entry.")
+
+	return nil
+}
+
+// deleteOneWeightEntry deletes one weight entry from the database.
+func deleteOneWeightEntry(db *sqlx.DB, id int) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the delete statement
+	_, err = tx.Exec(`
+      DELETE FROM daily_weights
+      WHERE id = $1
+      `, id)
 
 	// If there was an error executing the query, return the error
 	if err != nil {
@@ -308,7 +355,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		// Validate user response.
 		date, err := validateDateStr(response)
 		if err != nil {
-			fmt.Println("%v. Please try again.")
+			fmt.Printf("%v. Please try again.", err)
 			response = promptSelectEntry()
 			continue
 		}
@@ -415,6 +462,125 @@ func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// LogFood gets selected food user to create a new food entry.
+func LogFood(db *sqlx.DB) error {
+	var dailyFood DailyFood
+
+	// Get selected food
+	food, err := selectFood(db)
+
+	// Display any existing preferences for the selected food.
+
+	// If the user decides to change existing food preferences,
+
+	// Log selected food to the food log database table. Taking into
+	// account food preferences.
+}
+
+// isFoodPartOfMeal checks if a logged food is part of a logged meal.
+func isFoodPartOfMeal(db *sqlx.DB, foodID int) (bool, error) {
+}
+
+// printLoggedFoodPrefs prints the any user's preference for the given food.
+func printLoggedFoodPrefs(db *sqlx.DB, foodID int) {
+}
+
+// selectFood prompts user to enter a search term, prints the matched
+// foods, prompts user to enter an index to select a food or another
+// serach term for a different food. This repeats until user enters a
+// valid index.
+func selectFood(db *sqlx.DB) (Food, error) {
+	// Get initial search term.
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("Enter food name: ")
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Remove the newline character at the end of the string.
+	response = strings.TrimSpace(response)
+
+	// While user response is not an integer
+	for {
+		// Get filtered foods.
+		filteredFoods, err := searchFoods(db, response)
+		if err != nil {
+			return Food{}, err
+		}
+
+		// If no matches found,
+		if len(*filteredFoods) == 0 {
+			fmt.Println("No matches found. Please try again.")
+			response = promptSelectResponse("food")
+			continue
+		}
+
+		// Print foods.
+		for i, food := range *filteredFoods {
+			fmt.Printf("[%d] %s\n", i+1, food.Name)
+		}
+
+		response = promptSelectResponse("food")
+		idx, err := strconv.Atoi(response)
+
+		// While response is an integer
+		for err == nil {
+			// If integer is invalid,
+			if 1 > idx || idx > len(*filteredFoods) {
+				fmt.Println("Number must be between 0 and number of foods. Please try again.")
+				response = promptSelectResponse("food")
+				idx, err = strconv.Atoi(response)
+				continue
+			}
+			// Otherwise, return food at valid index.
+			return (*filteredFoods)[idx-1], nil
+		}
+		// User response was a search term. Continue to next loop.
+	}
+}
+
+// searchFoods searchs through all foods and returns food that contain
+// the search term.
+func searchFoods(db *sqlx.DB, response string) (*[]Food, error) {
+	var foods []Food
+
+	// Prioritize exact match, then match foods where `food_name` starts
+	// with the search term, and finally any foods where the `food_name`
+	// contains the search term.
+	query := `
+        SELECT * FROM foods
+        WHERE food_name LIKE $1
+        ORDER BY
+            CASE
+                WHEN food_name = $2 THEN 1
+                WHEN food_name LIKE $3 THEN 2
+                ELSE 3
+            END
+        LIMIT $4`
+
+	// Search for foods in the database
+	err := db.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
+	if err != nil {
+		log.Printf("Search for foods failed: %v\n", err)
+		return nil, err
+	}
+
+	return &foods, nil
+}
+
+// promptSelectResponse prompts and returns meal to select or a search term.
+func promptSelectResponse(item string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("Enter either the index of the %s to select or a search term: ", item)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Remove the newline character at the end of the string
+	response = strings.TrimSpace(response)
+	return response
 }
 
 // checkInput checks if the user input is positive

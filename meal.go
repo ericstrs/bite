@@ -167,102 +167,6 @@ func selectMeal(db *sqlx.DB) (Meal, error) {
 	}
 }
 
-// selectFood prompts user to enter a search term, prints the matched
-// foods, prompts user to enter an index to select a food or another
-// serach term for a different food. This repeats until user enters a
-// valid index.
-func selectFood(db *sqlx.DB) (Food, error) {
-	// Get initial search term.
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter food name: ")
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Remove the newline character at the end of the string.
-	response = strings.TrimSpace(response)
-
-	// While user response is not an integer
-	for {
-		// Get filtered foods.
-		filteredFoods, err := searchFoods(db, response)
-		if err != nil {
-			return Food{}, err
-		}
-
-		// If no matches found,
-		if len(*filteredFoods) == 0 {
-			fmt.Println("No matches found. Please try again.")
-			response = promptSelectResponse("food")
-			continue
-		}
-
-		// Print foods.
-		for i, food := range *filteredFoods {
-			fmt.Printf("[%d] %s\n", i+1, food.Name)
-		}
-
-		response = promptSelectResponse("food")
-		idx, err := strconv.Atoi(response)
-
-		// While response is an integer
-		for err == nil {
-			// If integer is invalid,
-			if 1 > idx || idx > len(*filteredFoods) {
-				fmt.Println("Number must be between 0 and number of foods. Please try again.")
-				response = promptSelectResponse("food")
-				idx, err = strconv.Atoi(response)
-				continue
-			}
-			// Otherwise, return food at valid index.
-			return (*filteredFoods)[idx-1], nil
-		}
-		// User response was a search term. Continue to next loop.
-	}
-}
-
-// getSelectResponse prompts user to select an item (meal or food),
-// validates their response until they've entered a valid response,
-// and returns the valid response.
-func getSelectResponse(itemsLen int, itemName string) (r string) {
-	for {
-		r := promptSelectResponse(itemName)
-		err := validateSelectResponse(r, itemName, itemsLen)
-		if err != nil {
-			fmt.Printf("Invalid input: %v. Please try again.\n", err)
-			continue
-		}
-		break
-	}
-	return r
-}
-
-// promptSelectResponse prompts and returns meal to select or a search term.
-func promptSelectResponse(item string) string {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter either the index of the %s to select or a search term: ", item)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Remove the newline character at the end of the string
-	response = strings.TrimSpace(response)
-	return response
-}
-
-// validateSelectResponse validates meal to select.
-func validateSelectResponse(s, item string, itemLen int) error {
-	idx, err := strconv.Atoi(s)
-	// If the user's input was a number,
-	if err == nil {
-		if 1 > idx || idx > itemLen {
-			return fmt.Errorf("Number must be between 0 and number of %ss.", item)
-		}
-	}
-
-	return nil
-}
-
 func promptDeleteResponse() (r string) {
 	// Prompt for user input
 	fmt.Printf("Enter the index of the meal to delete or a search term: ")
@@ -300,35 +204,6 @@ func searchMeals(db *sqlx.DB, response string) (*[]Meal, error) {
 	}
 
 	return &meals, nil
-}
-
-// searchFoods searchs through all foods and returns food that contain
-// the search term.
-func searchFoods(db *sqlx.DB, response string) (*[]Food, error) {
-	var foods []Food
-
-	// Prioritize exact match, then match foods where `food_name` starts
-	// with the search term, and finally any foods where the `food_name`
-	// contains the search term.
-	query := `
-        SELECT * FROM foods
-        WHERE food_name LIKE $1
-        ORDER BY
-            CASE
-                WHEN food_name = $2 THEN 1
-                WHEN food_name LIKE $3 THEN 2
-                ELSE 3
-            END
-        LIMIT $4`
-
-	// Search for foods in the database
-	err := db.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
-	if err != nil {
-		log.Printf("Search for foods failed: %v\n", err)
-		return nil, err
-	}
-
-	return &foods, nil
 }
 
 func promptMeal() (m string) {
