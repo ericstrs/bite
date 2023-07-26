@@ -235,18 +235,6 @@ func getAllMeals(db *sqlx.DB) ([]Meal, error) {
 	return m, nil
 }
 
-/*
-func getAllMealsSortedByFreq(db *sqlx.DB) ([]Meal, error) {
-	m := []Meal{}
-	err := db.Select(&m, "SELECT id, name, frequency FROM meals ORDER BY frequency DESC")
-	if err != nil {
-		return nil, err
-	}
-
-	return m, nil
-}
-*/
-
 // TODO:
 // * Grab foods that make up the meal.
 // * For serving size and number of serving, first check `food_prefs`
@@ -305,31 +293,7 @@ func deleteMeal(db *sqlx.DB, mealID int) error {
 	return err
 }
 
-func incrementMealFrequency(db *sqlx.DB, mealID int) error {
-	_, err := db.Exec(`UPDATE meals SET frequency = frequency + 1 WHERE id=?`, mealID)
-	return err
-}
-
 // TODO: displayFood takes in a slice of meal id's to prints its contents.
-
-// getFoodPref prompts user for food perferences, validates their
-// response until they've entered a valid response, and returns the
-// valid response.
-//
-// TODO:
-// * This should be named updateFoodPref and should execute the sql code
-// to make the update to the perferences.
-// * Let user press <enter> to keep old values.
-// * Would be nice to see manufacturer's values.
-func getFoodPref(foodID int) *FoodPref {
-	pref := &FoodPref{}
-
-	pref.FoodId = foodID
-	pref.ServingSize = getServingSize()
-	pref.NumberOfServings = getNumServings()
-
-	return pref
-}
 
 // getServingSize prompts user for serving size, validates their
 // response until they've entered a valid response, and returns the
@@ -338,9 +302,10 @@ func getServingSize() float64 {
 	fmt.Print("Enter new serving size: ")
 
 	var servingSize float64
+	var err error
 	for {
 		// Prompt for serving size.
-		servingSize, err := promptServingSize()
+		servingSize, err = promptServingSize()
 		if err != nil {
 			fmt.Println("Invalid serving size: Serving size must be a number. Please try again.")
 			continue
@@ -369,8 +334,8 @@ func promptServingSize() (s float64, err error) {
 
 // validateServingSize validates serving size.
 func validateServingSize(servingSize float64) error {
-	if 0 <= servingSize || servingSize > 1000 {
-		return fmt.Errorf("Serving size must be between 0 and 1000.")
+	if 0 >= servingSize || servingSize > 1000 {
+		return fmt.Errorf("Serving size must be between 0 and 1000")
 	}
 	return nil
 }
@@ -381,16 +346,17 @@ func validateServingSize(servingSize float64) error {
 func getNumServings() float64 {
 	fmt.Print("Enter new number of servings: ")
 	var numOfServings float64
+	var err error
 	for {
 		// Prompt user for number of servings.
-		s, err := promptNumServings()
+		numOfServings, err = promptNumServings()
 		if err != nil {
 			fmt.Println("Invalid number of servings: Number of servings must be a number. Please try again.")
 			continue
 		}
 
 		// Validate user response.
-		err = validateNumServings(s)
+		err = validateNumServings(numOfServings)
 		if err != nil {
 			fmt.Printf("Invalid number of servings: %v. Please try again.", err)
 			continue
@@ -411,22 +377,10 @@ func promptNumServings() (s float64, err error) {
 
 // validateNumServings validates the number of servings.
 func validateNumServings(numServings float64) error {
-	if 0 <= numServings || numServings > 100 {
+	if 0 >= numServings || numServings > 100 {
 		return fmt.Errorf("Number of servings must be between 0 and 100.")
 	}
 	return nil
-}
-
-// updateFoodPrefs updates the user's preferences for a given
-// food.
-func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
-	_, err := db.NamedExec(`INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
-                          VALUES (:food_id, :number_of_servings, :serving_size)
-                          ON CONFLICT(food_id) DO UPDATE SET
-                          number_of_servings = :number_of_servings,
-                          serving_size = :serving_size`,
-		pref)
-	return err
 }
 
 // updateMealFoodPrefs updates the user's preferences for a given
