@@ -189,10 +189,10 @@ func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 
 // getDateNotPast prompts user for date that it not in the past, validates user
 // response until user enters a valid date, and return the valid date.
-func getDateNotPast() (date time.Time) {
+func getDateNotPast(s string) (date time.Time) {
 	for {
 		// Prompt user for diet start date.
-		r := promptDate(fmt.Sprintf("%s (YYYY-MM-DD) [Press Enter for today's date]: "))
+		r := promptDate(fmt.Sprintf("%s (YYYY-MM-DD) [Press Enter for today's date]: ", s))
 
 		// If user entered default date,
 		if r == "" {
@@ -467,8 +467,9 @@ func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 
 // LogFood gets selected food user to create a new food entry.
 func LogFood(db *sqlx.DB) error {
-	var dailyFood DailyFood
-
+	// TODO: Display most recently selected foods
+	// 			 Update selectFood to be able to pick from one of the selected
+	// 			 foods or search term.
 	// Get selected food
 	food, err := selectFood(db)
 	if err != nil {
@@ -478,11 +479,12 @@ func LogFood(db *sqlx.DB) error {
 	// Get any existing preferences for the selected food.
 	f, err := getFoodPref(db, food.ID)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 
 	// Display any existing preferences for the selected food.
-	printFoodPref(f)
+	printFoodPref(*f)
 
 	var s string
 	fmt.Printf("Do you want to update these values? (y/n): ")
@@ -506,8 +508,10 @@ func LogFood(db *sqlx.DB) error {
 	// account food preferences.
 	err = addFoodEntry(db, f, date)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
+	fmt.Println("Added food entry.")
 
 	return nil
 }
@@ -609,12 +613,12 @@ func promptSelectResponse(item string) string {
 }
 
 // getFoodPref gets the food preferences for the given food.
-func getFoodPref(db *sqlx.DB, foodID int) (FoodPref, error) {
+func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
 	query := `
     SELECT
       f.food_id,
-      COALESCE(fp.serving_size, f.default_serving_size) AS serving_size,
-      COALESCE(fp.number_of_servings, f.default_number_of_servings) AS number_of_servings
+      COALESCE(fp.serving_size, f.serving_size) AS serving_size,
+			COALESCE(fp.number_of_servings, 1) AS number_of_servings
     FROM foods f
     LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
     WHERE f.food_id = ?
@@ -627,12 +631,18 @@ func getFoodPref(db *sqlx.DB, foodID int) (FoodPref, error) {
 		// Handle a case when no preference found
 		if err == sql.ErrNoRows {
 			// If no rows are found, return an empty FoodPref struct with a custom error
-			return FoodPref{}, fmt.Errorf("no preference found for food ID %d", foodID)
+			return &FoodPref{}, fmt.Errorf("no preference found for food ID %d", foodID)
 		}
-		return FoodPref{}, fmt.Errorf("unable to execute query: %w", err)
+		return &FoodPref{}, fmt.Errorf("unable to execute query: %w", err)
 	}
 
-	return pref, nil
+	return &pref, nil
+}
+
+func printFoodPref(pref FoodPref) {
+	// TODO: add unit and household serving size to serving size
+	fmt.Println("Serving size: ", pref.ServingSize)
+	fmt.Println("Number of serving: ", pref.NumberOfServings)
 }
 
 // addFoodEntry inserts a food entry into the database.
@@ -642,7 +652,7 @@ func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 		VALUES ($1, $2, $3, $4)
 		`
 
-	_, err := db.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
+	_, err := db.Exec(query, pref.FoodId, date, pref.ServingSize, pref.NumberOfServings)
 	if err != nil {
 		return err
 	}
