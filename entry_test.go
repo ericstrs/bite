@@ -182,7 +182,7 @@ func ExampleGetAllEntries() {
 	// Calories:  388
 }
 
-func ExampleAddWeightLog() {
+func ExampleAddWeightEntry() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
 	if err != nil {
@@ -199,7 +199,7 @@ func ExampleAddWeightLog() {
 	testWeight := 220.2
 	date := time.Now()
 
-	err = addWeightLog(db, date, testWeight)
+	err = addWeightEntry(db, date, testWeight)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -218,7 +218,7 @@ func ExampleAddWeightLog() {
 	// <nil>
 }
 
-func ExampleAddWeightLog_exists() {
+func ExampleAddWeightEntry_exists() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
 	if err != nil {
@@ -239,7 +239,7 @@ func ExampleAddWeightLog_exists() {
 	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
 
 	// Attempt to insert another weight for same date.
-	err = addWeightLog(db, date, testWeight)
+	err = addWeightEntry(db, date, testWeight)
 	fmt.Println(err)
 
 	// Output:
@@ -349,6 +349,67 @@ func ExampleDeleteOneWeightEntry() {
 
 	// Output:
 	// 0
+	// <nil>
+}
+
+func ExampleUpdateFoodEntry() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create the foods table
+	db.MustExec(` CREATE TABLE IF NOT EXISTS foods (
+  food_id INTEGER PRIMARY KEY,
+  food_name TEXT NOT NULL,
+  serving_size REAL NOT NULL,
+  serving_unit TEXT NOT NULL,
+  household_serving TEXT NOT NULL
+	)`)
+
+	// Insert foods
+	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	(1, 'Chicken Breast', 100, 'g', '1/2 piece')
+	`)
+
+	// Create daily foods table
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_foods (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  meal_id INTEGER REFERENCES meals(meal_id),
+  date DATE NOT NULL,
+  serving_size REAL NOT NULL,
+  number_of_servings REAL DEFAULT 1 NOT NULL
+)`)
+
+	// Insert daily food entry.
+	db.MustExec(`INSERT INTO daily_foods (food_id, date, serving_size) VALUES
+	(1, "2023-01-01", 100)
+	`)
+
+	pref := &FoodPref{
+		FoodId:           1,
+		ServingSize:      100,
+		NumberOfServings: 2,
+	}
+
+	err = updateFoodEntry(db, 1, pref)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Verify the weight was updated
+	var numServings float64
+	err = db.Get(&numServings, `SELECT number_of_servings FROM daily_foods WHERE date = ?`, "2023-01-01")
+
+	fmt.Println(numServings)
+	fmt.Println(err)
+
+	// Output:
+	// 2
 	// <nil>
 }
 
