@@ -17,24 +17,13 @@ import (
 	"github.com/rocketlaunchr/dataframe-go/imports"
 )
 
-// Entry fields will be constructed from daily_weights and daily_foods
-// table during runtime.
-/*
-type Entry struct {
-	UserWeight float64 // User weight for a single day.
-	UserCals   float64 // Consumed calories for a single day.
-	Date       time.Time
-	Protein    float64 // Consumed protein for a single day.
-	Carbs      float64 // Consumed carbohydrate  for a single day.
-	Fat        float64 // Consumed fat for a single day.
-}
-*/
-
 const (
 	weightSearchLimit = 10
 )
 
-// Nutrient are for portion size (100 serving unit)
+// Entry fields will be constructed from daily_weights and daily_foods
+// table during runtime.
+// Nutrients are for portion size (100 serving unit)
 type Entry struct {
 	UserWeight float64   `db:"user_weight"`
 	UserCals   float64   `db:"user_cals"`
@@ -48,6 +37,16 @@ type WeightEntry struct {
 	ID     int       `db:"id"`
 	Date   time.Time `db:"date"`
 	Weight float64   `db:"weight"`
+}
+
+type DailyFood struct {
+	ID               int       `db:"id"`
+	FoodID           int       `db:"food_id"`
+	MealID           *int      `db:"meal_id"`
+	Date             time.Time `db:"date"`
+	ServingSize      float64   `db:"serving_size"`
+	NumberOfServings float64   `db:"number_of_servings"`
+	FoodName         string    `db:"food_name"`
 }
 
 // GetAllEntries returns all the user's entries from the database.
@@ -351,7 +350,8 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		return log[idx-1], nil
 	}
 	// User response was a date to search.
-	// While user reponse is not an integer,
+
+	// While user response is not an integer,
 	for {
 		// Validate user response.
 		date, err := validateDateStr(response)
@@ -447,7 +447,7 @@ func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
 	// Search for weight entry in the database
 	err := db.Get(&entry, query, d.Format(dateFormat))
 	if err != nil {
-		log.Printf("Search for foods failed: %v\n", err)
+		log.Printf("Search for weight entry failed: %v\n", err)
 		return nil, err
 	}
 
@@ -639,10 +639,52 @@ func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
 	return &pref, nil
 }
 
+// printFoodPref prints the perferences for a food.
 func printFoodPref(pref FoodPref) {
 	// TODO: add unit and household serving size to serving size
 	fmt.Println("Serving size: ", pref.ServingSize)
 	fmt.Println("Number of serving: ", pref.NumberOfServings)
+}
+
+// getFoodPrefUserInput prompts user for food perferences, validates their
+// response until they've entered a valid response, and returns the
+// valid response.
+func getFoodPrefUserInput(foodID int) *FoodPref {
+	pref := &FoodPref{}
+
+	pref.FoodId = foodID
+	pref.ServingSize = getServingSize()
+	pref.NumberOfServings = getNumServings()
+
+	return pref
+}
+
+// updateFoodPrefs updates the user's preferences for a given
+// food.
+func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the update statement
+	_, err = tx.NamedExec(`INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
+                          VALUES (:food_id, :number_of_servings, :serving_size)
+                          ON CONFLICT(food_id) DO UPDATE SET
+                          number_of_servings = :number_of_servings,
+                          serving_size = :serving_size`,
+		pref)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
 }
 
 // addFoodEntry inserts a food entry into the database.
@@ -658,6 +700,180 @@ func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 	}
 
 	return nil
+}
+
+// UpdateFoodLog updates an existing food entry in the database.
+func UpdateFoodLog(db *sqlx.DB) error {
+	// Let user select food entry to update.
+	entry, err := selectFoodEntry(db)
+	if err != nil {
+		return err
+	}
+
+	// Get new food preferences.
+	pref := getFoodPrefUserInput(entry.FoodID)
+
+	// Update food entry.
+	err = updateFoodEntry(db, entry.ID, *pref)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Updated food entry.")
+
+	return nil
+}
+
+// selectFoodEntry prints recently logged foods, prompts user to enter a
+// search term, prompts user to enter an index to select a food entry or
+// another serach term for a different food entry. This repeats until
+// user enters a valid index.
+func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
+	// Get most recently logged foods.
+	recentFoods, err := getRecentFoodEntries(db)
+	if err != nil {
+		log.Println(err)
+		return DailyFood{}, err
+	}
+
+	// Print recent food entries.
+	printFoodEntries(recentFoods)
+
+	// Get response.
+	response := promptSelectEntry()
+	idx, err := strconv.Atoi(response)
+
+	// While response is an integer
+	for err == nil {
+		// If integer is invalid,
+		if 1 > idx || idx > len(recentFoods) {
+			fmt.Println("Number must be between 0 and number of entries. Please try again.")
+			response = promptSelectEntry()
+			idx, err = strconv.Atoi(response)
+			continue
+		}
+		// Otherwise, return food at valid index.
+		return recentFoods[idx-1], nil
+	}
+	// User response was a date to search.
+
+	// While user response is a date,
+	for {
+		// Validate user response.
+		date, err := validateDateStr(response)
+		if err != nil {
+			fmt.Printf("%v. Please try again.", err)
+			response = promptSelectEntry()
+			continue
+		}
+
+		// Get the filtered entries.
+		filteredEntries, err := searchFoodLog(db, date)
+		if err != nil {
+			return DailyFood{}, err
+		}
+
+		// If no matches found,
+		if len(filteredEntries) == 0 {
+			fmt.Println("No match found. Please try again.")
+			response = promptSelectEntry()
+			continue
+		}
+
+		// Print the foods entries for given date.
+		printFoodEntries(filteredEntries)
+
+		response = promptSelectEntry()
+		idx, err := strconv.Atoi(response)
+
+		// While response is an integer
+		for err == nil {
+			// If integer is invalid,
+			if idx != 1 {
+				fmt.Println("Number must be between 0 and number of entries. Please try again.")
+				response = promptSelectEntry()
+				idx, err = strconv.Atoi(response)
+				continue
+			}
+			// Otherwise, return entry at valid index.
+			return filteredEntries[idx-1], nil
+		}
+		// User response was a search term. Continue to next loop.
+	}
+}
+
+// getRecentFoodEntries retrieves most recently logged food entries.
+func getRecentFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
+	const query = `
+        SELECT df.*, f.food_name
+        FROM daily_foods df
+        INNER JOIN foods f ON df.food_id = f.food_id
+        ORDER BY df.date DESC
+        LIMIT $1
+    `
+
+	var entries []DailyFood
+	if err := db.Select(&entries, query, searchLimit); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// printFoodEntries prints food entries for a date.
+func printFoodEntries(entries []DailyFood) {
+	for i, entry := range entries {
+		fmt.Printf("[%d] %s %s \n", i+1, entry.Date.Format(dateFormat), entry.FoodName)
+		fmt.Printf("Serving size: %f\n", entry.ServingSize)
+		fmt.Printf("Number of servings: %f\n", entry.NumberOfServings)
+	}
+}
+
+// searchFoodLog uses date to search through logged foods.
+func searchFoodLog(db *sqlx.DB, date time.Time) ([]DailyFood, error) {
+	var entries []DailyFood
+	query := `
+    SELECT df.*, f.food_name
+    FROM daily_foods df
+    JOIN foods f ON df.food_id = f.food_id
+    WHERE df.date = ?
+  `
+
+	// Search for food entries in the database for given date.
+	err := db.Select(&entries, query, date.Format(dateFormat))
+	if err != nil {
+		log.Printf("Search for food entries failed: %v\n", err)
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// updateFoodEntry updates the given food entry in the database.
+func updateFoodEntry(db *sqlx.DB, entryID int, pref FoodPref) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	query := `
+        UPDATE daily_foods
+        SET serving_size = $1, number_of_servings = $2
+        WHERE id = $3
+    `
+
+	// Execute the update statement
+	_, err = db.Exec(query, pref.ServingSize, pref.NumberOfServings, entryID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return fmt.Errorf("updateFoodEntry: %w", err)
+	}
+	// If everything went fine, commit the transaction
+	return tx.Commit()
+
 }
 
 // checkInput checks if the user input is positive
