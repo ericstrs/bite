@@ -275,6 +275,83 @@ func ExampleCheckWeightExists() {
 	// <nil>
 }
 
+func ExampleUpdateWeightEntry() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	testWeight := 220.2
+	date := time.Now()
+
+	// Insert a weight for date.
+	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+
+	newWeight := 225.2
+
+	err = updateWeightEntry(db, 1, newWeight)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Verify the weight was updated
+	var weight float64
+	err = db.Get(&weight, `SELECT weight FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+
+	fmt.Println(weight)
+	fmt.Println(err)
+
+	// Output:
+	// 225.2
+	// <nil>
+}
+
+func ExampleDeleteOneWeightEntry() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+  id INTEGER PRIMARY KEY,
+  date DATE NOT NULL,
+  weight REAL NOT NULL
+)`)
+
+	testWeight := 220.2
+	date := time.Now()
+
+	// Insert a weight for date.
+	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+
+	err = deleteOneWeightEntry(db, 1)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var weight float64
+	db.Get(&weight, `SELECT weight FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+
+	fmt.Println(weight)
+	fmt.Println(err)
+
+	// Output:
+	// 0
+	// <nil>
+}
+
 func ExampleSubset() {
 	s1 := dataframe.NewSeriesString("weight", nil, "170", "170", "170", "170", "170", "170", "170", "170")
 	s2 := dataframe.NewSeriesString("calories", nil, "2400", "2400", "2400", "2400", "2400", "2400", "2400", "2400")
