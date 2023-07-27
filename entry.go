@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -45,6 +46,7 @@ type DailyFood struct {
 	MealID           *int      `db:"meal_id"`
 	Date             time.Time `db:"date"`
 	ServingSize      float64   `db:"serving_size"`
+	ServingUnit      string    `db:"serving_unit"`
 	NumberOfServings float64   `db:"number_of_servings"`
 	FoodName         string    `db:"food_name"`
 }
@@ -468,7 +470,7 @@ func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 // LogFood gets selected food user to create a new food entry.
 func LogFood(db *sqlx.DB) error {
 	// TODO: Display most recently selected foods
-	// 			 Update selectFood to be able to pick from one of the selected
+	// 			 Refactor selectFood to be able to pick from one of the selected
 	// 			 foods or search term.
 	// Get selected food
 	food, err := selectFood(db)
@@ -618,7 +620,8 @@ func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
     SELECT
       f.food_id,
       COALESCE(fp.serving_size, f.serving_size) AS serving_size,
-			COALESCE(fp.number_of_servings, 1) AS number_of_servings
+			COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+			f.ServingUnit
     FROM foods f
     LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
     WHERE f.food_id = ?
@@ -642,8 +645,8 @@ func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
 // printFoodPref prints the perferences for a food.
 func printFoodPref(pref FoodPref) {
 	// TODO: add unit and household serving size to serving size
-	fmt.Println("Serving size: ", pref.ServingSize)
-	fmt.Println("Number of serving: ", pref.NumberOfServings)
+	fmt.Printf("Serving size: %.2f %s", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
+	fmt.Printf("Number of serving: %.1f\n", math.Round(10*pref.NumberOfServings)/10)
 }
 
 // getFoodPrefUserInput prompts user for food perferences, validates their
@@ -729,7 +732,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 // user enters a valid index.
 func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
 	// Get most recently logged foods.
-	recentFoods, err := getRecentFoodEntries(db)
+	recentFoods, err := getRecentFoodEntries(db, searchLimit)
 	if err != nil {
 		log.Println(err)
 		return DailyFood{}, err
@@ -769,6 +772,7 @@ func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
 		// Get the filtered entries.
 		filteredEntries, err := searchFoodLog(db, date)
 		if err != nil {
+			log.Println(err)
 			return DailyFood{}, err
 		}
 
@@ -802,9 +806,9 @@ func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
 }
 
 // getRecentFoodEntries retrieves most recently logged food entries.
-func getRecentFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
+func getRecentFoodEntries(db *sqlx.DB, limit int) ([]DailyFood, error) {
 	const query = `
-        SELECT df.*, f.food_name
+        SELECT df.*, f.food_name, f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         ORDER BY df.date DESC
@@ -812,7 +816,7 @@ func getRecentFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
     `
 
 	var entries []DailyFood
-	if err := db.Select(&entries, query, searchLimit); err != nil {
+	if err := db.Select(&entries, query, limit); err != nil {
 		return nil, err
 	}
 
@@ -823,8 +827,8 @@ func getRecentFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
 func printFoodEntries(entries []DailyFood) {
 	for i, entry := range entries {
 		fmt.Printf("[%d] %s %s \n", i+1, entry.Date.Format(dateFormat), entry.FoodName)
-		fmt.Printf("Serving size: %f\n", entry.ServingSize)
-		fmt.Printf("Number of servings: %f\n", entry.NumberOfServings)
+		fmt.Printf("Serving size: %.2f %s\n", math.Round(100*entry.ServingSize)/100, entry.ServingUnit)
+		fmt.Printf("Number of servings: %.1f\n", math.Round(10*entry.NumberOfServings)/10)
 	}
 }
 
@@ -865,7 +869,7 @@ func updateFoodEntry(db *sqlx.DB, entryID int, pref FoodPref) error {
     `
 
 	// Execute the update statement
-	_, err = db.Exec(query, pref.ServingSize, pref.NumberOfServings, entryID)
+	_, err = tx.Exec(query, pref.ServingSize, pref.NumberOfServings, entryID)
 
 	// If there was an error executing the query, return the error
 	if err != nil {
@@ -874,6 +878,132 @@ func updateFoodEntry(db *sqlx.DB, entryID int, pref FoodPref) error {
 	// If everything went fine, commit the transaction
 	return tx.Commit()
 
+}
+
+// DeleteFoodEntry deletes a logged food entry.
+func DeleteFoodEntry(db *sqlx.DB) error {
+	// Get selected weight entry.
+	entry, err := selectFoodEntry(db)
+	if err != nil {
+		return err
+	}
+
+	// Delete selected entry.
+	err = deleteOneFoodEntry(db, entry.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Deleted weight entry.")
+
+	return nil
+}
+
+// deleteOneFoodEntry deletes a logged food entry from the database.
+func deleteOneFoodEntry(db *sqlx.DB, entryID int) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the delete statement
+	_, err = tx.Exec(`
+      DELETE FROM daily_foods
+      WHERE id = $1
+      `, entryID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
+}
+
+// ShowFoodLog prints entire food log.
+func ShowFoodLog(db *sqlx.DB) error {
+	entries, err := getAllFoodEntries(db)
+	if err != nil {
+		return err
+	}
+	printFoodEntries(entries)
+	return nil
+}
+
+// getAllFoodEntries retrieves all logged food entries. Ordered by most
+// most recent date.
+func getAllFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
+	const query = `
+        SELECT df.*, f.food_name, f.serving_unit
+        FROM daily_foods df
+        INNER JOIN foods f ON df.food_id = f.food_id
+        ORDER BY df.date DESC
+    `
+
+	var entries []DailyFood
+	if err := db.Select(&entries, query); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// LogMeal allows the user to create a new meal entry.
+func LogMeal(db *sqlx.DB) error{
+	// TODO: Display most recently selected meals
+  //       Refactor selectFood to be able to pick from one of the selected
+  //       meals or search term.
+  // Get selected meal
+  meal, err := selectMeal(db)
+  if err != nil {
+    return err
+  }
+
+  // Get any existing preferences for the selected food.
+  f, err := getFoodPref(db, food.ID)
+  if err != nil {
+    log.Println(err)
+    return err
+  }
+
+	// Print the foods that make up the meal and their preferences.
+
+  // Display any existing preferences for the selected food.
+  printMealFoods()
+
+  var s string
+  fmt.Printf("Enter index of food to edit or press <enter> for existing values: ")
+  fmt.Scan(&s)
+
+  // If the user decides to change existing food preferences,
+  if { // User enters an valid number
+    // Get updated food preferences.
+    f = getFoodPrefUserInput(food.ID)
+    // Make database update for food preferences.
+    err := updateFoodPrefs(db, f)
+    if err != nil {
+      return err
+    }
+  }
+
+  // Get date of meal entry.
+  date := getDateNotPast("Enter meal entry date")
+
+  // Log selected meal to the meal log database table. Taking into
+  // account food preferences.
+  err = addMealEntry(db, meal, date)
+  if err != nil {
+    log.Println(err)
+    return err
+  }
+  fmt.Println("Added meal entry.")
+
+  return nil
 }
 
 // checkInput checks if the user input is positive
