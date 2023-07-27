@@ -8,7 +8,7 @@ CREATE TEMPORARY TABLE temp_foods (
 );
 
 .mode csv
-.import food.csv temp_foods
+.import ./data/food.csv temp_foods
 
 -- Create temporary table for branded food data
 CREATE TEMPORARY TABLE temp_branded_foods (
@@ -34,7 +34,7 @@ CREATE TEMPORARY TABLE temp_branded_foods (
   short_description TEXT
 );
 
-.import branded_food.csv temp_branded_foods
+.import ./data/branded_food.csv temp_branded_foods
 
 -- Create temporary table for food attribute data
 -- Only used for second option in COALESCE statement for the food
@@ -48,7 +48,7 @@ CREATE TEMPORARY TABLE temp_food_attributes (
   value TEXT
 );
 
-.import food_attribute.csv temp_food_attributes
+.import ./data/food_attribute.csv temp_food_attributes
 
 -- Insert foods into the food table from both temporary tables
 INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving)
@@ -73,7 +73,7 @@ CREATE TEMPORARY TABLE temp_nutrients(
     "rank" TEXT
 );
 
-.import nutrient.csv temp_nutrients
+.import ./data/nutrient.csv temp_nutrients
 
 INSERT INTO nutrients(nutrient_id, nutrient_name, unit_name)
 SELECT CAST(id AS INTEGER), name, unit_name FROM temp_nutrients;
@@ -95,10 +95,10 @@ CREATE TEMPORARY TABLE temp_food_nutrients (
   "min_year_acquired" TEXT
 );
 
-.import food_nutrient.csv temp_food_nutrients
+.import ./data/food_nutrient.csv temp_food_nutrients
 
 -- Import derivation data into existing table
-.import food_nutrient_derivation.csv food_nutrient_derivation
+.import ./data/food_nutrient_derivation.csv food_nutrient_derivation
 
 INSERT INTO food_nutrients(id, food_id, nutrient_id, amount, derivation_id)
 SELECT
