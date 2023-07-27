@@ -39,6 +39,7 @@ type FoodPref struct {
 	FoodId           int     `db:"food_id"`
 	NumberOfServings float64 `db:"number_of_servings"`
 	ServingSize      float64 `db:"serving_size"`
+	ServingUnit      string  `db:"serving_unit"`
 }
 
 type MealFoodPref struct {
@@ -396,9 +397,8 @@ func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
 }
 
 // getOneFood retrieves the details for a given food.
-// TODO:
-// * For serving size and number of serving, first check `food_prefs`
-// table for entries.
+// Nutrients
+// Nutrients are for portion size (100 serving unit)
 func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
 	f := Food{}
 
