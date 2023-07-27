@@ -19,8 +19,9 @@ CREATE TABLE IF NOT EXISTS meals (
 CREATE TABLE IF NOT EXISTS daily_foods (
   id INTEGER PRIMARY KEY,
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
-  meal_ID INTEGER REFERENCES meals(meal_id),
+  meal_id INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
+  serving_size REAL NOT NULL,
   number_of_servings REAL DEFAULT 1 NOT NULL
 );
 
