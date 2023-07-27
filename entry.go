@@ -954,56 +954,132 @@ func getAllFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
 }
 
 // LogMeal allows the user to create a new meal entry.
-func LogMeal(db *sqlx.DB) error{
+func LogMeal(db *sqlx.DB) error {
 	// TODO: Display most recently selected meals
-  //       Refactor selectFood to be able to pick from one of the selected
-  //       meals or search term.
-  // Get selected meal
-  meal, err := selectMeal(db)
-  if err != nil {
-    return err
-  }
-
-  // Get any existing preferences for the selected food.
-  f, err := getFoodPref(db, food.ID)
-  if err != nil {
-    log.Println(err)
-    return err
-  }
+	//       Refactor selectFood to be able to pick from one of the selected
+	//       meals or search term.
+	// Get selected meal
+	meal, err := selectMeal(db)
+	if err != nil {
+		return err
+	}
+	meals, err := getMealFoodsWithPref(db, meal.ID)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 
 	// Print the foods that make up the meal and their preferences.
+	printMealDetails(meals)
 
-  // Display any existing preferences for the selected food.
-  printMealFoods()
+	var s string
+	fmt.Printf("Enter index of food to edit or press <enter> for existing values: ")
+	fmt.Scan(&s)
 
-  var s string
-  fmt.Printf("Enter index of food to edit or press <enter> for existing values: ")
-  fmt.Scan(&s)
+	// If the user decides to change existing food preferences,
+	if true { // User enters an valid number
+		// Get updated food preferences.
+		f = getFoodPrefUserInput(food.ID)
+		// Make database update for food preferences.
+		err := updateFoodPrefs(db, f)
+		if err != nil {
+			return err
+		}
+	}
 
-  // If the user decides to change existing food preferences,
-  if { // User enters an valid number
-    // Get updated food preferences.
-    f = getFoodPrefUserInput(food.ID)
-    // Make database update for food preferences.
-    err := updateFoodPrefs(db, f)
-    if err != nil {
-      return err
-    }
-  }
+	// Get date of meal entry.
+	date := getDateNotPast("Enter meal entry date")
 
-  // Get date of meal entry.
-  date := getDateNotPast("Enter meal entry date")
+	// Log selected meal to the meal log database table. Taking into
+	// account food preferences.
+	err = addMealEntry(db, meal, date)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	fmt.Println("Added meal entry.")
 
-  // Log selected meal to the meal log database table. Taking into
-  // account food preferences.
-  err = addMealEntry(db, meal, date)
-  if err != nil {
-    log.Println(err)
-    return err
-  }
-  fmt.Println("Added meal entry.")
+	return nil
+}
 
-  return nil
+// getMealFoodsWithPref retrieves all the foods that make up a meal.
+func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
+	// First, get all the food IDs for the given meal.
+	var foodIDs []int
+	query := `SELECT food_id FROM meal_foods WHERE meal_id = $1`
+	err := db.Select(&foodIDs, query, mealID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now, for each food ID, get the full food details and preferences.
+	var mealFoods []*MealFood
+	for _, foodID := range foodIDs {
+		mf, err := getMealFoodWithPref(db, foodID, mealID)
+		if err != nil {
+			return nil, err
+		}
+		mealFoods = append(mealFoods, mf)
+	}
+
+	return mealFoods, nil
+}
+
+// getMealFoodWithPref retrieves one of the foods for a given meal,
+// along its preferences.
+// Nutrients are for portion size (100 serving unit)
+func getMealFoodWithPref(db *sqlx.DB, mealID, foodID int) (*MealFood, error) {
+	mf := MealFood{}
+
+	// Get the food details
+	err := db.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = ?", foodID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the serving size and number of servings, preferring meal_food_prefs and then food_prefs and then default
+	query := `
+        SELECT
+            COALESCE(mfp.serving_size, fp.serving_size, f.serving_size) AS serving_size,
+            COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings
+        FROM foods f
+        LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = ?
+        LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
+        WHERE f.food_id = ?
+        LIMIT 1
+    `
+
+	err = db.QueryRow(query, mealID, foodID).Scan(&mf.ServingSize, &mf.NumberOfServings)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Get(&mf.Food.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	if err != nil {
+		return nil, err
+	}
+
+	mf.Food.FoodMacros, err = getFoodMacros(db, foodID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Adjust nutrient values based on the serving size and number of servings.
+	ratio := mf.ServingSize / mf.Food.ServingSize
+	mf.Food.PortionCals *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
+
+	return &mf, nil
+}
+
+// printMealDetails prints the foods that make up the meal and their preferences.
+func printMealDetails(mealFoods []*MealFood) {
+	for i, mf := range mealFoods {
+		fmt.Printf("[%d] %s %5f\n", i+1, mf.Food.Name)
+		fmt.Printf("\t%.2f %s\n", math.Round(100*mf.NumberOfServings*mf.ServingSize)/100, mf.Food.ServingUnit)
+	}
 }
 
 // checkInput checks if the user input is positive
