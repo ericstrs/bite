@@ -2,6 +2,7 @@ package calories
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -375,7 +376,7 @@ func ExampleUpdateFoodEntry() {
 	`)
 
 	// Create daily foods table
-	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_foods (
+	db.MustExec(`CREATE TABLE daily_foods (
   id INTEGER PRIMARY KEY,
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_id INTEGER REFERENCES meals(meal_id),
@@ -395,7 +396,7 @@ func ExampleUpdateFoodEntry() {
 		NumberOfServings: 2,
 	}
 
-	err = updateFoodEntry(db, 1, pref)
+	err = updateFoodEntry(db, 1, *pref)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -411,6 +412,128 @@ func ExampleUpdateFoodEntry() {
 	// Output:
 	// 2
 	// <nil>
+}
+
+func ExampleGetMealFoodWithPref() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create tables.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS foods (
+			food_id INTEGER PRIMARY KEY,
+			food_name TEXT NOT NULL,
+			serving_size REAL NOT NULL,
+			serving_unit TEXT NOT NULL,
+			household_serving TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS food_prefs (
+			food_id INTEGER PRIMARY KEY,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			FOREIGN KEY(food_id) REFERENCES foods(food_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS meal_food_prefs (
+			meal_id INTEGER,
+			food_id INTEGER,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			PRIMARY KEY(meal_id, food_id),
+			FOREIGN KEY(food_id) REFERENCES foods(food_id),
+			FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS meal_food_prefs (
+			meal_id INTEGER,
+			food_id INTEGER,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			PRIMARY KEY(meal_id, food_id),
+			FOREIGN KEY(food_id) REFERENCES foods(food_id),
+			FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS food_nutrients (
+		id INTEGER PRIMARY KEY,
+		food_id INTEGER NOT NULL,
+		nutrient_id INTEGER NOT NULL,
+		amount REAL NOT NULL,
+		derivation_id REAL NOT NULL,
+		FOREIGN KEY (food_id) REFERENCES foods(food_id),
+		FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
+		FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS nutrients (
+			nutrient_id INTEGER PRIMARY KEY,
+			nutrient_name TEXT NOT NULL,
+			unit_name TEXT NOT NULL
+		);
+  `)
+	if err != nil {
+		log.Fatalf("failed to create schema: %s", err)
+	}
+
+	// Insert test data.
+	_, err = db.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+  (1, 'Protein', 'g'),
+  (2, 'Total lipid (fat)', 'g'),
+  (3, 'Carbohydrate, by difference', 'g'),
+  (4, 'Energy', 'KCAL')`)
+	if err != nil {
+		log.Fatalf("failed to insert data into nutrients: %s", err)
+	}
+
+	_, err = db.Exec(`
+  INSERT INTO foods VALUES (1, 'Apple', 150, 'g', '1 medium');
+  INSERT INTO food_prefs VALUES (1, 160, 1);
+  INSERT INTO meal_food_prefs VALUES (1, 1, 180, 2);
+`)
+	if err != nil {
+		log.Fatalf("failed to insert data into foods, food_prefs, meal_food_prefs: %s", err)
+	}
+
+	_, err = db.Exec(`
+  INSERT INTO food_nutrients VALUES (1, 1, 1, 0.3, 71);  -- 0.3g Protein
+  INSERT INTO food_nutrients VALUES (2, 1, 2, 0.2, 71);  -- 0.2g Fat
+  INSERT INTO food_nutrients VALUES (3, 1, 3, 12, 71);   -- 12g Carbohydrates
+  INSERT INTO food_nutrients VALUES (4, 1, 4, 52, 71);   -- 52KCAL Energy
+`)
+	if err != nil {
+		log.Fatalf("failed to insert data into food_nutrients: %s", err)
+	}
+
+	// Test getMealFoodWithPref.
+	mealFood, err := getMealFoodWithPref(db, 1, 1)
+	if err != nil {
+		log.Fatalf("getMealFoodWithPref failed: %s", err)
+	}
+
+	// Print the result for verification.
+	fmt.Printf("Food Name: %s\n", mealFood.Food.Name)
+	fmt.Printf("Serving Size: %.2f\n", mealFood.ServingSize)
+	fmt.Printf("Number of Servings: %.2f\n", mealFood.NumberOfServings)
+	fmt.Printf("Calories: %.2f\n", mealFood.Food.PortionCals)
+	fmt.Println("Macros:")
+	fmt.Printf("  - Protein: %.2f\n", mealFood.Food.FoodMacros.Protein)
+	fmt.Printf("  - Fat: %.2f\n", mealFood.Food.FoodMacros.Fat)
+	fmt.Printf("  - Carbs: %.2f\n", mealFood.Food.FoodMacros.Carbs)
+
+	// Output:
+	// Food Name: Apple
+	// Serving Size: 180.00
+	// Number of Servings: 2.00
+	// Calories: 124.80
+	// Macros:
+	//   - Protein: 0.72
+	//   - Fat: 0.48
+	//   - Carbs: 28.80
 }
 
 func ExampleSubset() {
