@@ -536,6 +536,56 @@ func ExampleGetMealFoodWithPref() {
 	//   - Carbs: 28.80
 }
 
+func ExampleAddMealEntry() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`
+		CREATE TABLE IF NOT EXISTS meals (
+				meal_id INTEGER PRIMARY KEY,
+				meal_name TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS daily_meals (
+  		id INTEGER PRIMARY KEY,
+  		meal_id INTEGER REFERENCES meals(meal_id),
+  		date DATE NOT NULL
+		);
+	`)
+
+	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Pie')`)
+	if err != nil {
+		log.Fatalf("failed to insert data into meal table: %s", err)
+	}
+
+	date := time.Now()
+	meal := Meal{
+		ID:   1,
+		Name: "Pie",
+	}
+
+	err = addMealEntry(db, meal, date)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Verify the meal was logged correctly.
+	var mealID float64
+	err = db.Get(&mealID, `SELECT meal_id FROM daily_meals WHERE date = ?`, date.Format(dateFormat))
+
+	fmt.Println(mealID)
+	fmt.Println(err)
+
+	// Output:
+	// 1
+	// <nil>
+}
+
 func ExampleSubset() {
 	s1 := dataframe.NewSeriesString("weight", nil, "170", "170", "170", "170", "170", "170", "170", "170")
 	s2 := dataframe.NewSeriesString("calories", nil, "2400", "2400", "2400", "2400", "2400", "2400", "2400", "2400")
