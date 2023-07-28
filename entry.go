@@ -690,6 +690,34 @@ func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
 	return tx.Commit()
 }
 
+// addMealEntry inserts a meal entry into the database.
+func addMealEntry(db *sqlx.DB, meal Meal, date time.Time) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO daily_meals (meal_id, date)
+		VALUES ($1, $2)
+		`
+
+	_, err = tx.Exec(query, meal.ID, date.Format(dateFormat))
+	if err != nil {
+		return err
+	}
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return fmt.Errorf("addMealEntry: %w", err)
+	}
+	// If everything went fine, commit the transaction
+	return tx.Commit()
+}
+
 // addFoodEntry inserts a food entry into the database.
 func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 	query := `
@@ -971,21 +999,40 @@ func LogMeal(db *sqlx.DB) error {
 	// Print the foods that make up the meal and their preferences.
 	printMealDetails(mealFoods)
 
-	// Get user response.
-	response := promptUserEditDecision()
-	idx, err := strconv.Atoi(response)
+	// While user decides to change existing food preferences,
+	for {
+		// Get user response.
+		response := promptUserEditDecision()
 
-	// If the user decides to change existing food preferences,
-	if err == nil { // User enters an valid number.
+		// If the user pressed <enter>, break the loop.
+		if response == "" {
+			break
+		}
+
+		idx, err := strconv.Atoi(response)
+
+		// If user enters an invalid integer,
+		if 1 > idx || idx > len(mealFoods) {
+			fmt.Println("Number must be between 0 and number of foods. Please try again.")
+			continue
+		}
+
 		// Get food to be updated.
-		food := getOneFood(db, mealFoods[idx-1])
+		food, err := getOneFood(db, mealFoods[idx-1].ID)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+
 		// Get updated food preferences.
 		f := getFoodPrefUserInput(food.ID)
+
 		// Make database update for food preferences.
-		err := updateFoodPrefs(db, f)
+		err = updateFoodPrefs(db, f)
 		if err != nil {
 			return err
 		}
+		fmt.Println("Updated food.")
 	}
 
 	// Get date of meal entry.
