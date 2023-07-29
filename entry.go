@@ -690,8 +690,8 @@ func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
 	return tx.Commit()
 }
 
-// addMealEntry inserts a meal entry into the database.
-func addMealEntry(db *sqlx.DB, meal Meal, date time.Time) error {
+// addFoodEntry inserts a food entry into the database.
+func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -701,36 +701,18 @@ func addMealEntry(db *sqlx.DB, meal Meal, date time.Time) error {
 	defer tx.Rollback()
 
 	query := `
-		INSERT INTO daily_meals (meal_id, date)
-		VALUES ($1, $2)
-		`
-
-	_, err = tx.Exec(query, meal.ID, date.Format(dateFormat))
-	if err != nil {
-		return err
-	}
-
-	// If there was an error executing the query, return the error
-	if err != nil {
-		return fmt.Errorf("addMealEntry: %w", err)
-	}
-	// If everything went fine, commit the transaction
-	return tx.Commit()
-}
-
-// addFoodEntry inserts a food entry into the database.
-func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
-	query := `
 		INSERT INTO daily_foods	(food_id, date, serving_size, number_of_servings)
 		VALUES ($1, $2, $3, $4)
 		`
 
-	_, err := db.Exec(query, pref.FoodId, date, pref.ServingSize, pref.NumberOfServings)
+	_, err = db.Exec(query, pref.FoodId, date, pref.ServingSize, pref.NumberOfServings)
+	// If there was an error executing the query, return the error
 	if err != nil {
 		return err
 	}
 
-	return nil
+	// If everything went fine, commit the transaction
+	return tx.Commit()
 }
 
 // UpdateFoodLog updates an existing food entry in the database.
@@ -1040,11 +1022,21 @@ func LogMeal(db *sqlx.DB) error {
 
 	// Log selected meal to the meal log database table. Taking into
 	// account food preferences.
-	err = addMealEntry(db, meal, date)
+	tx, err := addMealEntry(db, meal, date)
 	if err != nil {
+		tx.Rollback()
 		log.Println(err)
 		return err
 	}
+
+	// Bulk insert the foods that make up the meal into the daily_foods table.
+	err = addMealFoodEntries(tx, mealFoods, date)
+	if err != nil {
+		tx.Rollback()
+		log.Println(err)
+		return err
+	}
+
 	fmt.Println("Added meal entry.")
 
 	return nil
@@ -1256,6 +1248,53 @@ func promptUserEditDecision() string {
 	// Remove the newline character at the end of the string
 	response = strings.TrimSpace(response)
 	return response
+}
+
+// addMealEntry inserts a meal entry into the database.
+func addMealEntry(db *sqlx.DB, meal Meal, date time.Time) (*sqlx.Tx, error) {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+    INSERT INTO daily_meals (meal_id, date)
+    VALUES ($1, $2)
+    `
+
+	_, err = tx.Exec(query, meal.ID, date.Format(dateFormat))
+	if err != nil {
+		return nil, err
+	}
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return nil, fmt.Errorf("addMealEntry: %w", err)
+	}
+	// If everything went fine, commit the transaction
+	return tx, nil
+}
+
+// addMealFoodEntries bulk inserts foods that make up the meal into the database.
+func addMealFoodEntries(tx *sqlx.Tx, mealFoods []*MealFood, date time.Time) error {
+	// Prepare a statement for bulk insert
+	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES (?, ?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// Iterate over each food and insert into the database
+	for _, mf := range mealFoods {
+		_, err = stmt.Exec(mf.Food.ID, mf.ID, date.Format(dateFormat), mf.ServingSize, mf.NumberOfServings)
+		if err != nil {
+			return err
+		}
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
 }
 
 // checkInput checks if the user input is positive
