@@ -396,13 +396,21 @@ func ExampleUpdateFoodEntry() {
 		NumberOfServings: 2,
 	}
 
-	err = updateFoodEntry(db, 1, *pref)
+	// Start a new transaction.
+	tx, err := db.Beginx()
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+		return
+	}
+	defer tx.Rollback()
+
+	err = updateFoodEntry(tx, 1, *pref)
+	if err != nil {
+		log.Println(err)
 		return
 	}
 
-	// Verify the weight was updated
+	// Verify the food entry was updated
 	var numServings float64
 	err = db.Get(&numServings, `SELECT number_of_servings FROM daily_foods WHERE date = ?`, "2023-01-01")
 
@@ -437,16 +445,6 @@ func ExampleGetMealFoodWithPref() {
 			serving_size REAL,
 			number_of_servings REAL DEFAULT 1 NOT NULL,
 			FOREIGN KEY(food_id) REFERENCES foods(food_id)
-		);
-
-		CREATE TABLE IF NOT EXISTS meal_food_prefs (
-			meal_id INTEGER,
-			food_id INTEGER,
-			serving_size REAL,
-			number_of_servings REAL DEFAULT 1 NOT NULL,
-			PRIMARY KEY(meal_id, food_id),
-			FOREIGN KEY(food_id) REFERENCES foods(food_id),
-			FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
 		);
 
 		CREATE TABLE IF NOT EXISTS meal_food_prefs (
@@ -584,6 +582,118 @@ func ExampleAddMealEntry() {
 
 	// Output:
 	// 1
+	// <nil>
+}
+
+func ExampleAddMealFoodEntries() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create the foods table
+	db.MustExec(`
+	CREATE TABLE IF NOT EXISTS foods (
+  food_id INTEGER PRIMARY KEY,
+  food_name TEXT NOT NULL,
+  serving_size REAL NOT NULL,
+  serving_unit TEXT NOT NULL,
+  household_serving TEXT NOT NULL
+  );
+
+	CREATE TABLE daily_foods (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  meal_id INTEGER REFERENCES meals(meal_id),
+  date DATE NOT NULL,
+  serving_size REAL NOT NULL,
+  number_of_servings REAL DEFAULT 1 NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS meals (
+  meal_id INTEGER PRIMARY KEY,
+  meal_name TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS daily_meals (
+  id INTEGER PRIMARY KEY,
+  meal_id INTEGER REFERENCES meals(meal_id),
+  date DATE NOT NULL
+  );
+	`)
+	if err != nil {
+		log.Fatalf("failed to create schema: %s", err)
+	}
+
+	// Insert foods
+	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Chicken Breast', 100, 'g', '1/2 piece'),
+  (2, 'Rice', 100, 'g', '1/2 cup'),
+	(3, 'Broccoli', 156, 'g', '1 cup')
+  `)
+
+	// Insert meal
+	db.MustExec(`INSERT INTO meals (meal_id, meal_name) VALUES
+  (1, 'Chicken, rice, and broccoli')
+  `)
+
+	mealFoods := []*MealFood{
+		{
+			Food: Food{
+				ID:               1,
+				Name:             "Chicken Breast",
+				ServingSize:      100,
+				ServingUnit:      "g",
+				HouseholdServing: "1/2 piece",
+			},
+			NumberOfServings: 1,
+			ServingSize:      100,
+		},
+		{
+			Food: Food{
+				ID:               2,
+				Name:             "Rice",
+				ServingSize:      100,
+				ServingUnit:      "g",
+				HouseholdServing: "1/2 cup",
+			},
+			NumberOfServings: 1,
+			ServingSize:      100,
+		},
+		{
+			Food: Food{
+				ID:               3,
+				Name:             "Broccoli",
+				ServingSize:      156,
+				ServingUnit:      "g",
+				HouseholdServing: "1 cup",
+			},
+			NumberOfServings: 1,
+			ServingSize:      156,
+		},
+	}
+
+	testDate := time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC)
+	tx, _ := db.Beginx()
+	err = addMealFoodEntries(tx, 1, mealFoods, testDate)
+
+	var foodIDs []int
+	err = db.Select(&foodIDs, `SELECT food_id FROM daily_foods WHERE meal_id = 1`)
+	if err != nil {
+		log.Fatalf("failed to fetch food_ids: %s", err)
+	}
+
+	for _, id := range foodIDs {
+		fmt.Println(id)
+	}
+	fmt.Println(err)
+
+	// Output:
+	// 1
+	// 2
+	// 3
 	// <nil>
 }
 
