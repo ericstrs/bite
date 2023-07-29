@@ -33,10 +33,21 @@ type Food struct {
 	FoodMacros       *FoodMacros
 }
 
+// MealFood extends Food with additional fields to represent a food
+// as part of a meal.
 type MealFood struct {
 	Food
+	// NumberOfServings represents the amount of the food that is part of the meal.
+	// The value is derived based on the following order:
+	// 1. From the meal_food_prefs table if a specific preference for this food
+	//    in the context of the given meal exists.
+	// 2. From the food_prefs table if a general preference for this food exists.
+	// 3. From the foods table which contains default values for each food.
 	NumberOfServings float64 `db:"number_of_servings"`
-	ServingSize      float64 `db:"serving_size"`
+
+	// ServingSize represents the size of each serving of the food that is part of the meal.
+	// The value is derived in the same way and the same precedence as NumberOfServings.
+	ServingSize float64 `db:"serving_size"`
 }
 
 type FoodPref struct {
