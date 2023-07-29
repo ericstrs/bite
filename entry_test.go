@@ -568,11 +568,12 @@ func ExampleAddMealEntry() {
 		Name: "Pie",
 	}
 
-	err = addMealEntry(db, meal, date)
+	tx, err := addMealEntry(db, meal, date)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	tx.Commit()
 
 	// Verify the meal was logged correctly.
 	var mealID float64
