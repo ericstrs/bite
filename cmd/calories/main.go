@@ -71,7 +71,7 @@ func main() {
 
 	// Check if user has at least a single argument.
 	if len(os.Args) < 2 {
-		log.Println("Usage: ./calories [add|delete|update|summary|start|stop]")
+		log.Println("Usage: ./calories [log|add|delete|update|summary|start|stop]")
 		return
 	}
 
@@ -85,46 +85,51 @@ func main() {
 		// Execute subcommand
 		switch os.Args[2] {
 		case "meal":
-			// TODO
+			c.LogMeal(db)
 		case "food":
-			// TODO
+			c.LogFood(db)
 		case "weight":
 			c.LogWeight(u, db)
 		case "update":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log update [weight|food|meal]")
+				log.Println("Usage: ./calories log update [weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
-			case "meal":
-				// TODO
 			case "food":
-				// TODO
+				err := c.UpdateFoodLog(db)
+				if err != nil {
+					return
+				}
 			case "weight":
 				err := c.UpdateWeightLog(db, u)
 				if err != nil {
 					return
 				}
 			default:
-				log.Println("Usage: ./calories log update [weight|food|meal]")
+				log.Println("Usage: ./calories log update [weight|food]")
 				return
 			}
 		case "delete":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log delete [weight|food|meal]")
+				log.Println("Usage: ./calories log delete [weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
-			case "meal":
-				// TODO
 			case "food":
-				// TODO
+				err := c.DeleteFoodEntry(db)
+				if err != nil {
+					return
+				}
 			case "weight":
-				// TODO
+				err := c.DeleteWeightEntry(db)
+				if err != nil {
+					return
+				}
 			default:
-				log.Println("Usage: ./calories log delete [weight|food|meal]")
+				log.Println("Usage: ./calories log delete [weight|food]")
 				return
 			}
 		case "show":
@@ -139,7 +144,7 @@ func main() {
 			case "meal":
 				// TODO
 			case "food":
-				// TODO
+				c.ShowFoodLog(db)
 			case "weight":
 				c.ShowWeightLog(db)
 			default:
