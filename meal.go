@@ -110,8 +110,8 @@ func CreateAndAddFood(db *sqlx.DB) error {
 	// Insert food nutrients into the food_nutrients table.
 	err = insertFoodNutrientsIntoDB(tx, newFood)
 	if err != nil {
-		log.Printf("failed to insert food nutrients into database: %w", err)
-		return fmt.Errorf("failed to insert food nutrients into database: %w", err)
+		log.Printf("failed to insert food nutrients into database: %v", err)
+		return fmt.Errorf("failed to insert food nutrients into database: %v", err)
 	}
 
 	fmt.Println("Added new food.")
@@ -260,6 +260,116 @@ func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
 	}
 
 	return nil
+}
+
+// SelectAndDeleteFood prompts user to select food to delete and removes
+// the food from the database.
+func SelectAndDeleteFood(db *sqlx.DB) error {
+	return nil
+}
+
+// deleteFood deletes a food from the database.
+func deleteFood(db *sqlx.DB, foodID int) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the delete statement
+	_, err = tx.Exec(`
+      DELETE FROM meal_food_prefs
+      WHERE food_id = $1
+      `, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM food_prefs
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM meal_foods
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM food_nutrients
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM daily_foods
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from daily_foods: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM food_nutrients
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from food_nutrients: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM food_nutrients
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from food_nutrients: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+			DELETE FROM foods
+			WHERE food_id = $1
+			`, foodID)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from foods: %v\n", err)
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
 }
 
 // promptDeleteMeal prompts a user to select a meal and removes the meal
