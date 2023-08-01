@@ -15,6 +15,7 @@ const (
 	selectNutrientAmountSQL = "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id = ?"
 	selectNutrientIdSQL     = "SELECT nutrient_id FROM nutrients WHERE nutrient_name = ? LIMIT 1"
 	searchLimit             = 25
+	derivationIdPortion     = 71
 )
 
 type Meal struct {
@@ -31,6 +32,10 @@ type Food struct {
 	HouseholdServing string  `db:"household_serving"`
 	PortionCals      float64
 	FoodMacros       *FoodMacros
+}
+
+type Queryer interface {
+	QueryRow(query string, args ...interface{}) *sqlx.Row
 }
 
 // MealFood extends Food with additional fields to represent a food
@@ -70,32 +75,191 @@ type FoodMacros struct {
 	Carbs   float64
 }
 
-const usage = "Usage: ./m [add|display]"
-
-// TODO: REMOVE AFTER TESTING
-func Run(db *sqlx.DB) {
-	sf, _ := selectFood(db)
-	f, err := getOneFood(db, sf.ID)
+// CreateAndAddFood creates a new food and adds it into the database.
+func CreateAndAddFood(db *sqlx.DB) error {
+	// Get food information.
+	newFood, err := getNewFoodUserInput()
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 
-	fmt.Println("ID:", f.ID)
-	fmt.Println("Name:", f.Name)
-	fmt.Println("Serving size:", f.ServingSize, f.ServingUnit)
-	fmt.Println("PortionCals:", f.PortionCals)
-	fmt.Println("Protein:", f.FoodMacros.Protein)
-	fmt.Println("Carbs:", f.FoodMacros.Carbs)
-	fmt.Println("Fats:", f.FoodMacros.Fat)
+	// Prompt user to input food nutrients information.
+	newFoodMacros, cals, err := getFoodNutrientsUserInput(db)
+	if err != nil {
+		return fmt.Errorf("failed to get food nutrients user input: %w", err)
+	}
+	newFood.FoodMacros = newFoodMacros
+	newFood.PortionCals = cals
 
-	/*
-		meal := Meal{}
-		meal.Name = promptMeal()
-		addMeal(db, meal)
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
 
-		m, _ := selectMeal(db)
-		printMeal(m)
-	*/
+	// Insert food into the foods table.
+	newFood.ID, err = insertFood(tx, newFood)
+	fmt.Println("newFood.ID:", newFood.ID)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	// Insert food nutrients into the food_nutrients table.
+	err = insertFoodNutrientsIntoDB(tx, newFood)
+	if err != nil {
+		log.Printf("failed to insert food nutrients into database: %w", err)
+		return fmt.Errorf("failed to insert food nutrients into database: %w", err)
+	}
+
+	fmt.Println("Added new food.")
+
+	// Commit the transaction
+	return tx.Commit()
+}
+
+// getNewFoodUserInput prompts user to enter new food information and
+// returns Food struct.
+func getNewFoodUserInput() (*Food, error) {
+	newFood := &Food{}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the food name: ")
+	newFood.Name, _ = reader.ReadString('\n')
+
+	// Remove newline character at the end
+	newFood.Name = strings.TrimSuffix(newFood.Name, "\n")
+
+	newFood.ServingSize = getServingSize()
+
+	fmt.Printf("Enter serving unit: ")
+	fmt.Scanln(&newFood.ServingUnit)
+
+	fmt.Print("Enter the household serving: ")
+	newFood.HouseholdServing, _ = reader.ReadString('\n')
+
+	// Remove newline character at the end
+	newFood.HouseholdServing = strings.TrimSuffix(newFood.HouseholdServing, "\n")
+
+	return newFood, nil
+}
+
+// getFoodNutrientsUserInput retrieves the food nutrients from the user.
+func getFoodNutrientsUserInput(db *sqlx.DB) (*FoodMacros, float64, error) {
+	var foodMacros FoodMacros
+	var cals float64
+	nutrientNames := []string{"Protein", "Fat", "Carbs", "Energy"}
+
+	for _, nutrientName := range nutrientNames {
+		fmt.Printf("Enter the amount of %s per 100 serving units: ", nutrientName)
+		var amount float64
+		_, err := fmt.Scan(&amount)
+		if err != nil {
+			fmt.Println("Invalid input. Try again.")
+			continue
+		}
+		if amount < 0 {
+			fmt.Println("Nutrient amount cannot be negative.")
+			continue
+		}
+
+		if nutrientName == "Energy" {
+			cals = amount
+			continue
+		}
+
+		switch nutrientName {
+		case "Protein":
+			foodMacros.Protein = amount
+		case "Fat":
+			foodMacros.Fat = amount
+		case "Carbs":
+			foodMacros.Carbs = amount
+		default:
+			fmt.Println("Invalid nutrient name.")
+			continue
+		}
+	}
+
+	return &foodMacros, cals, nil
+}
+
+// insertFood inserts a food into the database and returns the id of the newly inserted food.
+func insertFood(tx *sqlx.Tx, food *Food) (int, error) {
+	query := `INSERT INTO foods (food_name, serving_size, serving_unit, household_serving) VALUES (?, ?, ?, ?)`
+	res, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit, food.HouseholdServing)
+	if err != nil {
+		return 0, fmt.Errorf("insertFood: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("get last inserted food ID: %w", err)
+	}
+	return int(id), nil
+}
+
+// insertNutrient inserts a nutrient into the food_nutrients table.
+// nutrientID: The ID of the nutrient.
+// foodID: The ID of the food.
+// amount: The amount of the nutrient.
+func insertNutrient(db *sqlx.DB, nutrientID int, foodID int, amount float64) error {
+	// This is a constant for the food_nutrient_derivation id indicating
+	// the nutrient value is for the portion size.
+	const derivationID = 71
+
+	// SQL statement for inserting a nutrient.
+	insertNutrientSQL := `INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES (?, ?, ?, ?)`
+
+	// Insert nutrient.
+	_, err := db.Exec(insertNutrientSQL, foodID, nutrientID, amount, derivationID)
+	if err != nil {
+		fmt.Printf("Failed to insert nutrient with ID %d: %v\n", nutrientID, err)
+		return err
+	}
+
+	return nil
+}
+
+// insertFoodNutrientsIntoDB inserts the nutrients of a food into the food_nutrients table.
+func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
+	// Nutrients and corresponding amounts.
+	nutrients := map[string]float64{
+		"Protein":                     food.FoodMacros.Protein,
+		"Total lipid (fat)":           food.FoodMacros.Fat,
+		"Carbohydrate, by difference": food.FoodMacros.Carbs,
+		"Energy":                      food.PortionCals,
+	}
+
+	insertFoodNutrientsSQL := `
+    INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id)
+    VALUES (:food_id, :nutrient_id, :amount, :derivation_id)
+	`
+
+	// Insert each nutrient into the food_nutrients table.
+	for nutrientName, amount := range nutrients {
+		nutrientID, err := getNutrientId(tx, nutrientName)
+		if err != nil {
+			continue // Skip this nutrient if there was an error retrieving the ID.
+		}
+
+		// Create a map with named parameters
+		params := map[string]interface{}{
+			"food_id":       food.ID,
+			"nutrient_id":   nutrientID,
+			"amount":        amount,
+			"derivation_id": derivationIdPortion,
+		}
+
+		_, err = tx.NamedExec(insertFoodNutrientsSQL, params)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // promptDeleteMeal prompts a user to select a meal and removes the meal
@@ -370,11 +534,10 @@ func getFoodMacros(db *sqlx.DB, foodID int) (*FoodMacros, error) {
 	return &m, nil
 }
 
-// getNutrientId retreives the `nutrient_id` for a given nutrient.
-func getNutrientId(db *sqlx.DB, name string) (int, error) {
+// getNutrientId retrieves the `nutrient_id` for a given nutrient.
+func getNutrientId(ext sqlx.Ext, name string) (int, error) {
 	var id int
-	row := db.QueryRow(selectNutrientIdSQL, name)
-	err := row.Scan(&id)
+	err := sqlx.Get(ext, &id, selectNutrientIdSQL, name)
 	if err != nil {
 		log.Printf("Nutrient name \"%s\" does not exist.\n", name)
 		return 0, err
@@ -382,5 +545,3 @@ func getNutrientId(db *sqlx.DB, name string) (int, error) {
 
 	return id, nil
 }
-
-// TODO: deleteFood
