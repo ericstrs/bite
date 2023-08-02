@@ -236,3 +236,110 @@ func ExampleDeleteFood() {
 	// Food with ID 1 was successfully deleted from table food_prefs.
 	// Food with ID 1 was successfully deleted from table meal_food_prefs.
 }
+
+func ExampleInsertMeal() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create meals table.
+	db.MustExec(`
+		CREATE TABLE IF NOT EXISTS meals (
+				meal_id INTEGER PRIMARY KEY,
+				meal_name TEXT NOT NULL
+		);
+	`)
+
+	id, err := insertMeal(db, "Cereal")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var mealName string
+	err = db.Get(&mealName, `SELECT meal_name FROM meals WHERE meal_id = $1`, id)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(mealName)
+	fmt.Println(err)
+
+	// Output:
+	// Cereal
+	// <nil>
+}
+
+func ExampleUpdateFoodPrefs() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	db.MustExec(`
+		CREATE TABLE IF NOT EXISTS foods (
+			food_id INTEGER PRIMARY KEY,
+			food_name TEXT NOT NULL,
+			serving_size REAL NOT NULL,
+			serving_unit TEXT NOT NULL,
+			household_serving TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS meals (
+				meal_id INTEGER PRIMARY KEY,
+				meal_name TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS meal_food_prefs (
+			meal_id INTEGER,
+			food_id INTEGER,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			PRIMARY KEY(meal_id, food_id),
+			FOREIGN KEY(food_id) REFERENCES foods(food_id),
+			FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
+		);
+	`)
+
+	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
+	if err != nil {
+		log.Printf("Failed to insert data into meal table: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Milk', 240, 'g', '1 cup')
+	`)
+	if err != nil {
+		log.Printf("Failed to insert data into foods table: %v\n", err)
+		return
+	}
+
+	pref := &MealFoodPref{}
+	pref.FoodID = 1
+	pref.MealID = 1
+	pref.ServingSize = 300
+	pref.NumberOfServings = 1
+
+	err = updateMealFoodPrefs(db, pref)
+	if err != nil {
+		log.Printf("Failed to updated meal food prefs: %v\n", err)
+	}
+
+	// Ensure serving size food preference was updated.
+	var servingSize float64
+	err = db.Get(&servingSize, `SELECT serving_size FROM meal_food_prefs WHERE meal_id = 1 AND food_id = 1`)
+	if err != nil {
+		log.Printf("Failed to get updated serving size: %v\n", servingSize)
+		return
+	}
+	fmt.Println(servingSize)
+	fmt.Println(err)
+
+	// Output:
+	// 300
+	// <nil>
+}
