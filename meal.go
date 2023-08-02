@@ -265,6 +265,18 @@ func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
 // SelectAndDeleteFood prompts user to select food to delete and removes
 // the food from the database.
 func SelectAndDeleteFood(db *sqlx.DB) error {
+	// Get food to delete.
+	food, err := selectFood(db)
+	if err != nil {
+		return err
+	}
+
+	// Delete food.
+	err = deleteFood(db, food.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Deleted food.")
 	return nil
 }
 
@@ -372,6 +384,47 @@ func deleteFood(db *sqlx.DB, foodID int) error {
 	return tx.Commit()
 }
 
+// CreateAndAddMeal creates a new meal and adds it into the database.
+func CreateAndAddMeal(db *sqlx.DB) error {
+	// Get meal information.
+	mealName := promptMealName()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Insert the meal into the meals table.
+	query := `INSERT INTO meals (meal_name) VALUES (?)`
+	res, err := tx.Exec(query, mealName)
+	if err != nil {
+		return fmt.Errorf("failed to insert meal: %w", err)
+	}
+
+	// Get the ID of the inserted meal
+	mealID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last inserted ID: %w", err)
+	}
+
+	// Now prompt the user to enter the foods that make up the meal.
+	for {
+		// select a meal
+
+		// Print current serving size.
+
+		// Print current number of servings.
+
+		// If user wants to change existing values, update meal_food_prefs
+		// table.
+	}
+
+	return nil
+}
+
 // promptDeleteMeal prompts a user to select a meal and removes the meal
 // from the database.
 func promptDeleteMeal(db *sqlx.DB) error {
@@ -396,6 +449,7 @@ func promptDeleteResponse() (r string) {
 	return r
 }
 
+// promptMealName prompts and returns name of meal.
 func promptMeal() (m string) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Enter the name of your new meal: ")
