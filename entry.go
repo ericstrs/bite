@@ -22,6 +22,8 @@ const (
 	weightSearchLimit = 10
 )
 
+var ErrDone = errors.New("done")
+
 // Entry fields will be constructed from daily_weights and daily_foods
 // table during runtime.
 // Nutrients are for portion size (100 serving unit)
@@ -475,6 +477,10 @@ func LogFood(db *sqlx.DB) error {
 	// Get selected food
 	food, err := selectFood(db)
 	if err != nil {
+		if errors.Is(err, ErrDone) {
+			fmt.Println("No food selected.")
+			return nil // Not really an "error" situation
+		}
 		return err
 	}
 
@@ -518,20 +524,25 @@ func LogFood(db *sqlx.DB) error {
 	return nil
 }
 
-// selectFood prompts user to enter a search term, prints the matched
+// selectFood prompts the user to enter a search term, prints the matched
 // foods, prompts user to enter an index to select a food or another
 // serach term for a different food. This repeats until user enters a
 // valid index.
 func selectFood(db *sqlx.DB) (Food, error) {
 	// Get initial search term.
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter food name: ")
+	fmt.Printf("Enter food name or 'done': ")
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Remove the newline character at the end of the string.
 	response = strings.TrimSpace(response)
+
+	// If user enters "done", then return early.
+	if response == "done" {
+		return Food{}, ErrDone
+	}
 
 	// While user response is not an integer
 	for {
@@ -655,11 +666,30 @@ func printFoodPref(pref FoodPref) {
 func getFoodPrefUserInput(foodID int) *FoodPref {
 	pref := &FoodPref{}
 
-	pref.FoodId = foodID
-	pref.ServingSize = getServingSize()
-	pref.NumberOfServings = getNumServings()
+	pref.FoodID = foodID
+	pref.ServingSize, pref.NumberOfServings = getServingSizeAndNumServings()
 
 	return pref
+}
+
+// getMealFoodPrefUserInput prompts user for meal food perferences,
+// validates their response until they've entered a valid response,
+// and returns the valid response.
+func getMealFoodPrefUserInput(foodID int, mealID int64) *MealFoodPref {
+	pref := &MealFoodPref{}
+
+	pref.FoodID = foodID
+	pref.MealID = mealID
+	pref.ServingSize, pref.NumberOfServings = getServingSizeAndNumServings()
+
+	return pref
+}
+
+// getServingSizeAndNumServings prompts user for serving size and number
+// of servings, validates their response until they've entered a valid
+// response, and returns the valid response.
+func getServingSizeAndNumServings() (float64, float64) {
+	return getServingSize(), getNumServings()
 }
 
 // updateFoodPrefs updates the user's preferences for a given
@@ -705,7 +735,7 @@ func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 		VALUES ($1, $2, $3, $4)
 		`
 
-	_, err = db.Exec(query, pref.FoodId, date, pref.ServingSize, pref.NumberOfServings)
+	_, err = db.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
 	// If there was an error executing the query, return the error
 	if err != nil {
 		return err
@@ -998,18 +1028,11 @@ func LogMeal(db *sqlx.DB) error {
 			continue
 		}
 
-		// Get food to be updated.
-		food, err := getOneFood(db, mealFoods[idx-1].ID)
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-
 		// Get updated food preferences.
-		f := getFoodPrefUserInput(food.ID)
+		f := getMealFoodPrefUserInput(mealFoods[idx-1].Food.ID, int64(meal.ID))
 
-		// Make database update for food preferences.
-		err = updateFoodPrefs(db, f)
+		// Make database update to meal food preferences.
+		err = updateMealFoodPrefs(db, f)
 		if err != nil {
 			return err
 		}
@@ -1154,7 +1177,7 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 	// Now, for each food ID, get the full food details and preferences.
 	var mealFoods []*MealFood
 	for _, foodID := range foodIDs {
-		mf, err := getMealFoodWithPref(db, foodID, mealID)
+		mf, err := getMealFoodWithPref(db, foodID, int64(mealID))
 		if err != nil {
 			return nil, err
 		}
@@ -1167,7 +1190,7 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 // getMealFoodWithPref retrieves one of the foods for a given meal,
 // along its preferences.
 // Nutrients are for portion size (100 serving unit)
-func getMealFoodWithPref(db *sqlx.DB, mealID, foodID int) (*MealFood, error) {
+func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, error) {
 	mf := MealFood{}
 
 	// Get the food details
@@ -1182,9 +1205,9 @@ func getMealFoodWithPref(db *sqlx.DB, mealID, foodID int) (*MealFood, error) {
             COALESCE(mfp.serving_size, fp.serving_size, f.serving_size) AS serving_size,
             COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings
         FROM foods f
-        LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = ?
+        LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
         LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
-        WHERE f.food_id = ?
+        WHERE f.food_id = $2
         LIMIT 1
     `
 
