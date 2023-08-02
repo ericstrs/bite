@@ -2,6 +2,7 @@ package calories
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -56,15 +57,15 @@ type MealFood struct {
 }
 
 type FoodPref struct {
-	FoodId           int     `db:"food_id"`
+	FoodID           int     `db:"food_id"`
 	NumberOfServings float64 `db:"number_of_servings"`
 	ServingSize      float64 `db:"serving_size"`
 	ServingUnit      string  `db:"serving_unit"`
 }
 
 type MealFoodPref struct {
-	FoodId           int     `db:"food_id"`
-	MealId           int     `db:"meal_id"`
+	FoodID           int     `db:"food_id"`
+	MealID           int64   `db:"meal_id"`
 	NumberOfServings float64 `db:"number_of_servings"`
 	ServingSize      float64 `db:"serving_size"`
 }
@@ -268,6 +269,10 @@ func SelectAndDeleteFood(db *sqlx.DB) error {
 	// Get food to delete.
 	food, err := selectFood(db)
 	if err != nil {
+		if errors.Is(err, ErrDone) {
+			fmt.Println("No food selected.")
+			return nil // Not really an "error" situation
+		}
 		return err
 	}
 
@@ -389,40 +394,112 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 	// Get meal information.
 	mealName := promptMealName()
 
-	// Start a new transaction.
-	tx, err := db.Beginx()
-	if err != nil {
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
 	// Insert the meal into the meals table.
-	query := `INSERT INTO meals (meal_name) VALUES (?)`
-	res, err := tx.Exec(query, mealName)
+	mealID, err := insertMeal(db, mealName)
 	if err != nil {
-		return fmt.Errorf("failed to insert meal: %w", err)
-	}
-
-	// Get the ID of the inserted meal
-	mealID, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("failed to get last inserted ID: %w", err)
+		log.Println(err)
+		return err
 	}
 
 	// Now prompt the user to enter the foods that make up the meal.
 	for {
-		// select a meal
+		// Select a food.
+		food, err := selectFood(db)
+		if err != nil {
+			if errors.Is(err, ErrDone) {
+				break // If the user entered "done", break the loop.
+			}
+			log.Println(err)
+			continue // If there was a different error, ask again.
+		}
 
-		// Print current serving size.
+		// Get any existing preferences for the selected food.
+		f, err := getMealFoodWithPref(db, food.ID, mealID)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
 
-		// Print current number of servings.
+		// Display any existing preferences for the selected food.
+		printMealFood(f)
 
-		// If user wants to change existing values, update meal_food_prefs
-		// table.
+		var s string
+		fmt.Printf("Do you want to change these values? (y/n): ")
+		fmt.Scan(&s)
+
+		// If the user decides to change existing food preferences,
+		if strings.ToLower(s) == "y" {
+			// Get updated food preferences.
+			mf := getMealFoodPrefUserInput(food.ID, mealID)
+			// Make database entry for meal food preferences.
+			err := updateMealFoodPrefs(db, mf)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
+	fmt.Println("Added meal.")
 	return nil
+}
+
+// SelectAndDeleteMeal selects a meal deletes a meal from the
+// database.
+func SelectAndDeleteMeal(db *sqlx.DB) error {
+	// Select meal to delete.
+	// Remove food entries that make up the meal from
+	// * meal_foods
+	// * meal_food_prefs
+	// * set any `meal_id` in the daily_foods table for any foods that
+	// were apart of this meal to NULL.
+	// * daily_meals
+	// * meals
+	fmt.Println("Deleted food.")
+	return nil
+}
+
+// insertMeal inserts a meal into the database and returns the id of the
+// newly inserted meal.
+func insertMeal(db *sqlx.DB, mealName string) (int64, error) {
+	query := `INSERT INTO meals (meal_name) VALUES ($1)`
+	res, err := db.Exec(query, mealName)
+	if err != nil {
+		return 0, fmt.Errorf("insertMeal: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get last inserted ID: %w", err)
+	}
+	return id, nil
+}
+
+// updateMealFoodPrefs inserts or updates the user's preferences for a
+// given food that is part of a meal.
+func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Execute the update statement
+	_, err = tx.NamedExec(`INSERT INTO meal_food_prefs (meal_id, food_id, number_of_servings, serving_size)
+                          VALUES (:meal_id, :food_id, :number_of_servings, :serving_size)
+                          ON CONFLICT(meal_id, food_id) DO UPDATE SET
+                          number_of_servings = :number_of_servings,
+                          serving_size = :serving_size`,
+		pref)
+
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return err
+	}
+
+	// If everything went fine, commit the transaction
+	return tx.Commit()
 }
 
 // promptDeleteMeal prompts a user to select a meal and removes the meal
@@ -450,7 +527,7 @@ func promptDeleteResponse() (r string) {
 }
 
 // promptMealName prompts and returns name of meal.
-func promptMeal() (m string) {
+func promptMealName() (m string) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Enter the name of your new meal: ")
 	m, err := reader.ReadString('\n')
@@ -625,18 +702,6 @@ func validateNumServings(numServings float64) error {
 		return fmt.Errorf("Number of servings must be between 0 and 100.")
 	}
 	return nil
-}
-
-// updateMealFoodPrefs updates the user's preferences for a given
-// food in a meal.
-func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
-	_, err := db.NamedExec(`INSERT INTO meal_food_prefs (meal_id, food_id, number_of_servings, serving_size)
-                          VALUES (:meal_id, :food_id, :number_of_servings, :serving_size)
-                          ON CONFLICT(meal_id, food_id) DO UPDATE SET
-                          number_of_servings = :number_of_servings,
-                          serving_size = :serving_size`,
-		pref)
-	return err
 }
 
 // getOneFood retrieves the details for a given food.
