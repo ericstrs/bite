@@ -447,15 +447,82 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 // database.
 func SelectAndDeleteMeal(db *sqlx.DB) error {
 	// Select meal to delete.
-	// Remove food entries that make up the meal from
-	// * meal_foods
-	// * meal_food_prefs
-	// * set any `meal_id` in the daily_foods table for any foods that
-	// were apart of this meal to NULL.
-	// * daily_meals
-	// * meals
+	m, err := selectMeal(db)
+	if err != nil {
+		return err
+	}
+
+	// Remove meal from the database.
+	err = deleteMeal(db, m.ID)
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("Deleted food.")
 	return nil
+}
+
+// deleteMeal deletes a meal from the database.
+func deleteMeal(db *sqlx.DB, mealID int) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+      DELETE FROM meal_food_prefs
+      WHERE meal_id = $1
+      `, mealID)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+      DELETE FROM meal_foods
+      WHERE meal_id = $1
+      `, mealID)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
+		return err
+	}
+
+	// Set any `meal_id` in the daily_foods table for any entries that
+	// were apart of this meal to NULL.
+	_, err = tx.Exec(`UPDATE daily_foods SET meal_id = NULL WHERE meal_id = ?`, mealID)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Failed to update daily_foods: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+      DELETE FROM daily_meals
+      WHERE meal_id = $1
+      `, mealID)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from daily_meals: %v\n", err)
+		return err
+	}
+
+	_, err = tx.Exec(`
+      DELETE FROM meals
+      WHERE meal_id = $1
+      `, mealID)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		log.Printf("Couldn't delete entry from meals: %v\n", err)
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // insertMeal inserts a meal into the database and returns the id of the
@@ -500,30 +567,6 @@ func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
 
 	// If everything went fine, commit the transaction
 	return tx.Commit()
-}
-
-// promptDeleteMeal prompts a user to select a meal and removes the meal
-// from the database.
-func promptDeleteMeal(db *sqlx.DB) error {
-	// Select a meal.
-	m, err := selectMeal(db)
-	if err != nil {
-		return err
-	}
-
-	// Delete selected meal.
-	deleteMeal(db, m.ID)
-	return nil
-}
-
-func promptDeleteResponse() (r string) {
-	// Prompt for user input
-	fmt.Printf("Enter the index of the meal to delete or a search term: ")
-	_, err := fmt.Scanln(&r)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return r
 }
 
 // promptMealName prompts and returns name of meal.
@@ -605,13 +648,6 @@ func printMeals(meals []Meal) {
 func printMeal(meal Meal) {
 	// TODO: update print to include rest of the fields.
 	fmt.Printf("ID: %d, Name: \"%s\"\n", meal.ID, meal.Name)
-}
-
-// TODO: this function should delete mealID from related tables. E.g.,
-// meal_foods table.
-func deleteMeal(db *sqlx.DB, mealID int) error {
-	_, err := db.Exec("DELETE FROM meals WHERE id=?", mealID)
-	return err
 }
 
 // TODO: displayFood takes in a slice of meal id's to prints its contents.
