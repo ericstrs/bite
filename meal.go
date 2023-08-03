@@ -580,14 +580,6 @@ func promptMealName() (m string) {
 	return strings.TrimSpace(m)
 }
 
-func addMeal(db *sqlx.DB, meal Meal) {
-	// Insert the new meal into the database
-	_, err := db.Exec(`INSERT INTO meals (meal_name) VALUES (?)`, meal.Name)
-	if err != nil {
-		log.Fatal("ERROR: ", err)
-	}
-}
-
 // getAllMeals returns all the user's meals from the database.
 func getAllMeals(db *sqlx.DB) ([]Meal, error) {
 	m := []Meal{}
@@ -598,59 +590,6 @@ func getAllMeals(db *sqlx.DB) ([]Meal, error) {
 
 	return m, nil
 }
-
-// TODO:
-// * Grab foods that make up the meal.
-// * For serving size and number of serving, first check `food_prefs`
-// table for entries.
-// getOneMeal retrieves the details for a given meal.
-func getOneMeal(db *sqlx.DB, mealID int) (*Meal, error) {
-	m := Meal{}
-	err := db.Get(&m, "SELECT id, name, frequency FROM meals WHERE id=?", mealID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &m, nil
-}
-
-// displayAllMeals gets and prints all the user's meals.
-func displayAllMeals(db *sqlx.DB) error {
-	m, err := getAllMeals(db)
-	if err != nil {
-		return err
-	}
-	printMeals(m)
-	return nil
-}
-
-// displayOneMeal gets and prints one user meal given the meal id.
-func displayOneMeal(db *sqlx.DB, mealID int) error {
-	m, err := getOneMeal(db, mealID)
-	if err != nil {
-		return err
-	}
-	printMeal(*m)
-	return nil
-}
-
-// printMeals prints the fields of each meal in the given slice.
-func printMeals(meals []Meal) {
-	// TODO: ensure meals not empty
-
-	// Print the meals.
-	for _, meal := range meals {
-		printMeal(meal)
-	}
-}
-
-// printMeal prints the fields of the meal.
-func printMeal(meal Meal) {
-	// TODO: update print to include rest of the fields.
-	fmt.Printf("ID: %d, Name: \"%s\"\n", meal.ID, meal.Name)
-}
-
-// TODO: displayFood takes in a slice of meal id's to prints its contents.
 
 // getServingSize prompts user for serving size, validates their
 // response until they've entered a valid response, and returns the
