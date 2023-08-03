@@ -391,7 +391,7 @@ func ExampleUpdateFoodEntry() {
 	`)
 
 	pref := &FoodPref{
-		FoodId:           1,
+		FoodID:           1,
 		ServingSize:      100,
 		NumberOfServings: 2,
 	}
@@ -718,6 +718,65 @@ func ExampleSubset() {
 	// +-----+--------+----------+------------+
 	// | 3X3 | STRING |  STRING  |   STRING   |
 	// +-----+--------+----------+------------+
+}
+
+func ExampleUpdateFoodPrefs() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create the food_nutrients table
+	db.MustExec(`
+      CREATE TABLE IF NOT EXISTS foods (
+        food_id INTEGER PRIMARY KEY,
+        food_name TEXT NOT NULL,
+        serving_size REAL NOT NULL,
+        serving_unit TEXT NOT NULL,
+        household_serving TEXT NOT NULL
+      );
+
+			CREATE TABLE IF NOT EXISTS food_prefs (
+				food_id INTEGER PRIMARY KEY,
+				serving_size REAL,
+				number_of_servings REAL DEFAULT 1 NOT NULL,
+				FOREIGN KEY(food_id) REFERENCES foods(food_id)
+			);
+	`)
+
+	// Insert food
+	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Chicken Breast', 100, 'g', '1/2 piece')
+  `)
+
+	pref := &FoodPref{}
+	pref.FoodID = 1
+	pref.ServingSize = 300
+	pref.NumberOfServings = 1.2
+
+	err = updateFoodPrefs(db, pref)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	var p FoodPref
+	err = db.Get(&p, `SELECT serving_size, number_of_servings FROM food_prefs WHERE food_id = 1`)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	fmt.Println("Updated serving size:", p.ServingSize)
+	fmt.Println("Updated number of servings:", p.NumberOfServings)
+	fmt.Println(err)
+
+	// Output:
+	// Updated serving size: 300
+	// Updated number of servings: 1.2
+	// <nil>
 }
 
 /*
