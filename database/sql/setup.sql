@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS daily_foods (
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_id INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
+  time TIME,
   serving_size REAL NOT NULL,
   number_of_servings REAL DEFAULT 1 NOT NULL
 );
@@ -29,13 +30,15 @@ CREATE TABLE IF NOT EXISTS daily_foods (
 CREATE TABLE IF NOT EXISTS daily_meals (
   id INTEGER PRIMARY KEY,
   meal_id INTEGER REFERENCES meals(meal_id),
-  date DATE NOT NULL
+  date DATE NOT NULL,
+  time TIME
 );
 
 -- daily_weights contains the users daily weight and date of the entry.
 CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
+  time TIME,
   weight REAL NOT NULL
 );
 
@@ -43,7 +46,7 @@ CREATE TABLE IF NOT EXISTS daily_weights (
 CREATE TABLE IF NOT EXISTS meal_foods (
   meal_id INTEGER REFERENCES meals(meal_id),
   food_id INTEGER REFERENCES foods(food_id),
-  number_of_servings REAL DEFAULT 1 NOT NULL
+  PRIMARY KEY (meal_id, food_id)
 );
 
 -- nutrients stores the nurtients that a food can be comprised of.
