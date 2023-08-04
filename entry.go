@@ -118,7 +118,7 @@ func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	var entries []Entry
 	err := db.Select(&entries, query)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("GetAllEntries: %v\n", err)
 	}
 
 	return &entries, nil
@@ -534,7 +534,7 @@ func selectFood(db *sqlx.DB) (Food, error) {
 	fmt.Printf("Enter food name or 'done': ")
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		log.Fatal(err)
+		return Food{}, fmt.Errorf("Failed to read string. %v", err)
 	}
 	// Remove the newline character at the end of the string.
 	response = strings.TrimSpace(response)
@@ -618,7 +618,7 @@ func promptSelectResponse(item string) string {
 	fmt.Printf("Enter either the index of the %s to select or a search term: ", item)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("promptSelectResponse: %v\n", err)
 	}
 	// Remove the newline character at the end of the string
 	response = strings.TrimSpace(response)
@@ -1196,6 +1196,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 	// Get the food details
 	err := db.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = ?", foodID)
 	if err != nil {
+		log.Println("Failed to get food.")
 		return nil, err
 	}
 
@@ -1203,7 +1204,8 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 	query := `
         SELECT
             COALESCE(mfp.serving_size, fp.serving_size, f.serving_size) AS serving_size,
-            COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings
+            COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
+						CASE WHEN mfp.serving_size IS NOT NULL OR fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
         FROM foods f
         LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
         LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
@@ -1211,27 +1213,38 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
         LIMIT 1
     `
 
-	err = db.QueryRow(query, mealID, foodID).Scan(&mf.ServingSize, &mf.NumberOfServings)
+	// Execute the SQL query and assign the result to the MealFood struct
+	err = db.Get(&mf, query, mealID, foodID)
 	if err != nil {
+		log.Println("Failed to select serving size and number of servings.")
 		return nil, err
 	}
 
+	// Execute the SQL query and assign the result to the calories field
+	// in the MealFood struct
 	err = db.Get(&mf.Food.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
+		log.Println("Failed to select portion calories.")
 		return nil, err
 	}
 
+	// Get the macros for the food
 	mf.Food.FoodMacros, err = getFoodMacros(db, foodID)
 	if err != nil {
+		log.Println("Failed to get food macros.")
 		return nil, err
 	}
 
-	// Adjust nutrient values based on the serving size and number of servings.
-	ratio := mf.ServingSize / mf.Food.ServingSize
-	mf.Food.PortionCals *= ratio * mf.NumberOfServings
-	mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
-	mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
-	mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
+	// If a preference was found (either in meal_food_prefs or food_prefs),
+	// adjust nutrient values based on the serving size and number of servings.
+	if mf.HasPreference {
+		// 100 is for porition size which nutrient amounts represent.
+		ratio := mf.ServingSize / 100
+		mf.Food.PortionCals *= ratio * mf.NumberOfServings
+		mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
+		mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
+		mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
+	}
 
 	return &mf, nil
 }
@@ -1247,7 +1260,7 @@ func printMealDetails(mealFoods []*MealFood) {
 // printMealFood prints details of a given MealFood object.
 func printMealFood(mealFood *MealFood) {
 	fmt.Printf("%s\n", mealFood.Food.Name)
-	//fmt.Printf("\t%.2f %s\n", math.Round(100*mealFood.NumberOfServings*mealFood.ServingSize)/100, mealFood.Food.ServingUnit)
+	//871682fmt.Printf("\t%.2f %s\n", math.Round(100*mealFood.NumberOfServings*mealFood.ServingSize)/100, mealFood.Food.ServingUnit)
 	fmt.Printf("Serving Size: %.2f\n", mealFood.ServingSize)
 	fmt.Printf("Number of Servings: %.2f\n", mealFood.NumberOfServings)
 	fmt.Printf("Calories: %.2f\n", mealFood.Food.PortionCals)
@@ -1265,7 +1278,7 @@ func promptUserEditDecision() string {
 	fmt.Printf("Enter index of food to edit or press <enter> for existing values: ")
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("promptUserEditDecision: %v\n", err)
 	}
 	// Remove the newline character at the end of the string
 	response = strings.TrimSpace(response)
