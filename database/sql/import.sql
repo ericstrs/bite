@@ -130,3 +130,28 @@ FROM
     LEFT JOIN food_nutrients fnf ON f.food_id = fnf.food_id AND fnf.nutrient_id = 1004 -- 1004 is nutrient_id for fat
 WHERE
     f.food_id NOT IN (SELECT food_id FROM food_nutrients WHERE nutrient_id = 1008);
+
+-- Create a temporary table holding the IDs of foods that do not have
+-- macros logged
+CREATE TEMP TABLE temp_food_ids AS
+SELECT food_id
+FROM foods
+WHERE food_id NOT IN (
+  SELECT DISTINCT food_id
+  FROM food_nutrients
+  WHERE nutrient_id IN (1003, 1004, 1005)
+);
+
+-- Delete from foods table
+DELETE FROM foods
+WHERE food_id IN (
+  SELECT food_id
+  FROM temp_food_ids
+);
+
+-- Delete from food_nutrients table
+DELETE FROM food_nutrients
+WHERE food_id IN (
+  SELECT food_id
+  FROM temp_food_ids
+);
