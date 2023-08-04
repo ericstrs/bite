@@ -270,27 +270,6 @@ func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
 // SelectAndDeleteFood prompts user to select food to delete and removes
 // the food from the database.
 func SelectAndDeleteFood(db *sqlx.DB) error {
-	// Get food to delete.
-	food, err := selectFood(db)
-	if err != nil {
-		if errors.Is(err, ErrDone) {
-			fmt.Println("No food selected.")
-			return nil // Not really an "error" situation
-		}
-		return err
-	}
-
-	// Delete food.
-	err = deleteFood(db, food.ID)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Deleted food.")
-	return nil
-}
-
-// deleteFood deletes a food from the database.
-func deleteFood(db *sqlx.DB, foodID int) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -300,8 +279,30 @@ func deleteFood(db *sqlx.DB, foodID int) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
+	// Get food to delete.
+	food, err := selectFood(tx)
+	if err != nil {
+		if errors.Is(err, ErrDone) {
+			fmt.Println("No food selected.")
+			return nil // Not really an "error" situation
+		}
+		return err
+	}
+
+	// Delete food.
+	err = deleteFood(tx, food.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Deleted food.")
+
+	return tx.Commit()
+}
+
+// deleteFood deletes a food from the database.
+func deleteFood(tx *sqlx.Tx, foodID int) error {
 	// Execute the delete statement
-	_, err = tx.Exec(`
+	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
       WHERE food_id = $1
       `, foodID)
@@ -389,17 +390,24 @@ func deleteFood(db *sqlx.DB, foodID int) error {
 		return err
 	}
 
-	// If everything went fine, commit the transaction
-	return tx.Commit()
+	return nil
 }
 
 // CreateAndAddMeal creates a new meal and adds it into the database.
 func CreateAndAddMeal(db *sqlx.DB) error {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Get meal information.
 	mealName := promptMealName()
 
 	// Insert the meal into the meals table.
-	mealID, err := insertMeal(db, mealName)
+	mealID, err := insertMeal(tx, mealName)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -408,7 +416,7 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 	// Now prompt the user to enter the foods that make up the meal.
 	for {
 		// Select a food.
-		food, err := selectFood(db)
+		food, err := selectFood(tx)
 		if err != nil {
 			if errors.Is(err, ErrDone) {
 				break // If the user entered "done", break the loop.
@@ -418,13 +426,13 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 		}
 
 		// Insert food into meal food table.
-		err = insertMealFood(db, int(mealID), food.ID)
+		err = insertMealFood(tx, int(mealID), food.ID)
 		if err != nil {
 			return err
 		}
 
 		// Get any existing preferences for the selected food.
-		f, err := getMealFoodWithPref(db, food.ID, mealID)
+		f, err := getMealFoodWithPref(tx, food.ID, mealID)
 		if err != nil {
 			log.Println(err)
 			return err
@@ -442,7 +450,7 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 			// Get updated food preferences.
 			mf := getMealFoodPrefUserInput(food.ID, mealID)
 			// Make database entry for meal food preferences.
-			err := updateMealFoodPrefs(db, mf)
+			err := updateMealFoodPrefs(tx, mf)
 			if err != nil {
 				return err
 			}
@@ -456,24 +464,6 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 // SelectAndDeleteMeal selects a meal deletes a meal from the
 // database.
 func SelectAndDeleteMeal(db *sqlx.DB) error {
-	// Select meal to delete.
-	m, err := selectMeal(db)
-	if err != nil {
-		return err
-	}
-
-	// Remove meal from the database.
-	err = deleteMeal(db, m.ID)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Deleted food.")
-	return nil
-}
-
-// deleteMeal deletes a meal from the database.
-func deleteMeal(db *sqlx.DB, mealID int) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -483,7 +473,25 @@ func deleteMeal(db *sqlx.DB, mealID int) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`
+	// Select meal to delete.
+	m, err := selectMeal(tx)
+	if err != nil {
+		return err
+	}
+
+	// Remove meal from the database.
+	err = deleteMeal(tx, m.ID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Deleted food.")
+	return tx.Commit()
+}
+
+// deleteMeal deletes a meal from the database.
+func deleteMeal(tx *sqlx.Tx, mealID int) error {
+	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
       WHERE meal_id = $1
       `, mealID)
@@ -532,14 +540,14 @@ func deleteMeal(db *sqlx.DB, mealID int) error {
 		return err
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // insertMeal inserts a meal into the database and returns the id of the
 // newly inserted meal.
-func insertMeal(db *sqlx.DB, mealName string) (int64, error) {
+func insertMeal(tx *sqlx.Tx, mealName string) (int64, error) {
 	query := `INSERT INTO meals (meal_name) VALUES ($1)`
-	res, err := db.Exec(query, mealName)
+	res, err := tx.Exec(query, mealName)
 	if err != nil {
 		return 0, fmt.Errorf("insertMeal: %w", err)
 	}
@@ -553,16 +561,9 @@ func insertMeal(db *sqlx.DB, mealName string) (int64, error) {
 
 // insertMealFood inserts a food that is part of a meal into the
 // database.
-func insertMealFood(db *sqlx.DB, mealID, foodID int) error {
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
+func insertMealFood(tx *sqlx.Tx, mealID, foodID int) error {
 	// Execute the insert query
-	_, err = tx.Exec(`
+	_, err := tx.Exec(`
         INSERT INTO meal_foods (meal_id, food_id)
         VALUES ($1, $2)
     `, mealID, foodID)
@@ -571,22 +572,14 @@ func insertMealFood(db *sqlx.DB, mealID, foodID int) error {
 		return err
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // updateMealFoodPrefs inserts or updates the user's preferences for a
 // given food that is part of a meal.
-func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
+func updateMealFoodPrefs(tx *sqlx.Tx, pref *MealFoodPref) error {
 	// Execute the update statement
-	_, err = tx.NamedExec(`
+	_, err := tx.NamedExec(`
 			INSERT INTO meal_food_prefs (meal_id, food_id, number_of_servings, serving_size)
       VALUES (:meal_id, :food_id, :number_of_servings, :serving_size)
       ON CONFLICT(meal_id, food_id) DO UPDATE SET
@@ -598,22 +591,30 @@ func updateMealFoodPrefs(db *sqlx.DB, pref *MealFoodPref) error {
 		return err
 	}
 
-	// If everything went fine, commit the transaction
-	return tx.Commit()
+	return nil
 }
 
 // GetUserInputAddMealFood prompts the user for existing meal and food
 // to add to the meal and then inserts the new meal food into the
 // database.
 func GetUserInputAddMealFood(db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Select existing meal.
-	meal, err := selectMeal(db)
+	meal, err := selectMeal(tx)
 	if err != nil {
 		return err
 	}
 
 	// Select a food.
-	food, err := selectFood(db)
+	food, err := selectFood(tx)
 	if err != nil {
 		if errors.Is(err, ErrDone) {
 			return err // If the user entered "done", return early.
@@ -622,13 +623,13 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 	}
 
 	// Insert food into meal food table.
-	err = insertMealFood(db, meal.ID, food.ID)
+	err = insertMealFood(tx, meal.ID, food.ID)
 	if err != nil {
 		return err
 	}
 
 	// Get any existing preferences for the selected food.
-	f, err := getMealFoodWithPref(db, food.ID, int64(meal.ID))
+	f, err := getMealFoodWithPref(tx, food.ID, int64(meal.ID))
 	if err != nil {
 		log.Println(err)
 		return err
@@ -646,47 +647,19 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 		// Get updated food preferences.
 		mf := getMealFoodPrefUserInput(food.ID, int64(meal.ID))
 		// Make database entry for meal food preferences.
-		err := updateMealFoodPrefs(db, mf)
+		err := updateMealFoodPrefs(tx, mf)
 		if err != nil {
 			return err
 		}
 	}
 
 	fmt.Printf("Successfully added food %d to meal %d\n", food.ID, meal.ID)
-	return nil
+	return tx.Commit()
 }
 
 // SelectAndDeleteMealFood prompts user to select a meal and a food to
 // remove.
 func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
-	// Select meal.
-	meal, err := selectMeal(db)
-	if err != nil {
-		return err
-	}
-
-	// Select a food.
-	food, err := selectFood(db)
-	if err != nil {
-		if errors.Is(err, ErrDone) {
-			return err // If the user entered "done", return early.
-		}
-		log.Println(err)
-	}
-
-	// Delete meal food.
-	err = deleteMealFood(db, meal.ID, food.ID)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Successfully removed food %d to meal %d\n", food.ID, meal.ID)
-	return nil
-}
-
-// deleteMealFood removes a food that is part of a meal from the
-// database.
-func deleteMealFood(db *sqlx.DB, mealID, foodID int) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -696,7 +669,35 @@ func deleteMealFood(db *sqlx.DB, mealID, foodID int) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`
+	// Select meal.
+	meal, err := selectMeal(tx)
+	if err != nil {
+		return err
+	}
+
+	// Select a food.
+	food, err := selectFood(tx)
+	if err != nil {
+		if errors.Is(err, ErrDone) {
+			return err // If the user entered "done", return early.
+		}
+		log.Println(err)
+	}
+
+	// Delete meal food.
+	err = deleteMealFood(tx, meal.ID, food.ID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully removed food %d to meal %d\n", food.ID, meal.ID)
+	return tx.Commit()
+}
+
+// deleteMealFood removes a food that is part of a meal from the
+// database.
+func deleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
+	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
       WHERE meal_id = $1 AND food_id = $2
       `, mealID, foodID)
@@ -725,7 +726,7 @@ func deleteMealFood(db *sqlx.DB, mealID, foodID int) error {
 		return err
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // promptMealName prompts and returns name of meal.
@@ -740,9 +741,9 @@ func promptMealName() (m string) {
 }
 
 // getAllMeals returns all the user's meals from the database.
-func getAllMeals(db *sqlx.DB) ([]Meal, error) {
+func getAllMeals(tx *sqlx.Tx) ([]Meal, error) {
 	m := []Meal{}
-	err := db.Select(&m, "SELECT * FROM meals")
+	err := tx.Select(&m, "SELECT * FROM meals")
 	if err != nil {
 		return nil, err
 	}
@@ -838,6 +839,7 @@ func validateNumServings(numServings float64) error {
 	return nil
 }
 
+/*
 // getOneFood retrieves the details for a given food.
 // Nutrients
 // Nutrients are for portion size (100 serving unit)
@@ -861,39 +863,40 @@ func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
 
 	return &f, nil
 }
+*/
 
 // getFoodMacros retrieves the macronutrients for a given food.
-func getFoodMacros(db *sqlx.DB, foodID int) (*FoodMacros, error) {
+func getFoodMacros(tx *sqlx.Tx, foodID int) (*FoodMacros, error) {
 	m := FoodMacros{}
 
-	nID, err := getNutrientId(db, "Protein")
+	nID, err := getNutrientId(tx, "Protein")
 	if err != nil {
 		log.Println("Failed to get protein nutrient ID.")
 		return nil, err
 	}
-	err = db.Get(&m.Protein, selectNutrientAmountSQL, foodID, nID)
+	err = tx.Get(&m.Protein, selectNutrientAmountSQL, foodID, nID)
 	if err != nil {
 		log.Println("Failed to get protein nutrient for food.")
 		return nil, err
 	}
 
-	nID, err = getNutrientId(db, "Total lipid (fat)")
+	nID, err = getNutrientId(tx, "Total lipid (fat)")
 	if err != nil {
 		log.Println("Failed to get fat nutrient ID.")
 		return nil, err
 	}
-	err = db.Get(&m.Fat, selectNutrientAmountSQL, foodID, nID)
+	err = tx.Get(&m.Fat, selectNutrientAmountSQL, foodID, nID)
 	if err != nil {
 		log.Println("Failed to get fat nutrient for food.")
 		return nil, err
 	}
 
-	nID, err = getNutrientId(db, "Carbohydrate, by difference")
+	nID, err = getNutrientId(tx, "Carbohydrate, by difference")
 	if err != nil {
 		log.Println("Failed to get carbohydrate nutrient ID.")
 		return nil, err
 	}
-	err = db.Get(&m.Carbs, selectNutrientAmountSQL, foodID, nID)
+	err = tx.Get(&m.Carbs, selectNutrientAmountSQL, foodID, nID)
 	if err != nil {
 		log.Println("Failed to get carbohydrate nutrient for food.")
 		return nil, err
@@ -903,9 +906,9 @@ func getFoodMacros(db *sqlx.DB, foodID int) (*FoodMacros, error) {
 }
 
 // getNutrientId retrieves the `nutrient_id` for a given nutrient.
-func getNutrientId(ext sqlx.Ext, name string) (int, error) {
+func getNutrientId(tx *sqlx.Tx, name string) (int, error) {
 	var id int
-	err := sqlx.Get(ext, &id, selectNutrientIdSQL, name)
+	err := tx.Get(&id, selectNutrientIdSQL, name)
 	if err != nil {
 		log.Printf("Nutrient name \"%s\" does not exist.\n", name)
 		return 0, err

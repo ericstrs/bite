@@ -471,11 +471,19 @@ func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 
 // LogFood gets selected food user to create a new food entry.
 func LogFood(db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// TODO: Display most recently selected foods
 	// 			 Refactor selectFood to be able to pick from one of the selected
 	// 			 foods or search term.
 	// Get selected food
-	food, err := selectFood(db)
+	food, err := selectFood(tx)
 	if err != nil {
 		if errors.Is(err, ErrDone) {
 			fmt.Println("No food selected.")
@@ -485,7 +493,7 @@ func LogFood(db *sqlx.DB) error {
 	}
 
 	// Get any existing preferences for the selected food.
-	f, err := getFoodPref(db, food.ID)
+	f, err := getFoodPref(tx, food.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -503,7 +511,7 @@ func LogFood(db *sqlx.DB) error {
 		// Get updated food preferences.
 		f = getFoodPrefUserInput(food.ID)
 		// Make database update for food preferences.
-		err := updateFoodPrefs(db, f)
+		err := updateFoodPrefs(tx, f)
 		if err != nil {
 			return err
 		}
@@ -514,21 +522,21 @@ func LogFood(db *sqlx.DB) error {
 
 	// Log selected food to the food log database table. Taking into
 	// account food preferences.
-	err = addFoodEntry(db, f, date)
+	err = addFoodEntry(tx, f, date)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 	fmt.Println("Added food entry.")
 
-	return nil
+	return tx.Commit()
 }
 
 // selectFood prompts the user to enter a search term, prints the matched
 // foods, prompts user to enter an index to select a food or another
 // serach term for a different food. This repeats until user enters a
 // valid index.
-func selectFood(db *sqlx.DB) (Food, error) {
+func selectFood(tx *sqlx.Tx) (Food, error) {
 	// Get initial search term.
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Enter food name or 'done': ")
@@ -547,7 +555,7 @@ func selectFood(db *sqlx.DB) (Food, error) {
 	// While user response is not an integer
 	for {
 		// Get filtered foods.
-		filteredFoods, err := searchFoods(db, response)
+		filteredFoods, err := searchFoods(tx, response)
 		if err != nil {
 			return Food{}, err
 		}
@@ -585,7 +593,7 @@ func selectFood(db *sqlx.DB) (Food, error) {
 
 // searchFoods searchs through all foods and returns food that contain
 // the search term.
-func searchFoods(db *sqlx.DB, response string) (*[]Food, error) {
+func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
 	var foods []Food
 
 	// Prioritize exact match, then match foods where `food_name` starts
@@ -603,7 +611,7 @@ func searchFoods(db *sqlx.DB, response string) (*[]Food, error) {
         LIMIT $4`
 
 	// Search for foods in the database
-	err := db.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
+	err := tx.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
 	if err != nil {
 		log.Printf("Search for foods failed: %v\n", err)
 		return nil, err
@@ -626,7 +634,7 @@ func promptSelectResponse(item string) string {
 }
 
 // getFoodPref gets the food preferences for the given food.
-func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
+func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 	query := `
     SELECT
       f.food_id,
@@ -639,7 +647,7 @@ func getFoodPref(db *sqlx.DB, foodID int) (*FoodPref, error) {
   `
 
 	var pref FoodPref
-	err := db.Get(&pref, query, foodID)
+	err := tx.Get(&pref, query, foodID)
 
 	if err != nil {
 		// Handle a case when no preference found
@@ -694,21 +702,14 @@ func getServingSizeAndNumServings() (float64, float64) {
 
 // updateFoodPrefs updates the user's preferences for a given
 // food.
-func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
+func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 	// Execute the update statement
-	_, err = tx.NamedExec(`INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
-                          VALUES (:food_id, :number_of_servings, :serving_size)
-                          ON CONFLICT(food_id) DO UPDATE SET
-                          number_of_servings = :number_of_servings,
-                          serving_size = :serving_size`,
+	_, err := tx.NamedExec(`
+			INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
+      VALUES (:food_id, :number_of_servings, :serving_size)
+      ON CONFLICT(food_id) DO UPDATE SET
+      number_of_servings = :number_of_servings,
+      serving_size = :serving_size`,
 		pref)
 
 	// If there was an error executing the query, return the error
@@ -716,12 +717,27 @@ func updateFoodPrefs(db *sqlx.DB, pref *FoodPref) error {
 		return err
 	}
 
-	// If everything went fine, commit the transaction
-	return tx.Commit()
+	return nil
 }
 
 // addFoodEntry inserts a food entry into the database.
-func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
+func addFoodEntry(tx *sqlx.Tx, pref *FoodPref, date time.Time) error {
+	query := `
+		INSERT INTO daily_foods	(food_id, date, serving_size, number_of_servings)
+		VALUES ($1, $2, $3, $4)
+		`
+
+	_, err := tx.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
+	// If there was an error executing the query, return the error
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UpdateFoodLog updates an existing food entry in the database.
+func UpdateFoodLog(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -730,39 +746,14 @@ func addFoodEntry(db *sqlx.DB, pref *FoodPref, date time.Time) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	query := `
-		INSERT INTO daily_foods	(food_id, date, serving_size, number_of_servings)
-		VALUES ($1, $2, $3, $4)
-		`
-
-	_, err = db.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
-	// If there was an error executing the query, return the error
-	if err != nil {
-		return err
-	}
-
-	// If everything went fine, commit the transaction
-	return tx.Commit()
-}
-
-// UpdateFoodLog updates an existing food entry in the database.
-func UpdateFoodLog(db *sqlx.DB) error {
 	// Let user select food entry to update.
-	entry, err := selectFoodEntry(db)
+	entry, err := selectFoodEntry(tx)
 	if err != nil {
 		return err
 	}
 
 	// Get new food preferences.
 	pref := getFoodPrefUserInput(entry.FoodID)
-
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
 
 	// Update food entry.
 	err = updateFoodEntry(tx, entry.ID, *pref)
@@ -771,16 +762,16 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	}
 	fmt.Println("Updated food entry.")
 
-	return nil
+	return tx.Commit()
 }
 
 // selectFoodEntry prints recently logged foods, prompts user to enter a
 // search term, prompts user to enter an index to select a food entry or
 // another serach term for a different food entry. This repeats until
 // user enters a valid index.
-func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
+func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	// Get most recently logged foods.
-	recentFoods, err := getRecentFoodEntries(db, searchLimit)
+	recentFoods, err := getRecentFoodEntries(tx, searchLimit)
 	if err != nil {
 		log.Println(err)
 		return DailyFood{}, err
@@ -818,7 +809,7 @@ func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
 		}
 
 		// Get the filtered entries.
-		filteredEntries, err := searchFoodLog(db, date)
+		filteredEntries, err := searchFoodLog(tx, date)
 		if err != nil {
 			log.Println(err)
 			return DailyFood{}, err
@@ -854,7 +845,7 @@ func selectFoodEntry(db *sqlx.DB) (DailyFood, error) {
 }
 
 // getRecentFoodEntries retrieves most recently logged food entries.
-func getRecentFoodEntries(db *sqlx.DB, limit int) ([]DailyFood, error) {
+func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 	const query = `
         SELECT df.*, f.food_name, f.serving_unit
         FROM daily_foods df
@@ -864,7 +855,7 @@ func getRecentFoodEntries(db *sqlx.DB, limit int) ([]DailyFood, error) {
     `
 
 	var entries []DailyFood
-	if err := db.Select(&entries, query, limit); err != nil {
+	if err := tx.Select(&entries, query, limit); err != nil {
 		return nil, err
 	}
 
@@ -881,7 +872,7 @@ func printFoodEntries(entries []DailyFood) {
 }
 
 // searchFoodLog uses date to search through logged foods.
-func searchFoodLog(db *sqlx.DB, date time.Time) ([]DailyFood, error) {
+func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	var entries []DailyFood
 	query := `
     SELECT df.*, f.food_name
@@ -891,7 +882,7 @@ func searchFoodLog(db *sqlx.DB, date time.Time) ([]DailyFood, error) {
   `
 
 	// Search for food entries in the database for given date.
-	err := db.Select(&entries, query, date.Format(dateFormat))
+	err := tx.Select(&entries, query, date.Format(dateFormat))
 	if err != nil {
 		log.Printf("Search for food entries failed: %v\n", err)
 		return nil, err
@@ -915,30 +906,12 @@ func updateFoodEntry(tx *sqlx.Tx, entryID int, pref FoodPref) error {
 	if err != nil {
 		return fmt.Errorf("updateFoodEntry: %w", err)
 	}
-	// If everything went fine, commit the transaction
-	return tx.Commit()
-}
-
-// DeleteFoodEntry deletes a logged food entry.
-func DeleteFoodEntry(db *sqlx.DB) error {
-	// Get selected weight entry.
-	entry, err := selectFoodEntry(db)
-	if err != nil {
-		return err
-	}
-
-	// Delete selected entry.
-	err = deleteOneFoodEntry(db, entry.ID)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Deleted weight entry.")
 
 	return nil
 }
 
-// deleteOneFoodEntry deletes a logged food entry from the database.
-func deleteOneFoodEntry(db *sqlx.DB, entryID int) error {
+// DeleteFoodEntry deletes a logged food entry.
+func DeleteFoodEntry(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -948,8 +921,26 @@ func deleteOneFoodEntry(db *sqlx.DB, entryID int) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
+	// Get selected weight entry.
+	entry, err := selectFoodEntry(tx)
+	if err != nil {
+		return err
+	}
+
+	// Delete selected entry.
+	err = deleteOneFoodEntry(tx, entry.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Deleted weight entry.")
+
+	return tx.Commit()
+}
+
+// deleteOneFoodEntry deletes a logged food entry from the database.
+func deleteOneFoodEntry(tx *sqlx.Tx, entryID int) error {
 	// Execute the delete statement
-	_, err = tx.Exec(`
+	_, err := tx.Exec(`
       DELETE FROM daily_foods
       WHERE id = $1
       `, entryID)
@@ -960,23 +951,32 @@ func deleteOneFoodEntry(db *sqlx.DB, entryID int) error {
 		return err
 	}
 
-	// If everything went fine, commit the transaction
-	return tx.Commit()
+	return nil
 }
 
 // ShowFoodLog prints entire food log.
 func ShowFoodLog(db *sqlx.DB) error {
-	entries, err := getAllFoodEntries(db)
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	entries, err := getAllFoodEntries(tx)
 	if err != nil {
 		return err
 	}
 	printFoodEntries(entries)
-	return nil
+
+	return tx.Commit()
 }
 
 // getAllFoodEntries retrieves all logged food entries. Ordered by most
 // most recent date.
-func getAllFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
+func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 	const query = `
         SELECT df.*, f.food_name, f.serving_unit
         FROM daily_foods df
@@ -985,7 +985,7 @@ func getAllFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
     `
 
 	var entries []DailyFood
-	if err := db.Select(&entries, query); err != nil {
+	if err := tx.Select(&entries, query); err != nil {
 		return nil, err
 	}
 
@@ -994,14 +994,22 @@ func getAllFoodEntries(db *sqlx.DB) ([]DailyFood, error) {
 
 // LogMeal allows the user to create a new meal entry.
 func LogMeal(db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Get selected meal.
-	meal, err := selectMeal(db)
+	meal, err := selectMeal(tx)
 	if err != nil {
 		return err
 	}
 
 	// Get the foods that make up the meal.
-	mealFoods, err := getMealFoodsWithPref(db, meal.ID)
+	mealFoods, err := getMealFoodsWithPref(tx, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1032,7 +1040,7 @@ func LogMeal(db *sqlx.DB) error {
 		f := getMealFoodPrefUserInput(mealFoods[idx-1].Food.ID, int64(meal.ID))
 
 		// Make database update to meal food preferences.
-		err = updateMealFoodPrefs(db, f)
+		err = updateMealFoodPrefs(tx, f)
 		if err != nil {
 			return err
 		}
@@ -1044,9 +1052,8 @@ func LogMeal(db *sqlx.DB) error {
 
 	// Log selected meal to the meal log database table. Taking into
 	// account food preferences.
-	tx, err := addMealEntry(db, meal, date)
+	err = addMealEntry(tx, meal, date)
 	if err != nil {
-		tx.Rollback()
 		log.Println(err)
 		return err
 	}
@@ -1054,21 +1061,20 @@ func LogMeal(db *sqlx.DB) error {
 	// Bulk insert the foods that make up the meal into the daily_foods table.
 	err = addMealFoodEntries(tx, meal.ID, mealFoods, date)
 	if err != nil {
-		tx.Rollback()
 		log.Println(err)
 		return err
 	}
 
 	fmt.Println("Added meal entry.")
 
-	return nil
+	return tx.Commit()
 }
 
 // selectMeal prints the user's meals, prompts them to select a meal,
 // and returns the selected meal.
-func selectMeal(db *sqlx.DB) (Meal, error) {
+func selectMeal(tx *sqlx.Tx) (Meal, error) {
 	// Get all meals.
-	meals, err := getAllMeals(db)
+	meals, err := getAllMeals(tx)
 	if err != nil {
 		return Meal{}, err
 	}
@@ -1099,7 +1105,7 @@ func selectMeal(db *sqlx.DB) (Meal, error) {
 	// While user reponse is not an integer
 	for {
 		// Get the filtered meals.
-		filteredMeals, err := searchMeals(db, response)
+		filteredMeals, err := searchMeals(tx, response)
 		if err != nil {
 			return Meal{}, err
 		}
@@ -1137,7 +1143,7 @@ func selectMeal(db *sqlx.DB) (Meal, error) {
 
 // searchMeals searches through meals slice and returns meals that
 // contain the search term.
-func searchMeals(db *sqlx.DB, response string) (*[]Meal, error) {
+func searchMeals(tx *sqlx.Tx, response string) (*[]Meal, error) {
 	var meals []Meal
 
 	// Prioritize exact match, then match meals where `meal_name` starts
@@ -1155,7 +1161,7 @@ func searchMeals(db *sqlx.DB, response string) (*[]Meal, error) {
         LIMIT $4`
 
 	// Search for meals in the database
-	err := db.Select(&meals, query, "%"+response+"%", response, response+"%", searchLimit)
+	err := tx.Select(&meals, query, "%"+response+"%", response, response+"%", searchLimit)
 	if err != nil {
 		log.Printf("Search for meals failed: %v\n", err)
 		return nil, err
@@ -1165,11 +1171,11 @@ func searchMeals(db *sqlx.DB, response string) (*[]Meal, error) {
 }
 
 // getMealFoodsWithPref retrieves all the foods that make up a meal.
-func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
+func getMealFoodsWithPref(tx *sqlx.Tx, mealID int) ([]*MealFood, error) {
 	// First, get all the food IDs for the given meal.
 	var foodIDs []int
 	query := `SELECT food_id FROM meal_foods WHERE meal_id = $1`
-	err := db.Select(&foodIDs, query, mealID)
+	err := tx.Select(&foodIDs, query, mealID)
 	if err != nil {
 		return nil, err
 	}
@@ -1177,7 +1183,7 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 	// Now, for each food ID, get the full food details and preferences.
 	var mealFoods []*MealFood
 	for _, foodID := range foodIDs {
-		mf, err := getMealFoodWithPref(db, foodID, int64(mealID))
+		mf, err := getMealFoodWithPref(tx, foodID, int64(mealID))
 		if err != nil {
 			return nil, err
 		}
@@ -1190,11 +1196,11 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 // getMealFoodWithPref retrieves one of the foods for a given meal,
 // along its preferences.
 // Nutrients are for portion size (100 serving unit)
-func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, error) {
+func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, error) {
 	mf := MealFood{}
 
 	// Get the food details
-	err := db.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = ?", foodID)
+	err := tx.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = ?", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
 		return nil, err
@@ -1214,7 +1220,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
     `
 
 	// Execute the SQL query and assign the result to the MealFood struct
-	err = db.Get(&mf, query, mealID, foodID)
+	err = tx.Get(&mf, query, mealID, foodID)
 	if err != nil {
 		log.Println("Failed to select serving size and number of servings.")
 		return nil, err
@@ -1222,14 +1228,14 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 
 	// Execute the SQL query and assign the result to the calories field
 	// in the MealFood struct
-	err = db.Get(&mf.Food.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = tx.Get(&mf.Food.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		log.Println("Failed to select portion calories.")
 		return nil, err
 	}
 
 	// Get the macros for the food
-	mf.Food.FoodMacros, err = getFoodMacros(db, foodID)
+	mf.Food.FoodMacros, err = getFoodMacros(tx, foodID)
 	if err != nil {
 		log.Println("Failed to get food macros.")
 		return nil, err
@@ -1286,29 +1292,23 @@ func promptUserEditDecision() string {
 }
 
 // addMealEntry inserts a meal entry into the database.
-func addMealEntry(db *sqlx.DB, meal Meal, date time.Time) (*sqlx.Tx, error) {
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return nil, err
-	}
-
+func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 	query := `
     INSERT INTO daily_meals (meal_id, date)
     VALUES ($1, $2)
     `
 
-	_, err = tx.Exec(query, meal.ID, date.Format(dateFormat))
+	_, err := tx.Exec(query, meal.ID, date.Format(dateFormat))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// If there was an error executing the query, return the error
 	if err != nil {
-		return nil, fmt.Errorf("addMealEntry: %w", err)
+		return fmt.Errorf("addMealEntry: %w", err)
 	}
-	// If everything went fine, commit the transaction
-	return tx, nil
+
+	return nil
 }
 
 // addMealFoodEntries bulk inserts foods that make up the meal into the database.
@@ -1328,8 +1328,7 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 		}
 	}
 
-	// If everything went fine, commit the transaction
-	return tx.Commit()
+	return nil
 }
 
 // checkInput checks if the user input is positive
