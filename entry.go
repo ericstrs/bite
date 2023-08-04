@@ -1396,14 +1396,13 @@ func getTotalFoodsLogged(tx *sqlx.Tx) (int, error) {
 // getFrequentFoods retrieves most recently logged food entries.
 func getFrequentFoods(tx *sqlx.Tx, limit int) ([]DailyFoodCount, error) {
 	query := `
-        SELECT df.*, f.food_name, f.serving_unit, COUNT(*) as count
+        SELECT df.food_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit, COUNT(*) as count
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         GROUP BY df.food_id, f.food_name, f.serving_unit
         ORDER BY count DESC
         LIMIT $1
     `
-
 	var foods []DailyFoodCount
 	if err := tx.Select(&foods, query, limit); err != nil {
 		return nil, err
