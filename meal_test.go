@@ -271,7 +271,78 @@ func ExampleInsertMeal() {
 	// <nil>
 }
 
-func ExampleUpdateFoodPrefs() {
+func ExampleInsertMealFood() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create meal foods table.
+	db.MustExec(`
+		CREATE TABLE IF NOT EXISTS meals (
+				meal_id INTEGER PRIMARY KEY,
+				meal_name TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS foods (
+			food_id INTEGER PRIMARY KEY,
+			food_name TEXT NOT NULL,
+			serving_size REAL NOT NULL,
+			serving_unit TEXT NOT NULL,
+			household_serving TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS meal_foods (
+			meal_id INTEGER REFERENCES meals(meal_id),
+			food_id INTEGER REFERENCES foods(food_id),
+			PRIMARY KEY (meal_id, food_id)
+		);
+  `)
+
+	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
+	if err != nil {
+		log.Printf("Failed to insert data into meal table: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Milk', 240, 'g', '1 cup')
+	`)
+	if err != nil {
+		log.Printf("Failed to insert data into foods table: %v\n", err)
+		return
+	}
+
+	err = insertMealFood(db, 1, 1)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var mealID float64
+	err = db.Get(&mealID, `SELECT meal_id FROM meal_foods WHERE meal_id = 1 AND food_id = 1`, 1, 1)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	var foodID float64
+	err = db.Get(&foodID, `SELECT food_id FROM meal_foods WHERE meal_id = 1 AND food_id = 1`, 1, 1)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println(mealID)
+	fmt.Println(foodID)
+	fmt.Println(err)
+
+	// Output:
+	// 1
+	// 1
+	// <nil>
+}
+
+func ExampleUpdateMealFoodPrefs() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
 	if err != nil {
@@ -497,4 +568,104 @@ func ExampleDeleteMeal() {
 	// Meal with ID 1 was successfully deleted from table meal_foods.
 	// Meal with ID 1 was successfully deleted from table meals.
 	// Meal with ID 1 was successfully deleted from table meal_food_prefs.
+}
+
+func ExampleDeleteMealFood() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Create the food_nutrients table
+	db.MustExec(`
+      -- foods contains static information about foods.
+      CREATE TABLE IF NOT EXISTS foods (
+        food_id INTEGER PRIMARY KEY,
+        food_name TEXT NOT NULL,
+        serving_size REAL NOT NULL,
+        serving_unit TEXT NOT NULL,
+        household_serving TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS meals (
+       meal_id INTEGER PRIMARY KEY,
+       meal_name TEXT NOT NULL
+      );
+
+      -- user_foods contains the user's food consumption
+      -- logs.
+      CREATE TABLE IF NOT EXISTS daily_foods (
+        id INTEGER PRIMARY KEY,
+        food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+        meal_id INTEGER REFERENCES meals(meal_id),
+        date DATE NOT NULL,
+        serving_size REAL NOT NULL,
+        number_of_servings REAL DEFAULT 1 NOT NULL
+      );
+
+			CREATE TABLE IF NOT EXISTS meal_foods (
+        meal_id INTEGER REFERENCES meals(meal_id),
+        food_id INTEGER REFERENCES foods(food_id)
+      );
+
+			CREATE TABLE IF NOT EXISTS meal_food_prefs (
+        meal_id INTEGER,
+        food_id INTEGER,
+        serving_size REAL,
+        number_of_servings REAL DEFAULT 1 NOT NULL,
+        PRIMARY KEY(meal_id, food_id),
+        FOREIGN KEY(food_id) REFERENCES foods(food_id),
+        FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
+      );
+	`)
+	// Insert into meals
+	db.MustExec(`INSERT INTO meals (meal_name) VALUES
+	('Chicken burrito')
+	`)
+
+	// Insert food
+	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Chicken Breast', 100, 'g', '1/2 piece')
+  `)
+
+	// Insert into meal_foods
+	db.MustExec(`INSERT INTO meal_foods (meal_id, food_id) VALUES
+  (1, 1)
+  `)
+
+	// Insert into meal_food_prefs
+	db.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
+  (1, 1, 1.5, 1)
+  `)
+
+	err = deleteMealFood(db, 1, 1)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// Verify meal food was deleted
+	tables := []string{"meal_foods", "meal_food_prefs"}
+	mealID := 1
+	foodID := 1
+
+	for _, table := range tables {
+		var id float64
+		err = db.Get(&id, fmt.Sprintf("SELECT meal_id FROM %s WHERE meal_id = ? AND food_id = ?", table), mealID, foodID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				fmt.Printf("Meal with ID %d and Food with ID %d was successfully deleted from table %s.\n", mealID, foodID, table)
+			} else {
+				fmt.Printf("An error occurred while checking table %s: %s\n", table, err.Error())
+			}
+		} else {
+			fmt.Printf("Meal with ID %d and Food with ID %d was not deleted from table %s.\n", mealID, foodID, table)
+		}
+	}
+
+	// Output:
+	// Meal with ID 1 and Food with ID 1 was successfully deleted from table meal_foods.
+	// Meal with ID 1 and Food with ID 1 was successfully deleted from table meal_food_prefs.
 }
