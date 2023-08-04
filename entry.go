@@ -54,6 +54,11 @@ type DailyFood struct {
 	FoodName         string    `db:"food_name"`
 }
 
+type DailyFoodCount struct {
+	DailyFood
+	Count int `db:"count"`
+}
+
 // GetAllEntries returns all the user's entries from the database.
 func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	query := `
@@ -1340,6 +1345,71 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 	}
 
 	return nil
+}
+
+// FoodLogSummary fetches and prints a food log summary.
+func FoodLogSummary(db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Get total amonut of foods logged in the database.
+	total, err := getTotalFoodsLogged(tx)
+	fmt.Printf("\nTotal Foods Logged: %d\n", total)
+
+	// Get most frequently consumed foods.
+	foods, err := getFrequentFoods(tx, 10)
+	if err != nil {
+		log.Printf("Failed to get frequent foods: %v\n", err)
+		return err
+	}
+
+	fmt.Println("\nMost Frequently Consumed Foods:")
+
+	// Print most frequent consumed foods.
+	for _, food := range foods {
+		fmt.Printf("- %s: eaten %d times\n", food.FoodName, food.Count)
+	}
+
+	return tx.Commit()
+}
+
+// getTotalFoodsLogged fetches and returns the total amount of foods
+// entries logged in the database.
+func getTotalFoodsLogged(tx *sqlx.Tx) (int, error) {
+	var totalFoodsLogged int
+	query := `
+      SELECT COUNT(*)
+      FROM daily_foods
+    `
+	if err := tx.Get(&totalFoodsLogged, query); err != nil {
+		return 0, err
+	}
+
+	return totalFoodsLogged, nil
+}
+
+// getFrequentFoods retrieves most recently logged food entries.
+func getFrequentFoods(tx *sqlx.Tx, limit int) ([]DailyFoodCount, error) {
+	query := `
+        SELECT df.*, f.food_name, f.serving_unit, COUNT(*) as count
+        FROM daily_foods df
+        INNER JOIN foods f ON df.food_id = f.food_id
+        GROUP BY df.food_id, f.food_name, f.serving_unit
+        ORDER BY count DESC
+        LIMIT $1
+    `
+
+	var foods []DailyFoodCount
+	if err := tx.Select(&foods, query, limit); err != nil {
+		return nil, err
+	}
+
+	return foods, nil
 }
 
 // checkInput checks if the user input is positive
