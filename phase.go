@@ -1536,7 +1536,7 @@ func setEndDate(u *UserInfo) {
 func promptDate(promptStr string) string {
 	reader := bufio.NewReader(os.Stdin)
 	// Prompt user for diet date.
-	fmt.Printf("%s\n", promptStr)
+	fmt.Printf("%s ", promptStr)
 	response, _ := reader.ReadString('\n')
 
 	// Trim leading/trailing white space (including newlines)
