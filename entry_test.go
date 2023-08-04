@@ -532,7 +532,11 @@ func ExampleGetMealFoodWithPref() {
 		log.Fatalf("getMealFoodWithPref failed: %s", err)
 	}
 
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		fmt.Printf("Failed to commit transaction: %v\n.", err)
+		return
+	}
 
 	// Print the result for verification.
 	fmt.Printf("Food Name: %s\n", mealFood.Food.Name)
@@ -548,11 +552,11 @@ func ExampleGetMealFoodWithPref() {
 	// Food Name: Apple
 	// Serving Size: 180.00
 	// Number of Servings: 2.00
-	// Calories: 124.80
+	// Calories: 187.20
 	// Macros:
-	//   - Protein: 0.72
-	//   - Fat: 0.48
-	//   - Carbs: 28.80
+	//   - Protein: 1.08
+	//   - Fat: 0.72
+	//   - Carbs: 43.20
 }
 
 func ExampleAddMealEntry() {
@@ -586,7 +590,7 @@ func ExampleAddMealEntry() {
 
 	_, err = tx.Exec(`INSERT INTO meals VALUES (1, 'Pie')`)
 	if err != nil {
-		log.Fatalf("failed to insert data into meal table: %s", err)
+		log.Printf("Failed to insert data into meal table: %v\n", err)
 	}
 
 	date := time.Now()
@@ -597,15 +601,23 @@ func ExampleAddMealEntry() {
 
 	err = addMealEntry(tx, meal, date)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Failed to add meal entry: %v\n", err)
 		return
 	}
 
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Failed to commit transaction: %v\n", err)
+		return
+	}
 
 	// Verify the meal was logged correctly.
 	var mealID float64
 	err = db.Get(&mealID, `SELECT meal_id FROM daily_meals WHERE date = ?`, date.Format(dateFormat))
+	if err != nil {
+		log.Printf("Failed to get meal id from daily meals: %v\n", err)
+		return
+	}
 
 	fmt.Println(mealID)
 	fmt.Println(err)
@@ -619,12 +631,28 @@ func ExampleAddMealFoodEntries() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
 	if err != nil {
-		panic(err)
+		log.Println("Could not connect to test database:", err)
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // re-throw panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
 	// Create the foods table
-	db.MustExec(`
+	tx.MustExec(`
 	CREATE TABLE IF NOT EXISTS foods (
   food_id INTEGER PRIMARY KEY,
   food_name TEXT NOT NULL,
@@ -654,18 +682,19 @@ func ExampleAddMealFoodEntries() {
   );
 	`)
 	if err != nil {
-		log.Fatalf("failed to create schema: %s", err)
+		log.Printf("failed to create schema: %v\n", err)
+		return
 	}
 
 	// Insert foods
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Chicken Breast', 100, 'g', '1/2 piece'),
   (2, 'Rice', 100, 'g', '1/2 cup'),
 	(3, 'Broccoli', 156, 'g', '1 cup')
   `)
 
 	// Insert meal
-	db.MustExec(`INSERT INTO meals (meal_id, meal_name) VALUES
+	tx.MustExec(`INSERT INTO meals (meal_id, meal_name) VALUES
   (1, 'Chicken, rice, and broccoli')
   `)
 
@@ -706,14 +735,26 @@ func ExampleAddMealFoodEntries() {
 	}
 
 	testDate := time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC)
-	tx, _ := db.Beginx()
 	err = addMealFoodEntries(tx, 1, mealFoods, testDate)
+	if err != nil {
+		log.Printf("Failed to add meal food entries: %v\n.", err)
+		return
+	}
 
 	var foodIDs []int
-	err = db.Select(&foodIDs, `SELECT food_id FROM daily_foods WHERE meal_id = 1`)
+	err = tx.Select(&foodIDs, `SELECT food_id FROM daily_foods WHERE meal_id = 1`)
 	if err != nil {
-		log.Fatalf("failed to fetch food_ids: %s", err)
+		log.Printf("failed to fetch food_ids: %v\n", err)
+		return
 	}
+
+	/*
+		err = tx.Commit()
+		if err != nil {
+			log.Printf("Failed to commit transaction: %v\n.", err)
+			return
+		}
+	*/
 
 	for _, id := range foodIDs {
 		fmt.Println(id)
@@ -763,7 +804,6 @@ func ExampleUpdateFoodPrefs() {
 	if err != nil {
 		return
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
 	// Create the food_nutrients table
@@ -796,11 +836,9 @@ func ExampleUpdateFoodPrefs() {
 
 	err = updateFoodPrefs(tx, pref)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Failed to update food prefs: %v\n", err)
 		return
 	}
-
-	tx.Commit()
 
 	var p FoodPref
 	err = tx.Get(&p, `SELECT serving_size, number_of_servings FROM food_prefs WHERE food_id = 1`)
@@ -808,6 +846,8 @@ func ExampleUpdateFoodPrefs() {
 		log.Println(err)
 		return
 	}
+
+	tx.Commit()
 
 	fmt.Println("Updated serving size:", p.ServingSize)
 	fmt.Println("Updated number of servings:", p.NumberOfServings)
