@@ -956,7 +956,7 @@ func deleteOneFoodEntry(tx *sqlx.Tx, entryID int) error {
 	return nil
 }
 
-// ShowFoodLog prints entire food log.
+// ShowFoodLog fetches and prints entire food log.
 func ShowFoodLog(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
@@ -971,7 +971,16 @@ func ShowFoodLog(db *sqlx.DB) error {
 	if err != nil {
 		return err
 	}
-	printFoodEntries(entries)
+
+	// Print food entries organized by date.
+	var currentDate time.Time
+	for _, entry := range entries {
+		if !entry.Date.Equal(currentDate) {
+			currentDate = entry.Date
+			fmt.Printf("\n%v\n", currentDate.Format(("January 2, 2006")))
+		}
+		fmt.Printf("- %s, Serving size: %.2f %s Num Servings: %.2f\n", entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings)
+	}
 
 	return tx.Commit()
 }
