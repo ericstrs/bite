@@ -20,6 +20,7 @@ import (
 
 const (
 	weightSearchLimit = 10
+	dateFormatTime    = "15:04:05"
 )
 
 var ErrDone = errors.New("done")
@@ -181,7 +182,7 @@ func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 	}
 
 	// Insert the new weight entry into the weight database.
-	_, err = db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), weight)
+	_, err = db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), weight)
 	if err != nil {
 		return err
 	}
@@ -714,6 +715,7 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 
 	// If there was an error executing the query, return the error
 	if err != nil {
+		log.Printf("Failed to update food prefs: %v\n", err)
 		return err
 	}
 
@@ -723,11 +725,11 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 // addFoodEntry inserts a food entry into the database.
 func addFoodEntry(tx *sqlx.Tx, pref *FoodPref, date time.Time) error {
 	query := `
-		INSERT INTO daily_foods	(food_id, date, serving_size, number_of_servings)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO daily_foods	(food_id, date, time, serving_size, number_of_servings)
+		VALUES ($1, $2, $3, $4, $5)
 		`
 
-	_, err := tx.Exec(query, pref.FoodID, date, pref.ServingSize, pref.NumberOfServings)
+	_, err := tx.Exec(query, pref.FoodID, date.Format(dateFormat), date.Format(dateFormatTime), pref.ServingSize, pref.NumberOfServings)
 	// If there was an error executing the query, return the error
 	if err != nil {
 		return err
@@ -1294,11 +1296,11 @@ func promptUserEditDecision() string {
 // addMealEntry inserts a meal entry into the database.
 func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 	query := `
-    INSERT INTO daily_meals (meal_id, date)
-    VALUES ($1, $2)
+    INSERT INTO daily_meals (meal_id, date, time)
+    VALUES ($1, $2, $3)
     `
 
-	_, err := tx.Exec(query, meal.ID, date.Format(dateFormat))
+	_, err := tx.Exec(query, meal.ID, date.Format(dateFormat), date.Format(dateFormatTime))
 	if err != nil {
 		return err
 	}
@@ -1314,7 +1316,7 @@ func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 // addMealFoodEntries bulk inserts foods that make up the meal into the database.
 func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date time.Time) error {
 	// Prepare a statement for bulk insert
-	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES (?, ?, ?, ?, ?)")
+	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings) VALUES (?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -1322,7 +1324,7 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 
 	// Iterate over each food and insert into the database
 	for _, mf := range mealFoods {
-		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), mf.ServingSize, mf.NumberOfServings)
+		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings)
 		if err != nil {
 			return err
 		}

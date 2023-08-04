@@ -103,40 +103,43 @@ func ExampleGetAllEntries() {
 	food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_ID INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
+	time TIME NOT NULL,
   number_of_servings REAL DEFAULT 1 NOT NULL
 	)`)
 
 	// Note: 5th day user did not log any foods.
-	db.MustExec(`INSERT INTO daily_foods (food_id, date, number_of_servings) VALUES
-	(1, '2023-01-01', 1),
-	(2, '2023-01-01', 1),
-	(2, '2023-01-02', 1),
-	(4, '2023-01-02', 1),
-	(5, '2023-01-03', 1),
-	(1, '2023-01-03', 1),
-	(3, '2023-01-04', 1),
-	(4, '2023-01-04', 1)
+	db.MustExec(`INSERT INTO daily_foods (food_id, date, time, number_of_servings) VALUES
+(1, '2023-01-01', '00:00:00', 1),
+	(2, '2023-01-01', '00:00:00', 1),
+	(2, '2023-01-02','00:00:00',  1),
+	(4, '2023-01-02','00:00:00',  1),
+	(5, '2023-01-03', '00:00:00', 1),
+	(1, '2023-01-03', '00:00:00', 1),
+	(3, '2023-01-04', '00:00:00', 1),
+	(4, '2023-01-04', '00:00:00', 1)
 	`)
 
 	// Create the daily_weights table
 	db.MustExec(`CREATE TABLE daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
+	time TIME NOT NULL,
   weight REAL NOT NULL
 	)`)
 
-	db.MustExec(`INSERT INTO daily_weights (date, weight) VALUES
-	('2023-01-01', 180),
-	('2023-01-02', 181),
-	('2023-01-03', 182),
-	('2023-01-04', 183),
-	('2023-01-05', 184)
+	db.MustExec(`INSERT INTO daily_weights (date, time, weight) VALUES
+	('2023-01-01', "00:00:00", 180),
+	('2023-01-02', "00:00:00", 181),
+	('2023-01-03', "00:00:00", 182),
+	('2023-01-04', "00:00:00", 183),
+	('2023-01-05', "00:00:00", 184)
 	`)
 
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_meals (
   id INTEGER PRIMARY KEY,
   meal_id INTEGER REFERENCES meals(meal_id),
-  date DATE NOT NULL
+  date DATE NOT NULL,
+	time TIME NOT NULL
 	)`)
 
 	db.MustExec(`CREATE TABLE IF NOT EXISTS food_prefs (
@@ -194,6 +197,7 @@ func ExampleAddWeightEntry() {
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
+	time TIME NOT NULL,
   weight REAL NOT NULL
 )`)
 
@@ -230,14 +234,15 @@ func ExampleAddWeightEntry_exists() {
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
-  weight REAL NOT NULL
+  weight REAL NOT NULL,
+	time TIME NOT NULL
 )`)
 
 	testWeight := 220.2
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
 	// Attempt to insert another weight for same date.
 	err = addWeightEntry(db, date, testWeight)
@@ -258,14 +263,15 @@ func ExampleCheckWeightExists() {
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
-  weight REAL NOT NULL
+  weight REAL NOT NULL,
+	time TIME NOT NULL
 )`)
 
 	testWeight := 220.2
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
 	exists, err := checkWeightExists(db, date)
 	fmt.Println(exists)
@@ -287,6 +293,7 @@ func ExampleUpdateWeightEntry() {
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
+	time TIME NOT NULL,
   weight REAL NOT NULL
 )`)
 
@@ -294,7 +301,7 @@ func ExampleUpdateWeightEntry() {
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
 	newWeight := 225.2
 
@@ -327,14 +334,15 @@ func ExampleDeleteOneWeightEntry() {
 	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
-  weight REAL NOT NULL
+  weight REAL NOT NULL,
+	time TIME NOT NULL
 )`)
 
 	testWeight := 220.2
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, weight) VALUES (?, ?)`, date.Format(dateFormat), testWeight)
+	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
 	err = deleteOneWeightEntry(db, 1)
 	if err != nil {
@@ -389,13 +397,14 @@ func ExampleUpdateFoodEntry() {
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_id INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
+	time TIME NOT NULL,
   serving_size REAL NOT NULL,
   number_of_servings REAL DEFAULT 1 NOT NULL
 )`)
 
 	// Insert daily food entry.
-	tx.MustExec(`INSERT INTO daily_foods (food_id, date, serving_size) VALUES
-	(1, "2023-01-01", 100)
+	tx.MustExec(`INSERT INTO daily_foods (food_id, date, time, serving_size) VALUES
+(1, "2023-01-01", "00:00:00", 100)
 	`)
 
 	pref := &FoodPref{
@@ -489,6 +498,7 @@ func ExampleGetMealFoodWithPref() {
   		food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   		meal_id INTEGER REFERENCES meals(meal_id),
   		date DATE NOT NULL,
+			time TIME NOT NULL,
   		serving_size REAL NOT NULL,
   		number_of_servings REAL DEFAULT 1 NOT NULL
 		);
@@ -584,7 +594,8 @@ func ExampleAddMealEntry() {
 		CREATE TABLE IF NOT EXISTS daily_meals (
   		id INTEGER PRIMARY KEY,
   		meal_id INTEGER REFERENCES meals(meal_id),
-  		date DATE NOT NULL
+  		date DATE NOT NULL,
+			time TIME NOT NULL
 		);
 	`)
 
@@ -666,6 +677,7 @@ func ExampleAddMealFoodEntries() {
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_id INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
+	time TIME NOT NULL,
   serving_size REAL NOT NULL,
   number_of_servings REAL DEFAULT 1 NOT NULL
 	);
@@ -678,7 +690,8 @@ func ExampleAddMealFoodEntries() {
   CREATE TABLE IF NOT EXISTS daily_meals (
   id INTEGER PRIMARY KEY,
   meal_id INTEGER REFERENCES meals(meal_id),
-  date DATE NOT NULL
+  date DATE NOT NULL,
+	time TIME NOT NULL
   );
 	`)
 	if err != nil {
