@@ -872,6 +872,131 @@ func ExampleUpdateFoodPrefs() {
 	// <nil>
 }
 
+func ExampleGetTotalFoodsLogged() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Create the daily_foods table
+	tx.MustExec(`CREATE TABLE daily_foods (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  meal_ID INTEGER REFERENCES meals(meal_id),
+  date DATE NOT NULL,
+  time TIME NOT NULL,
+  number_of_servings REAL DEFAULT 1 NOT NULL
+  )`)
+
+	// Insert data
+	tx.MustExec(`INSERT INTO daily_foods (food_id, date, time, number_of_servings) VALUES
+	(1, '2023-01-01', '00:00:00', 1),
+	(2, '2023-01-01', '00:00:00', 1),
+	(2, '2023-01-02','00:00:00',  1),
+	(4, '2023-01-02','00:00:00',  1),
+	(5, '2023-01-03', '00:00:00', 1),
+	(1, '2023-01-03', '00:00:00', 1),
+	(3, '2023-01-04', '00:00:00', 1),
+	(4, '2023-01-04', '00:00:00', 1)
+	`)
+
+	total, err := getTotalFoodsLogged(tx)
+	if err != nil {
+		log.Printf("ExampleGetTotalFoodsLogged failed to get total foods logged: %v\n", err)
+		return
+	}
+
+	fmt.Println(total)
+
+	tx.Commit()
+
+	// Output:
+	// 8
+}
+
+func ExampleGetFrequentFoods() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Create the foods table
+	tx.MustExec(`
+  CREATE TABLE IF NOT EXISTS foods (
+  food_id INTEGER PRIMARY KEY,
+  food_name TEXT NOT NULL,
+  serving_size REAL NOT NULL,
+  serving_unit TEXT NOT NULL,
+  household_serving TEXT NOT NULL
+  );
+
+  CREATE TABLE daily_foods (
+  id INTEGER PRIMARY KEY,
+  food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  meal_id INTEGER REFERENCES meals(meal_id),
+  date DATE NOT NULL,
+  time TIME NOT NULL,
+  serving_size REAL NOT NULL,
+  number_of_servings REAL DEFAULT 1 NOT NULL
+  );
+	`)
+
+	// Insert foods
+	tx.MustExec(`
+		INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  	(1, 'Chicken', 100, 'g', '1/2 piece'),
+  	(2, 'Beef', 100, 'g', '1/2 cup'),
+  	(3, 'Pork', 100, 'g', '1 cup')
+  `)
+
+	// Insert daily foods
+	tx.MustExec(`
+		INSERT INTO daily_foods (food_id, date, time ,serving_size) VALUES
+		(1, '2023-07-10', '00:00:00', 100),
+		(1, '2023-07-10','00:00:00',  100),
+		(1, '2023-07-10', '00:00:00', 100),
+		(2, '2023-07-10', '00:00:00', 200),
+		(2, '2023-07-11', '00:00:00', 200),
+		(3, '2023-07-12', '00:00:00', 300);
+	`)
+
+	// Call the function to test
+	foods, err := getFrequentFoods(tx, 2)
+	if err != nil {
+		log.Printf("Failed to get frequent foods: %v\n", err)
+		return
+	}
+
+	// Print the results
+	for _, food := range foods {
+		fmt.Printf("%s: %d times\n", food.FoodName, food.Count)
+	}
+
+	// Output:
+	// Chicken: 3 times
+	// Beef: 2 times
+}
+
 /*
 func ExampleGetValidLogIndices() {
   u := UserInfo{}
