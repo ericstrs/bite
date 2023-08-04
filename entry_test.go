@@ -361,8 +361,16 @@ func ExampleUpdateFoodEntry() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create the foods table
-	db.MustExec(` CREATE TABLE IF NOT EXISTS foods (
+	tx.MustExec(` CREATE TABLE IF NOT EXISTS foods (
   food_id INTEGER PRIMARY KEY,
   food_name TEXT NOT NULL,
   serving_size REAL NOT NULL,
@@ -371,12 +379,12 @@ func ExampleUpdateFoodEntry() {
 	)`)
 
 	// Insert foods
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
 	(1, 'Chicken Breast', 100, 'g', '1/2 piece')
 	`)
 
 	// Create daily foods table
-	db.MustExec(`CREATE TABLE daily_foods (
+	tx.MustExec(`CREATE TABLE daily_foods (
   id INTEGER PRIMARY KEY,
   food_id INTEGER REFERENCES foods(food_id) NOT NULL,
   meal_id INTEGER REFERENCES meals(meal_id),
@@ -386,7 +394,7 @@ func ExampleUpdateFoodEntry() {
 )`)
 
 	// Insert daily food entry.
-	db.MustExec(`INSERT INTO daily_foods (food_id, date, serving_size) VALUES
+	tx.MustExec(`INSERT INTO daily_foods (food_id, date, serving_size) VALUES
 	(1, "2023-01-01", 100)
 	`)
 
@@ -396,19 +404,13 @@ func ExampleUpdateFoodEntry() {
 		NumberOfServings: 2,
 	}
 
-	// Start a new transaction.
-	tx, err := db.Beginx()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer tx.Rollback()
-
 	err = updateFoodEntry(tx, 1, *pref)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
+	tx.Commit()
 
 	// Verify the food entry was updated
 	var numServings float64
@@ -430,8 +432,16 @@ func ExampleGetMealFoodWithPref() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create tables.
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
 		CREATE TABLE IF NOT EXISTS foods (
 			food_id INTEGER PRIMARY KEY,
 			food_name TEXT NOT NULL,
@@ -473,13 +483,22 @@ func ExampleGetMealFoodWithPref() {
 			nutrient_name TEXT NOT NULL,
 			unit_name TEXT NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS daily_foods (
+  		id INTEGER PRIMARY KEY,
+  		food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+  		meal_id INTEGER REFERENCES meals(meal_id),
+  		date DATE NOT NULL,
+  		serving_size REAL NOT NULL,
+  		number_of_servings REAL DEFAULT 1 NOT NULL
+		);
   `)
 	if err != nil {
 		log.Fatalf("failed to create schema: %s", err)
 	}
 
 	// Insert test data.
-	_, err = db.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+	_, err = tx.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
   (1, 'Protein', 'g'),
   (2, 'Total lipid (fat)', 'g'),
   (3, 'Carbohydrate, by difference', 'g'),
@@ -488,7 +507,7 @@ func ExampleGetMealFoodWithPref() {
 		log.Fatalf("failed to insert data into nutrients: %s", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
   INSERT INTO foods VALUES (1, 'Apple', 150, 'g', '1 medium');
   INSERT INTO food_prefs VALUES (1, 160, 1);
   INSERT INTO meal_food_prefs VALUES (1, 1, 180, 2);
@@ -497,7 +516,7 @@ func ExampleGetMealFoodWithPref() {
 		log.Fatalf("failed to insert data into foods, food_prefs, meal_food_prefs: %s", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
   INSERT INTO food_nutrients VALUES (1, 1, 1, 0.3, 71);  -- 0.3g Protein
   INSERT INTO food_nutrients VALUES (2, 1, 2, 0.2, 71);  -- 0.2g Fat
   INSERT INTO food_nutrients VALUES (3, 1, 3, 12, 71);   -- 12g Carbohydrates
@@ -508,10 +527,12 @@ func ExampleGetMealFoodWithPref() {
 	}
 
 	// Test getMealFoodWithPref.
-	mealFood, err := getMealFoodWithPref(db, 1, 1)
+	mealFood, err := getMealFoodWithPref(tx, 1, 1)
 	if err != nil {
 		log.Fatalf("getMealFoodWithPref failed: %s", err)
 	}
+
+	tx.Commit()
 
 	// Print the result for verification.
 	fmt.Printf("Food Name: %s\n", mealFood.Food.Name)
@@ -542,7 +563,15 @@ func ExampleAddMealEntry() {
 	}
 	defer db.Close()
 
-	db.MustExec(`
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`
 		CREATE TABLE IF NOT EXISTS meals (
 				meal_id INTEGER PRIMARY KEY,
 				meal_name TEXT NOT NULL
@@ -555,7 +584,7 @@ func ExampleAddMealEntry() {
 		);
 	`)
 
-	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Pie')`)
+	_, err = tx.Exec(`INSERT INTO meals VALUES (1, 'Pie')`)
 	if err != nil {
 		log.Fatalf("failed to insert data into meal table: %s", err)
 	}
@@ -566,11 +595,12 @@ func ExampleAddMealEntry() {
 		Name: "Pie",
 	}
 
-	tx, err := addMealEntry(db, meal, date)
+	err = addMealEntry(tx, meal, date)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
+
 	tx.Commit()
 
 	// Verify the meal was logged correctly.
@@ -728,8 +758,16 @@ func ExampleUpdateFoodPrefs() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create the food_nutrients table
-	db.MustExec(`
+	tx.MustExec(`
       CREATE TABLE IF NOT EXISTS foods (
         food_id INTEGER PRIMARY KEY,
         food_name TEXT NOT NULL,
@@ -747,7 +785,7 @@ func ExampleUpdateFoodPrefs() {
 	`)
 
 	// Insert food
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Chicken Breast', 100, 'g', '1/2 piece')
   `)
 
@@ -756,14 +794,16 @@ func ExampleUpdateFoodPrefs() {
 	pref.ServingSize = 300
 	pref.NumberOfServings = 1.2
 
-	err = updateFoodPrefs(db, pref)
+	err = updateFoodPrefs(tx, pref)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
+	tx.Commit()
+
 	var p FoodPref
-	err = db.Get(&p, `SELECT serving_size, number_of_servings FROM food_prefs WHERE food_id = 1`)
+	err = tx.Get(&p, `SELECT serving_size, number_of_servings FROM food_prefs WHERE food_id = 1`)
 	if err != nil {
 		log.Println(err)
 		return

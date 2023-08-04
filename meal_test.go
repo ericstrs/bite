@@ -101,8 +101,16 @@ func ExampleDeleteFood() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create the food_nutrients table
-	db.MustExec(`
+	tx.MustExec(`
 			-- foods contains static information about foods.
 			CREATE TABLE IF NOT EXISTS foods (
 				food_id INTEGER PRIMARY KEY,
@@ -175,41 +183,43 @@ func ExampleDeleteFood() {
   `)
 
 	// Insert food
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Chicken Breast', 100, 'g', '1/2 piece')
 	`)
 
 	// Then, insert a nutrient
-	db.MustExec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+	tx.MustExec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
 	(1003, 'Protein', 'g')
 	`)
 
 	// Insert into daily_foods
-	db.MustExec(`INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES
 	(1, 1, '2023-07-09', 100, 1)
 	`)
 
 	// Insert into meal_foods
-	db.MustExec(`INSERT INTO meal_foods (meal_id, food_id, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO meal_foods (meal_id, food_id, number_of_servings) VALUES
 	(1, 1, 1)
 	`)
 
 	// Insert into food_nutrients
-	db.MustExec(`INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES
+	tx.MustExec(`INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES
 	(1, 1003, 50, 71)
 	`)
 
 	// Insert into food_prefs
-	db.MustExec(`INSERT INTO food_prefs (food_id, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO food_prefs (food_id, serving_size, number_of_servings) VALUES
 	(1, 100, 1)
 	`)
 
 	// Insert into meal_food_prefs
-	db.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
 	(1, 1, 100, 1)
 	`)
 
-	err = deleteFood(db, 1)
+	err = deleteFood(tx, 1)
+
+	tx.Commit()
 
 	// Verify food was deleted
 	tables := []string{"daily_foods", "meal_foods", "food_nutrients", "food_prefs", "meal_food_prefs"}
@@ -245,18 +255,28 @@ func ExampleInsertMeal() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create meals table.
-	db.MustExec(`
+	tx.MustExec(`
 		CREATE TABLE IF NOT EXISTS meals (
 				meal_id INTEGER PRIMARY KEY,
 				meal_name TEXT NOT NULL
 		);
 	`)
 
-	id, err := insertMeal(db, "Cereal")
+	id, err := insertMeal(tx, "Cereal")
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	tx.Commit()
 
 	var mealName string
 	err = db.Get(&mealName, `SELECT meal_name FROM meals WHERE meal_id = $1`, id)
@@ -279,8 +299,16 @@ func ExampleInsertMealFood() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create meal foods table.
-	db.MustExec(`
+	tx.MustExec(`
 		CREATE TABLE IF NOT EXISTS meals (
 				meal_id INTEGER PRIMARY KEY,
 				meal_name TEXT NOT NULL
@@ -301,13 +329,13 @@ func ExampleInsertMealFood() {
 		);
   `)
 
-	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
+	_, err = tx.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
 	if err != nil {
 		log.Printf("Failed to insert data into meal table: %v\n", err)
 		return
 	}
 
-	_, err = db.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	_, err = tx.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Milk', 240, 'g', '1 cup')
 	`)
 	if err != nil {
@@ -315,10 +343,12 @@ func ExampleInsertMealFood() {
 		return
 	}
 
-	err = insertMealFood(db, 1, 1)
+	err = insertMealFood(tx, 1, 1)
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	tx.Commit()
 
 	var mealID float64
 	err = db.Get(&mealID, `SELECT meal_id FROM meal_foods WHERE meal_id = 1 AND food_id = 1`, 1, 1)
@@ -350,7 +380,15 @@ func ExampleUpdateMealFoodPrefs() {
 	}
 	defer db.Close()
 
-	db.MustExec(`
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`
 		CREATE TABLE IF NOT EXISTS foods (
 			food_id INTEGER PRIMARY KEY,
 			food_name TEXT NOT NULL,
@@ -375,13 +413,13 @@ func ExampleUpdateMealFoodPrefs() {
 		);
 	`)
 
-	_, err = db.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
+	_, err = tx.Exec(`INSERT INTO meals VALUES (1, 'Cereal')`)
 	if err != nil {
 		log.Printf("Failed to insert data into meal table: %v\n", err)
 		return
 	}
 
-	_, err = db.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	_, err = tx.Exec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Milk', 240, 'g', '1 cup')
 	`)
 	if err != nil {
@@ -395,10 +433,12 @@ func ExampleUpdateMealFoodPrefs() {
 	pref.ServingSize = 300
 	pref.NumberOfServings = 1
 
-	err = updateMealFoodPrefs(db, pref)
+	err = updateMealFoodPrefs(tx, pref)
 	if err != nil {
 		log.Printf("Failed to updated meal food prefs: %v\n", err)
 	}
+
+	tx.Commit()
 
 	// Ensure serving size food preference was updated.
 	var servingSize float64
@@ -423,8 +463,16 @@ func ExampleDeleteMeal() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create the food_nutrients table
-	db.MustExec(`
+	tx.MustExec(`
 			-- foods contains static information about foods.
 			CREATE TABLE IF NOT EXISTS foods (
 				food_id INTEGER PRIMARY KEY,
@@ -500,50 +548,52 @@ func ExampleDeleteMeal() {
 			);
   `)
 	// Insert food
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Chicken Breast', 100, 'g', '1/2 piece')
   `)
 
 	// Then, insert a nutrient
-	db.MustExec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+	tx.MustExec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
   (1003, 'Protein', 'g')
   `)
 
 	// Insert into meals
-	db.MustExec(`INSERT INTO meals (meal_name) VALUES
+	tx.MustExec(`INSERT INTO meals (meal_name) VALUES
 	('Chicken burrito')
 	`)
 
 	// Insert into daily_meals
-	db.MustExec(`INSERT INTO daily_meals (meal_id, date) VALUES
+	tx.MustExec(`INSERT INTO daily_meals (meal_id, date) VALUES
   (1, '2023-07-09')
   `)
 
 	// Insert into daily_foods
-	db.MustExec(`INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO daily_foods (food_id, meal_id, date, serving_size, number_of_servings) VALUES
   (1, 1, '2023-07-09', 100, 1)
   `)
 
 	// Insert into meal_foods
-	db.MustExec(`INSERT INTO meal_foods (meal_id, food_id, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO meal_foods (meal_id, food_id, number_of_servings) VALUES
   (1, 1, 1)
   `)
 
 	// Insert into food_nutrients
-	db.MustExec(`INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES
+	tx.MustExec(`INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES
   (1, 1003, 50, 71)
   `)
 
 	// Insert into meal_food_prefs
-	db.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
   (1, 1, 100, 1)
   `)
 
-	err = deleteMeal(db, 1)
+	err = deleteMeal(tx, 1)
 	if err != nil {
 		log.Printf("Failed to delete meal: %v\n", err)
 		return
 	}
+
+	tx.Commit()
 
 	// Verify food was deleted
 	tables := []string{"daily_foods", "meal_foods", "meals", "meal_food_prefs"}
@@ -578,8 +628,16 @@ func ExampleDeleteMealFood() {
 	}
 	defer db.Close()
 
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Create the food_nutrients table
-	db.MustExec(`
+	tx.MustExec(`
       -- foods contains static information about foods.
       CREATE TABLE IF NOT EXISTS foods (
         food_id INTEGER PRIMARY KEY,
@@ -621,30 +679,32 @@ func ExampleDeleteMealFood() {
       );
 	`)
 	// Insert into meals
-	db.MustExec(`INSERT INTO meals (meal_name) VALUES
+	tx.MustExec(`INSERT INTO meals (meal_name) VALUES
 	('Chicken burrito')
 	`)
 
 	// Insert food
-	db.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
   (1, 'Chicken Breast', 100, 'g', '1/2 piece')
   `)
 
 	// Insert into meal_foods
-	db.MustExec(`INSERT INTO meal_foods (meal_id, food_id) VALUES
+	tx.MustExec(`INSERT INTO meal_foods (meal_id, food_id) VALUES
   (1, 1)
   `)
 
 	// Insert into meal_food_prefs
-	db.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
+	tx.MustExec(`INSERT INTO meal_food_prefs (meal_id, food_id, serving_size, number_of_servings) VALUES
   (1, 1, 1.5, 1)
   `)
 
-	err = deleteMealFood(db, 1, 1)
+	err = deleteMealFood(tx, 1, 1)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
+	tx.Commit()
 
 	// Verify meal food was deleted
 	tables := []string{"meal_foods", "meal_food_prefs"}
