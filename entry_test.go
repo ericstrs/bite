@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/rocketlaunchr/dataframe-go"
 )
 
 func ExampleGetAllEntries() {
@@ -781,27 +780,58 @@ func ExampleAddMealFoodEntries() {
 	// <nil>
 }
 
-func ExampleSubset() {
-	s1 := dataframe.NewSeriesString("weight", nil, "170", "170", "170", "170", "170", "170", "170", "170")
-	s2 := dataframe.NewSeriesString("calories", nil, "2400", "2400", "2400", "2400", "2400", "2400", "2400", "2400")
-	s3 := dataframe.NewSeriesString("date", nil, "2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04", "2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08")
-	df := dataframe.NewDataFrame(s1, s2, s3)
+func ExampleGetValidLog() {
+	entries := &[]Entry{
+		{
+			UserWeight: 70.5,
+			UserCals:   2000,
+			Date:       time.Date(2023, 1, 2, 0, 0, 0, 0, time.UTC),
+			Protein:    150, // Assuming 30% of calories from protein for this entry
+			Carbs:      200, // Assuming 40% of calories from carbs for this entry
+			Fat:        67,  // Assuming 30% of calories from fat for this entry
+		},
+		{
+			UserWeight: 70.5,
+			UserCals:   2000,
+			Date:       time.Date(2023, 1, 3, 0, 0, 0, 0, time.UTC),
+			Protein:    150, // Assuming 30% of calories from protein for this entry
+			Carbs:      200, // Assuming 40% of calories from carbs for this entry
+			Fat:        67,  // Assuming 30% of calories from fat for this entry
+		},
+		{
+			UserWeight: 70.1,
+			UserCals:   1900,
+			Date:       time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC),
+			Protein:    142.5, // Assuming 30% of calories from protein for this entry
+			Carbs:      190,   // Assuming 40% of calories from carbs for this entry
+			Fat:        63.3,  // Assuming 30% of calories from fat for this entry
+		},
+		{
+			UserWeight: 69.8,
+			UserCals:   1850,
+			Date:       time.Date(2023, 1, 7, 0, 0, 0, 0, time.UTC),
+			Protein:    138.75, // Assuming 30% of calories from protein for this entry
+			Carbs:      185,    // Assuming 40% of calories from carbs for this entry
+			Fat:        61.6,   // Assuming 30% of calories from fat for this entry
+		},
+	}
 
-	indices := []int{0, 2, 4} // indices we're interested in
+	today := time.Now()
+	u := UserInfo{}
+	u.Phase.StartDate = (*entries)[1].Date
+	u.Phase.EndDate = today.AddDate(0, 0, 7)
 
-	s := Subset(df, indices)
-	fmt.Println(s)
+	subset := GetValidLog(&u, entries)
+	fmt.Println("Weight Calories Date")
+	for _, entry := range *subset {
+		fmt.Println(entry.UserWeight, entry.UserCals, entry.Date)
+	}
 
 	// Output:
-	// +-----+--------+----------+------------+
-	// |     | WEIGHT | CALORIES |    DATE    |
-	// +-----+--------+----------+------------+
-	// | 0:  |  170   |   2400   | 2023-01-01 |
-	// | 1:  |  170   |   2400   | 2023-01-03 |
-	// | 2:  |  170   |   2400   | 2023-01-05 |
-	// +-----+--------+----------+------------+
-	// | 3X3 | STRING |  STRING  |   STRING   |
-	// +-----+--------+----------+------------+
+	// Weight Calories Date
+	// 70.5 2000 2023-01-03 00:00:00 +0000 UTC
+	// 70.1 1900 2023-01-05 00:00:00 +0000 UTC
+	// 69.8 1850 2023-01-07 00:00:00 +0000 UTC
 }
 
 func ExampleUpdateFoodPrefs() {
