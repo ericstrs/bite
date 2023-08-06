@@ -35,10 +35,6 @@ type Food struct {
 	FoodMacros       *FoodMacros
 }
 
-type Queryer interface {
-	QueryRow(query string, args ...interface{}) *sqlx.Row
-}
-
 // MealFood extends Food with additional fields to represent a food
 // as part of a meal.
 type MealFood struct {
