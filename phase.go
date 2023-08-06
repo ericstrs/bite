@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rocketlaunchr/dataframe-go"
 	"gopkg.in/yaml.v2"
 )
 
@@ -125,9 +124,9 @@ func generateConfig() (*UserInfo, error) {
 // Current solution to defining a week is continually adding 7 days to
 // the start date. Weeks are only considered that contain at least two
 // two entries for a given week.
-func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
+func CheckProgress(u *UserInfo, entries *[]Entry) error {
 	// Make a map to track the numbers of entries in each week.
-	entryCountPerWeek, err := countEntriesPerWeek(u, logs)
+	entryCountPerWeek, err := countEntriesPerWeek(u, entries)
 	if err != nil {
 		return err
 	}
@@ -152,7 +151,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 			return err
 		}
 
-		status, total, err = checkCutLoss(u, logs) // Ensure weekly weight loss.
+		status, total, err = checkCutLoss(u, entries) // Ensure weekly weight loss.
 		if err != nil {
 			return err
 		}
@@ -167,7 +166,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 		case withinLossRange: // Do nothing
 		}
 	case "maintain":
-		status, total, err := checkMaintenance(u, logs) // Ensure maintenance.
+		status, total, err := checkMaintenance(u, entries) // Ensure maintenance.
 		if err != nil {
 			return err
 		}
@@ -190,7 +189,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 			return err
 		}
 
-		status, total, err = checkBulkGain(u, logs) // Ensure weekly weight gain.
+		status, total, err = checkBulkGain(u, entries) // Ensure weekly weight gain.
 		if err != nil {
 			return err
 		}
@@ -211,7 +210,7 @@ func CheckProgress(u *UserInfo, logs *dataframe.DataFrame) error {
 
 // countEntriesPerWeek returns a map to tracker the number of entires in
 // each weeks of a diet phase.
-func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, error) {
+func countEntriesPerWeek(u *UserInfo, entries *[]Entry) (*map[int]int, error) {
 	entryCountPerWeek := make(map[int]int)
 	weekNumber := 0
 
@@ -220,7 +219,7 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 	firstSunday := firstDay.AddDate(0, 0, (int)(7-firstDay.Weekday())%7)
 
 	// Count entries in the first (partial) week
-	entryCount, err := countEntriesInWeek(logs, firstDay, firstSunday)
+	entryCount, err := countEntriesInWeek(entries, firstDay, firstSunday)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +233,7 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 		weekEnd := date.AddDate(0, 0, 6)
 
 		// Count the number of entries within the current week.
-		entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+		entryCount, err := countEntriesInWeek(entries, weekStart, weekEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -245,12 +244,12 @@ func countEntriesPerWeek(u *UserInfo, logs *dataframe.DataFrame) (*map[int]int, 
 }
 
 // countEntriesInWeek finds the number of entires within a given week.
-func countEntriesInWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time) (int, error) {
+func countEntriesInWeek(entries *[]Entry, weekStart, weekEnd time.Time) (int, error) {
 	count := 0
 	// Starting from the start date, iterate over the days of the week,
 	// and count the number of logged days.
 	for i := weekStart; i.Before(weekEnd) || isSameDay(i, weekEnd); i = i.AddDate(0, 0, 1) {
-		idx, err := findEntryIdx(logs, i)
+		idx, err := findEntryIdx(entries, i)
 		if err != nil {
 			return -1, err
 		}
@@ -351,7 +350,7 @@ func getCutAction() string {
 
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
-func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, float64, error) {
+func checkCutLoss(u *UserInfo, entries *[]Entry) (WeightLossStatus, float64, error) {
 	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
 	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
 	totalLossUnderGoal := 0.0
@@ -369,7 +368,7 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -411,21 +410,21 @@ func checkCutLoss(u *UserInfo, logs *dataframe.DataFrame) (WeightLossStatus, flo
 // validWeek determines if a given week fits the definition of a
 // week, retrives total change in weight, and array of calories for
 // the given week.
-func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
+func validWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
 	// Does this week contain has at least `minEntriesPerWeek` entries?
-	entryCount, err := countEntriesInWeek(logs, weekStart, weekEnd)
+	entryCount, err := countEntriesInWeek(entries, weekStart, weekEnd)
 	if err != nil || entryCount < minEntriesPerWeek {
 		return false, 0, nil, err
 	}
 
 	// Does `weekStart` fall within the diet phase?
-	totalWeekWeightChange, valid, err := totalWeightChangeWeek(logs, weekStart, weekEnd, u)
+	totalWeekWeightChange, valid, err := totalWeightChangeWeek(entries, weekStart, weekEnd, u)
 	if err != nil || !valid {
 		return false, 0, nil, err
 	}
 
 	// Get array of calories for given week.
-	dailyCalories, err := getCalsWeek(logs, weekStart, weekEnd)
+	dailyCalories, err := getCalsWeek(entries, weekStart, weekEnd)
 	if err != nil {
 		log.Println(err)
 		return false, 0, nil, err
@@ -457,12 +456,12 @@ func validWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserI
 //
 // Assumptions:
 // * Given week has at least `minEntriesPerWeek` entries.
-func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]float64, error) {
+func getCalsWeek(entries *[]Entry, weekStart, WeekEnd time.Time) ([]float64, error) {
 	var calsWeek []float64
 
 	// Get the dataframe index of the entry with the start date of the
 	// diet.
-	startIdx, err := findEntryIdx(logs, weekStart)
+	startIdx, err := findEntryIdx(entries, weekStart)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +469,7 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 		return nil, fmt.Errorf("ERROR: No matching entry for date %s\n", weekStart)
 	}
 
-	endIdx := min(startIdx+7, logs.NRows())
+	endIdx := min(startIdx+7, len(*entries))
 
 	// If there were less than `minEntriesPerWeek` entries found in this
 	// week, then return early.
@@ -481,13 +480,16 @@ func getCalsWeek(logs *dataframe.DataFrame, weekStart, WeekEnd time.Time) ([]flo
 
 	// Iterate over each day of the week starting from startIdx.
 	for i := startIdx; i < endIdx; i++ {
-		// Get entry date.
-		c := logs.Series[calsCol].Value(i).(string)
-		cal, err := strconv.ParseFloat(c, 64)
-		if err != nil {
-			log.Printf("ERROR: %v\n", err)
-			return nil, err
-		}
+		// Get entry calories.
+		cal := (*entries)[i].UserCals
+		/*
+			c := logs.Series[calsCol].Value(i).(string)
+			cal, err := strconv.ParseFloat(c, 64)
+			if err != nil {
+				log.Printf("ERROR: %v\n", err)
+				return nil, err
+			}
+		*/
 		calsWeek = append(calsWeek, cal) // Append recorded daily calorie.
 	}
 
@@ -838,7 +840,7 @@ func validateNextAction(a string) error {
 }
 
 // checkMaintenance ensures user is maintaining the same weight.
-func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenanceStatus, float64, error) {
+func checkMaintenance(u *UserInfo, entries *[]Entry) (WeightMaintenanceStatus, float64, error) {
 	weeksGained := 0 // Consecutive weeks where the user gained too much weight.
 	weeksLost := 0   // Consecutive weeks where the user lost too much weight.
 	totalGain := 0.0
@@ -856,7 +858,7 @@ func checkMaintenance(u *UserInfo, logs *dataframe.DataFrame) (WeightMaintenance
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -924,7 +926,7 @@ func metWeeklyGoalMainenance(u *UserInfo, totalWeekWeightChange float64) WeightM
 
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
-func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, float64, error) {
+func checkBulkGain(u *UserInfo, entries *[]Entry) (WeightGainStatus, float64, error) {
 	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
 	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
 	totalGainUnderGoal := 0.0
@@ -942,7 +944,7 @@ func checkBulkGain(u *UserInfo, logs *dataframe.DataFrame) (WeightGainStatus, fl
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(logs, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -1103,17 +1105,17 @@ func addCals(u *UserInfo, totalWeekWeightChange float64) {
 //
 // Assumptions:
 // * The given week has been checked for minEntriesPerWeek.
-func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
+func totalWeightChangeWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *UserInfo) (float64, bool, error) {
 	totalWeightChangeWeek := 0.0
 
 	// Get the dataframe index of the entry with the start date of the
 	// diet.
-	startIdx, err := findEntryIdx(logs, weekStart)
+	startIdx, err := findEntryIdx(entries, weekStart)
 	if err != nil || startIdx == -1 {
 		return 0, false, err
 	}
 
-	endIdx := min(startIdx+7, logs.NRows())
+	endIdx := min(startIdx+7, len(*entries))
 
 	// If there were zero entries found in the week, then return early.
 	if endIdx-startIdx < minEntriesPerWeek {
@@ -1124,11 +1126,14 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 	// Iterate over each day of the week starting from startIdx.
 	for i := startIdx; i < endIdx; i++ {
 		// Get entry date.
-		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return 0, false, err
-		}
+		date := (*entries)[i].Date
+		/*
+			date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+			if err != nil {
+				log.Println("ERROR: Couldn't parse date:", err)
+				return 0, false, err
+			}
+		*/
 
 		// If date falls after the end of the week, break out of loop.
 		if date.After(weekEnd) {
@@ -1136,15 +1141,18 @@ func totalWeightChangeWeek(logs *dataframe.DataFrame, weekStart, weekEnd time.Ti
 		}
 
 		// Get entry weight.
-		w := logs.Series[weightCol].Value(i).(string)
-		weight, err := strconv.ParseFloat(w, 64)
-		if err != nil {
-			log.Println("ERROR: Failed to convert string to float64:", err)
-			return 0, false, err
-		}
+		weight := (*entries)[i].UserWeight
+		/*
+			w := logs.Series[weightCol].Value(i).(string)
+			weight, err := strconv.ParseFloat(w, 64)
+			if err != nil {
+				log.Println("ERROR: Failed to convert string to float64:", err)
+				return 0, false, err
+			}
+		*/
 
 		// Get the previous weight to current day.
-		previousWeight, err := getPrecedingWeightToDay(u, logs, weight, i)
+		previousWeight, err := getPrecedingWeightToDay(u, entries, weight, i)
 		if err != nil {
 			return 0, false, err
 		}
@@ -1168,29 +1176,38 @@ func min(a, b int) int {
 }
 
 // findEntryIdx finds the index of an entry given a date.
-func findEntryIdx(logs *dataframe.DataFrame, d time.Time) (int, error) {
-	// Find the index of the entry with the date.
-	for i := 0; i < logs.NRows(); i++ {
-		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return -1, err
-		}
-
+func findEntryIdx(entries *[]Entry, d time.Time) (int, error) {
+	for i, entry := range *entries {
+		date := entry.Date
 		if isSameDay(date, d) {
 			return i, nil
 		}
-
 		continue
 	}
+
+	/*
+		// Find the index of the entry with the date.
+		for i := 0; i < log.NRows(); i++ {
+			date, err := time.Parse(dateFormat, log.Series[dateCol].Value(i).(string))
+			if err != nil {
+				log.Println("ERROR: Couldn't parse date:", err)
+				return -1, err
+			}
+
+			if isSameDay(date, d) {
+				return i, nil
+			}
+
+			continue
+		}
+	*/
 
 	return -1, nil
 }
 
 // getPrecedingWeightToDay returns the preceding entry to a given week.
-func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight float64, startIdx int) (float64, error) {
+func getPrecedingWeightToDay(u *UserInfo, entries *[]Entry, weight float64, startIdx int) (float64, error) {
 	var previousWeight float64
-	var err error
 	// If entry is the first in the dataframe, set previous weight
 	// equal to zero. This is necessary to prevent index out of bounds
 	// error.
@@ -1199,13 +1216,16 @@ func getPrecedingWeightToDay(u *UserInfo, logs *dataframe.DataFrame, weight floa
 		return previousWeight, nil
 	}
 
+	//pw := logs.Series[weightCol].Value(startIdx - 1).(string)
 	// Get previous entry's weight.
-	pw := logs.Series[weightCol].Value(startIdx - 1).(string)
-	previousWeight, err = strconv.ParseFloat(pw, 64)
-	if err != nil {
-		log.Println("ERROR: Failed to convert string to float64:", err)
-		return 0, err
-	}
+	previousWeight = (*entries)[startIdx-1].UserWeight
+	/*
+		previousWeight, err = strconv.ParseFloat(pw, 64)
+		if err != nil {
+			log.Println("ERROR: Failed to convert string to float64:", err)
+			return 0, err
+		}
+	*/
 
 	return previousWeight, nil
 }
@@ -1763,14 +1783,14 @@ func validateDietPhase(s string) error {
 // Assumptions:
 // * Diet phase activity has been checked. That is, this function should
 // not be called for a diet phase that is not currently active.
-func Summary(u *UserInfo, logs *dataframe.DataFrame) {
+func Summary(u *UserInfo, entries *[]Entry) {
 	defer printDietPhaseInfo(u)
 
-	m, _ := countEntriesPerWeek(u, logs)
+	m, _ := countEntriesPerWeek(u, entries)
 	totalEntries := 0
 	totalWeeks := 0
-	for _, entries := range *m {
-		totalEntries += entries
+	for _, entryCount := range *m {
+		totalEntries += entryCount
 		totalWeeks++
 	}
 
@@ -1780,30 +1800,31 @@ func Summary(u *UserInfo, logs *dataframe.DataFrame) {
 		return
 	}
 
-	daySummary(u, logs)
+	daySummary(u, entries)
 
 	if totalWeeks < 1 {
 		log.Println("There has yet to be a logged week for this diet phase. Skipping diet week summary.")
 		return
 	}
 
-	weekSummary(u, logs)
+	weekSummary(u, entries)
 
 	if totalWeeks < 4 {
 		log.Println("There has yet to be a logged month for this diet phase. Skipping diet month summary.")
 		return
 	}
 
-	monthSummary(u, logs)
+	monthSummary(u, entries)
 }
 
 // daySummary prints a summary of the diet for the current day.
-func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
+func daySummary(u *UserInfo, entries *[]Entry) {
 	today := time.Now()
-	i := logs.NRows() - 1
+	i := len(*entries) - 1
 
 	// Get most recent entry date.
-	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+	//tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
+	tailDate := (*entries)[i].Date
 
 	// Ensure most recent entry date is equal to today's date.
 	if !isSameDay(today, tailDate) {
@@ -1811,13 +1832,16 @@ func daySummary(u *UserInfo, logs *dataframe.DataFrame) {
 		return
 	}
 
-	calsStr := logs.Series[calsCol].Value(i).(string)
-	cals, _ := strconv.ParseFloat(calsStr, 64)
+	/*
+		calsStr := logs.Series[calsCol].Value(i).(string)
+		cals, _ := strconv.ParseFloat(calsStr, 64)
+	*/
+	cals := (*entries)[i].UserCals
 
 	fmt.Printf("%sDay Summary for %s%s\n", colorUnderline, tailDate.Format(dateFormat), colorReset)
 	fmt.Printf("Current Weight: %f\n", u.Weight)
 	fmt.Printf("Calories Consumed: ")
-	c := getAdherenceColor(calsStr, metCalDayGoal(u, cals))
+	c := getAdherenceColor(fmt.Sprintf("%f", cals), metCalDayGoal(u, cals))
 	fmt.Printf("%s\n", c)
 }
 
@@ -1853,20 +1877,23 @@ func getAdherenceColor(s string, b bool) string {
 }
 
 // weekSummary prints a summary of the diet for the most recent week.
-func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
+func weekSummary(u *UserInfo, entries *[]Entry) {
 	fmt.Println()
 	fmt.Println(colorUnderline, "Week Summary", colorReset)
 
 	var daysOfWeek []string
 	var calsOfWeek []string
-	var calsStr string
+	//var calsStr string
 	today := time.Now()
 
 	// Find the current ISO week.
 	_, currentWeek := today.ISOWeek()
 
+	//tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+
+	i := len(*entries) - 1
 	// Find the most recent entry's date.
-	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+	tailDate := (*entries)[i].Date
 
 	// Find the last Monday that comes before tailDate
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
@@ -1894,12 +1921,15 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 		// Append date in day of the week to array.
 		daysOfWeek = append(daysOfWeek, d)
 
-		idx, _ := findEntryIdx(logs, date)
+		idx, _ := findEntryIdx(entries, date)
 		// If date matches a logged entry date,
 		if idx != -1 {
-			calsStr = logs.Series[calsCol].Value(idx).(string)
-			cals, _ := strconv.ParseFloat(calsStr, 64)
-			s := getAdherenceColor(fmt.Sprintf("%-10s", calsStr), metCalDayGoal(u, cals))
+			/*
+				calsStr = logs.Series[calsCol].Value(idx).(string)
+				cals, _ := strconv.ParseFloat(calsStr, 64)
+			*/
+			cals := (*entries)[idx].UserCals
+			s := getAdherenceColor(fmt.Sprintf("%-10f", cals), metCalDayGoal(u, cals))
 
 			calsOfWeek = append(calsOfWeek, s)
 
@@ -1912,14 +1942,18 @@ func weekSummary(u *UserInfo, logs *dataframe.DataFrame) {
 }
 
 // monthSummary prints a summary of the diet for the most recent 4 weeks.
-func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
+func monthSummary(u *UserInfo, entries *[]Entry) {
 	fmt.Println()
 	fmt.Println(colorUnderline, "Month Summary", colorReset)
 	today := time.Now()
 
 	currentYear, currentMonth, _ := today.Date()
 
-	tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+	//tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
+
+	i := len(*entries) - 1
+	// Find the most recent entry's date.
+	tailDate := (*entries)[i].Date
 
 	// Find the last Monday that comes before tailDate
 	diff := (int(tailDate.Weekday()-time.Monday+6)%7 + 1) % 7
@@ -1941,7 +1975,7 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 
 		var daysOfWeek []string
 		var calsOfWeek []string
-		var calsStr string
+		//var calsStr string
 
 		// Iterate over the days of the week.
 		for i := 0; i < 7; i++ {
@@ -1955,12 +1989,15 @@ func monthSummary(u *UserInfo, logs *dataframe.DataFrame) {
 			// Append date in day of the week to array.
 			daysOfWeek = append(daysOfWeek, d)
 
-			idx, _ := findEntryIdx(logs, date)
+			idx, _ := findEntryIdx(entries, date)
 			// If date matches a logged entry date,
 			if idx != -1 {
-				calsStr = logs.Series[calsCol].Value(idx).(string)
-				cals, _ := strconv.ParseFloat(calsStr, 64)
-				s := getAdherenceColor(fmt.Sprintf("%-10s", calsStr), metCalDayGoal(u, cals))
+				/*
+					calsStr = logs.Series[calsCol].Value(idx).(string)
+					cals, _ := strconv.ParseFloat(calsStr, 64)
+				*/
+				cals := (*entries)[idx].UserCals
+				s := getAdherenceColor(fmt.Sprintf("%-10f", cals), metCalDayGoal(u, cals))
 
 				calsOfWeek = append(calsOfWeek, s)
 
