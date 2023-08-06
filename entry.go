@@ -1499,6 +1499,15 @@ func Log(u *UserInfo, s string) error {
 	return nil
 }
 
+/*
+
+// Subset creates and returns and array containing the
+// valid log entries.
+//
+// Assumptions:
+// * Diet phase activity has been checked. That is, this function should
+// not be called for a diet phase that is not currently active.
+
 // subset returns a subset of the dataframe containing the entries that
 // were logged during an active diet phase.
 func Subset(logs *dataframe.DataFrame, indices []int) *dataframe.DataFrame {
@@ -1514,7 +1523,30 @@ func Subset(logs *dataframe.DataFrame, indices []int) *dataframe.DataFrame {
 
 	return s
 }
+*/
 
+// getValidLog creates and returns array containing the
+// valid log entries.
+//
+// Assumptions:
+// * Diet phase activity has been checked. That is, this function should
+// not be called for a diet phase that is not currently active.
+func GetValidLog(u *UserInfo, entries *[]Entry) *[]Entry {
+	today := time.Now()
+
+	var subset []Entry
+	for _, entry := range *entries {
+		// Only consider dates that fall somewhere inbetween the diet
+		// start date and the current date.
+		if (entry.Date.After(u.Phase.StartDate) || isSameDay(entry.Date, u.Phase.StartDate)) && (entry.Date.Before(today) || isSameDay(entry.Date, today)) {
+			subset = append(subset, entry)
+		}
+	}
+
+	return &subset
+}
+
+/*
 // getValidLogIndices creates and returns and int array containing the
 // indices of the the valid log entries.
 //
@@ -1541,3 +1573,4 @@ func GetValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
 
 	return validIndices
 }
+*/
