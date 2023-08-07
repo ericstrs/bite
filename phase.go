@@ -1839,9 +1839,9 @@ func daySummary(u *UserInfo, entries *[]Entry) {
 	cals := (*entries)[i].UserCals
 
 	fmt.Printf("%sDay Summary for %s%s\n", colorUnderline, tailDate.Format(dateFormat), colorReset)
-	fmt.Printf("Current Weight: %f\n", u.Weight)
+	fmt.Printf("Current Weight: %.2f\n", u.Weight)
 	fmt.Printf("Calories Consumed: ")
-	c := getAdherenceColor(fmt.Sprintf("%f", cals), metCalDayGoal(u, cals))
+	c := getAdherenceColor(fmt.Sprintf("%.2f", cals), metCalDayGoal(u, cals))
 	fmt.Printf("%s\n", c)
 }
 
@@ -1929,7 +1929,7 @@ func weekSummary(u *UserInfo, entries *[]Entry) {
 				cals, _ := strconv.ParseFloat(calsStr, 64)
 			*/
 			cals := (*entries)[idx].UserCals
-			s := getAdherenceColor(fmt.Sprintf("%-10f", cals), metCalDayGoal(u, cals))
+			s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 
 			calsOfWeek = append(calsOfWeek, s)
 
@@ -1997,7 +1997,7 @@ func monthSummary(u *UserInfo, entries *[]Entry) {
 					cals, _ := strconv.ParseFloat(calsStr, 64)
 				*/
 				cals := (*entries)[idx].UserCals
-				s := getAdherenceColor(fmt.Sprintf("%-10f", cals), metCalDayGoal(u, cals))
+				s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 
 				calsOfWeek = append(calsOfWeek, s)
 
