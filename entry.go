@@ -415,19 +415,31 @@ func printWeightEntries(entries []WeightEntry) {
 
 // getAllWeightEntries returns all the user's logged weight entries.
 func getAllWeightEntries(db *sqlx.DB) ([]WeightEntry, error) {
+	// Since DailyWeight struct does not currently support time field, the
+	// queury excludes the time field from the selected records.
+	const query = `
+		SELECT id, date, weight FROM daily_weights ORDER by date DESC"
+		`
+
 	wl := []WeightEntry{}
-	err := db.Select(&wl, "SELECT * FROM daily_weights ORDER BY date DESC")
-	if err != nil {
+	if err := db.Select(&wl, query); err != nil {
 		return nil, err
 	}
+
 	return wl, nil
 }
 
 // getRecentWeightEntries returns the user's logged weight entries up to
 // a limit.
 func getRecentWeightEntries(db *sqlx.DB) ([]WeightEntry, error) {
+	// Since DailyWeight struct does not currently support time field, the
+	// queury excludes the time field from the selected records.
+	const query = `
+		SELECT id, date, weight FROM daily_weights ORDER by date DESC LIMIT $1
+		`
+
 	wl := []WeightEntry{}
-	err := db.Select(&wl, "SELECT * FROM daily_weights ORDER BY date DESC LIMIT $1", weightSearchLimit)
+	err := db.Select(&wl, query, weightSearchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -451,9 +463,13 @@ func promptSelectEntry() string {
 // searchWeightLog searchs through all weight entries and returns the
 // entry that matches the entered date.
 func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
-	var entry WeightEntry
-	query := ` SELECT * FROM daily_weights WHERE date = $1 LIMIT 1`
+	// Since DailyWeight struct does not currently support time field, the
+	// queury excludes the time field from the selected records.
+	const query = `
+		SELECT id, date, weight FROM daily_weights ORDER by date = $1 LIMIT 1
+		`
 
+	var entry WeightEntry
 	// Search for weight entry in the database
 	err := db.Get(&entry, query, d.Format(dateFormat))
 	if err != nil {
@@ -468,7 +484,7 @@ func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
 // given date.
 func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 	var count int
-	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = ?`, date.Format(dateFormat))
+	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = $1`, date.Format(dateFormat))
 	if err != nil {
 		return false, err
 	}
@@ -729,7 +745,7 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 
 // addFoodEntry inserts a food entry into the database.
 func addFoodEntry(tx *sqlx.Tx, pref *FoodPref, date time.Time) error {
-	query := `
+	const query = `
 		INSERT INTO daily_foods	(food_id, date, time, serving_size, number_of_servings)
 		VALUES ($1, $2, $3, $4, $5)
 		`
@@ -853,8 +869,10 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 
 // getRecentFoodEntries retrieves most recently logged food entries.
 func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
+	// Since DailyFood struct does not currently support time field, the
+	// query excludes the time field from the selected records.
 	const query = `
-        SELECT df.*, f.food_name, f.serving_unit
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         ORDER BY df.date DESC
@@ -880,14 +898,16 @@ func printFoodEntries(entries []DailyFood) {
 
 // searchFoodLog uses date to search through logged foods.
 func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
-	var entries []DailyFood
-	query := `
-    SELECT df.*, f.food_name
-    FROM daily_foods df
-    JOIN foods f ON df.food_id = f.food_id
-    WHERE df.date = ?
-  `
+	// Since DailyFood struct does not currently support time field, the
+	// query excludes the time field from the selected records.
+	const query = `
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
+    		FROM daily_foods df
+    		JOIN foods f ON df.food_id = f.food_id
+    		WHERE df.date = $1
+  	`
 
+	var entries []DailyFood
 	// Search for food entries in the database for given date.
 	err := tx.Select(&entries, query, date.Format(dateFormat))
 	if err != nil {
@@ -1310,7 +1330,7 @@ func promptUserEditDecision() string {
 
 // addMealEntry inserts a meal entry into the database.
 func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
-	query := `
+	const query = `
     INSERT INTO daily_meals (meal_id, date, time)
     VALUES ($1, $2, $3)
     `
@@ -1396,7 +1416,9 @@ func getTotalFoodsLogged(tx *sqlx.Tx) (int, error) {
 
 // getFrequentFoods retrieves most recently logged food entries.
 func getFrequentFoods(tx *sqlx.Tx, limit int) ([]DailyFoodCount, error) {
-	query := `
+	// Since DailyFood struct does not currently support time field, the
+	// query excludes the time field from the selected records.
+	const query = `
         SELECT df.food_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit, COUNT(*) as count
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
