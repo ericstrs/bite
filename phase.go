@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -13,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/jmoiron/sqlx"
 )
 
 type WeightGainStatus int
@@ -45,78 +44,27 @@ const (
 )
 
 type PhaseInfo struct {
-	Name         string  `yaml:"name"`
-	GoalCalories float64 `yaml:"goal_calories"`
-	StartWeight  float64 `yaml:"start_weight"`
-	GoalWeight   float64 `yaml:"goal_weight"`
+	PhaseID      int     `db:"phase_id"`
+	UserID       int     `db:"user_id"`
+	Name         string  `db:"name"`
+	GoalCalories float64 `db:"goal_calories"`
+	StartWeight  float64 `db:"start_weight"`
+	GoalWeight   float64 `db:"goal_weight"`
 	// WeightChangeThreshold is used to ensure the user has not
 	// lost/gained too much weight for a given diet phase.
 	// If the user chooses to continue the current diet phase,
 	// WeightChangeThreshold is updated to the 10% of the user's current
 	// weight, and the process repeats.
-	WeightChangeThreshold float64   `yaml:"weight_change_threshold"`
-	WeeklyChange          float64   `yaml:"weekly_change"`
-	StartDate             time.Time `yaml:"start_date"`
-	EndDate               time.Time `yaml:"end_date"`
+	WeightChangeThreshold float64   `db:"weight_change_threshold"`
+	WeeklyChange          float64   `db:"weekly_change"`
+	StartDate             time.Time `db:"start_date"`
+	EndDate               time.Time `db:"end_date"`
 	// First day of the most recent valid week.
-	LastCheckedWeek time.Time `yaml:"last_checked_week"`
-	Duration        float64   `yaml:"duration"`
-	MaxDuration     float64   `yaml:"max_duration"`
-	MinDuration     float64   `yaml:"min_duration"`
-	Active          bool      `yaml:"active"`
-}
-
-// ReadConfig reads config file or creates it if it doesn't exist and
-// returns UserInfo struct.
-func ReadConfig() (u *UserInfo, err error) {
-	// If no config file exists,
-	if _, err := os.Stat(ConfigFilePath); os.IsNotExist(err) {
-		u, err = generateConfig()
-		if err != nil {
-			return nil, err
-		}
-
-		return u, nil
-	}
-	// Otherwise, user has a config file.
-
-	// Read YAML file.
-	data, err := ioutil.ReadFile(ConfigFilePath)
-	if err != nil {
-		log.Printf("Error: Can't read file: %v\n", err)
-		return nil, err
-	}
-
-	// Unmarshal YAML data into struct.
-	err = yaml.Unmarshal(data, &u)
-	if err != nil {
-		log.Printf("Error: Can't unmarshal YAML: %v\n", err)
-		return nil, err
-	}
-	log.Println("Loaded user info.")
-
-	return u, nil
-}
-
-// generateConfig generates a new config file for the user.
-func generateConfig() (*UserInfo, error) {
-	fmt.Println("Welcome! Please provide required information:")
-
-	u := UserInfo{}
-
-	// Get user details.
-	getUserInfo(&u)
-
-	processUserInfo(&u)
-
-	// Save user info to config file.
-	err := saveUserInfo(&u)
-	if err != nil {
-		log.Println("Failed to save user info:", err)
-		return nil, err
-	}
-
-	return &u, nil
+	LastCheckedWeek time.Time `db:"last_checked_week"`
+	Duration        float64   `db:"duration"`
+	MaxDuration     float64   `db:"max_duration"`
+	MinDuration     float64   `db:"min_duration"`
+	Status          string    `db:"status"`
 }
 
 // CheckProgress performs checks on the user's current diet phase.
@@ -124,7 +72,15 @@ func generateConfig() (*UserInfo, error) {
 // Current solution to defining a week is continually adding 7 days to
 // the start date. Weeks are only considered that contain at least two
 // two entries for a given week.
-func CheckProgress(u *UserInfo, entries *[]Entry) error {
+func CheckProgress(db *sqlx.DB, u *UserInfo, entries *[]Entry) error {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	// Make a map to track the numbers of entries in each week.
 	entryCountPerWeek, err := countEntriesPerWeek(u, entries)
 	if err != nil {
@@ -146,12 +102,12 @@ func CheckProgress(u *UserInfo, entries *[]Entry) error {
 		var total float64
 		var status WeightLossStatus
 
-		err := checkCutThreshold(u) // Ensure user hasn't lost too much weight.
+		err := checkCutThreshold(tx, u) // Ensure user hasn't lost too much weight.
 		if err != nil {
 			return err
 		}
 
-		status, total, err = checkCutLoss(u, entries) // Ensure weekly weight loss.
+		status, total, err = checkCutLoss(tx, u, entries) // Ensure weekly weight loss.
 		if err != nil {
 			return err
 		}
@@ -166,7 +122,7 @@ func CheckProgress(u *UserInfo, entries *[]Entry) error {
 		case withinLossRange: // Do nothing
 		}
 	case "maintain":
-		status, total, err := checkMaintenance(u, entries) // Ensure maintenance.
+		status, total, err := checkMaintenance(tx, u, entries) // Ensure maintenance.
 		if err != nil {
 			return err
 		}
@@ -184,12 +140,12 @@ func CheckProgress(u *UserInfo, entries *[]Entry) error {
 		var total float64
 		var status WeightGainStatus
 
-		err := checkBulkThreshold(u) // Ensure user hasn't gained too much weight.
+		err := checkBulkThreshold(tx, u) // Ensure user hasn't gained too much weight.
 		if err != nil {
 			return err
 		}
 
-		status, total, err = checkBulkGain(u, entries) // Ensure weekly weight gain.
+		status, total, err = checkBulkGain(tx, u, entries) // Ensure weekly weight gain.
 		if err != nil {
 			return err
 		}
@@ -205,7 +161,7 @@ func CheckProgress(u *UserInfo, entries *[]Entry) error {
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // countEntriesPerWeek returns a map to tracker the number of entires in
@@ -284,7 +240,7 @@ func countValidWeeks(e map[int]int) int {
 // Assumptions:
 // * User has lost some amount of weight.
 // * `u.Phase.WeightChangeThreshold` has been initialized.
-func checkCutThreshold(u *UserInfo) error {
+func checkCutThreshold(tx *sqlx.Tx, u *UserInfo) error {
 	// If user has gained more weight than starting weight, return early.
 	if u.Weight > u.Phase.StartWeight {
 		return nil
@@ -299,19 +255,19 @@ func checkCutThreshold(u *UserInfo) error {
 
 		switch option {
 		case "1":
-			err := transitionToMaintenance(u)
+			err := transitionToMaintenance(tx, u)
 			if err != nil {
 				return err
 			}
 		case "2": // Change to different phase.
-			err := processPhaseTransition(u)
+			err := processPhaseTransition(tx, u)
 			if err != nil {
 				return err
 			}
 		case "3": // Continue with the cut.
 			u.Phase.WeightChangeThreshold += u.Weight * 0.10 // 10% of current weight.
 			// Save user info to config file.
-			err := saveUserInfo(u)
+			err := saveUserInfo(tx, u)
 			if err != nil {
 				log.Println("Failed to update phase start weight:", err)
 				return err
@@ -350,7 +306,7 @@ func getCutAction() string {
 
 // checkCutLoss checks to see if user is on the track to meeting weight
 // loss goal.
-func checkCutLoss(u *UserInfo, entries *[]Entry) (WeightLossStatus, float64, error) {
+func checkCutLoss(tx *sqlx.Tx, u *UserInfo, entries *[]Entry) (WeightLossStatus, float64, error) {
 	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
 	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
 	totalLossUnderGoal := 0.0
@@ -368,7 +324,7 @@ func checkCutLoss(u *UserInfo, entries *[]Entry) (WeightLossStatus, float64, err
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(tx, entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -410,7 +366,7 @@ func checkCutLoss(u *UserInfo, entries *[]Entry) (WeightLossStatus, float64, err
 // validWeek determines if a given week fits the definition of a
 // week, retrives total change in weight, and array of calories for
 // the given week.
-func validWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
+func validWeek(tx *sqlx.Tx, entries *[]Entry, weekStart, weekEnd time.Time, u *UserInfo) (bool, float64, []float64, error) {
 	// Does this week contain has at least `minEntriesPerWeek` entries?
 	entryCount, err := countEntriesInWeek(entries, weekStart, weekEnd)
 	if err != nil || entryCount < minEntriesPerWeek {
@@ -441,7 +397,7 @@ func validWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *UserInfo) (boo
 	u.Phase.LastCheckedWeek = weekEnd
 
 	// Save the updated last checked week to config file.
-	err = saveUserInfo(u)
+	err = saveUserInfo(tx, u)
 	if err != nil {
 		log.Printf("Failed to save user info: %v\n", err)
 		return false, 0, nil, err
@@ -626,7 +582,7 @@ func removeCals(u *UserInfo, totalWeekWeightChange float64) {
 // Assumptions:
 // * User has gained some amount of weight.
 // * `u.Phase.WeightChangeThreshold` has been initialized.
-func checkBulkThreshold(u *UserInfo) error {
+func checkBulkThreshold(tx *sqlx.Tx, u *UserInfo) error {
 	// If user has lost more weight than starting weight, return early.
 	if u.Weight < u.Phase.StartWeight {
 		return nil
@@ -641,19 +597,19 @@ func checkBulkThreshold(u *UserInfo) error {
 		switch option {
 		case "1":
 			fmt.Println("Going from a bulk to a maintenance phase, you should gradually drop your calories down to your TDEE.")
-			err := transitionToMaintenance(u)
+			err := transitionToMaintenance(tx, u)
 			if err != nil {
 				return nil
 			}
 		case "2": // Change to different phase.
-			err := processPhaseTransition(u)
+			err := processPhaseTransition(tx, u)
 			if err != nil {
 				return err
 			}
 		case "3": // Continue with the bulk.
 			u.Phase.WeightChangeThreshold += u.Weight * 0.10 // 10% of current weight.
 			// Save user info to config file.
-			err := saveUserInfo(u)
+			err := saveUserInfo(tx, u)
 			if err != nil {
 				log.Println("Failed to update phase start weight:", err)
 				return err
@@ -669,7 +625,7 @@ func checkBulkThreshold(u *UserInfo) error {
 // transitionToMaintenance starts a new maintienance phase.
 // Note: diet duration is left unmodified so the maintenance phase
 // lasts as long as the previous diet phase.
-func transitionToMaintenance(u *UserInfo) error {
+func transitionToMaintenance(tx *sqlx.Tx, u *UserInfo) error {
 	u.Phase.Name = "maintain"
 	u.Phase.GoalCalories = u.TDEE
 	u.Phase.StartWeight = u.Weight
@@ -677,14 +633,14 @@ func transitionToMaintenance(u *UserInfo) error {
 	u.Phase.WeeklyChange = 0
 	u.Phase.GoalWeight = u.Phase.StartWeight
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
-	u.Phase.Active = true
+	u.Phase.Status = "active"
 	u.Phase.StartDate = time.Now()
 	u.Phase.EndDate = calculateEndDate(u.Phase.StartDate, u.Phase.Duration)
 	setMinMaxPhaseDuration(u)
 	promptConfirmation(u)
 
 	// Save user info to config file.
-	err := saveUserInfo(u)
+	err := saveUserInfo(tx, u)
 	if err != nil {
 		log.Println("Failed to update phase to maintenance:", err)
 		return err
@@ -735,29 +691,37 @@ func validateAction(option string) error {
 }
 
 // CheckPhaseStatus checks if the phase is active.
-func CheckPhaseStatus(u *UserInfo) (bool, error) {
+func CheckPhaseStatus(db *sqlx.DB, u *UserInfo) (string, error) {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return "", err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	t := time.Now()
 	// If today comes before diet start date, then phase has not yet begun.
 	if t.Before(u.Phase.StartDate) {
 		log.Println("Diet phase has not yet started. Skipping check on diet phase.")
-		return false, nil
+		return "", nil
 	}
 
 	// If today comes after diet end date, diet phase is over.
 	if t.After(u.Phase.EndDate) {
 		fmt.Println("Diet phase completed! Starting the diet phase transistion process.")
 		// Process phase transition
-		err := processPhaseTransition(u)
+		err := processPhaseTransition(tx, u)
 		if err != nil {
-			return false, err
+			return "", err
 		}
 
-		return u.Phase.Active, nil
+		return u.Phase.Status, nil
 	}
 
 	// If today is the first day of the diet (active status has yet to be
 	// updated),
-	if u.Phase.Active == false {
+	if u.Phase.Status == "scheduled" {
 		// Set starting weight to current weight.
 		u.Phase.StartWeight = u.Weight
 
@@ -771,15 +735,15 @@ func CheckPhaseStatus(u *UserInfo) (bool, error) {
 			case "1": // Get new goal weight.
 				u.Phase.GoalWeight = getGoalWeight(u)
 			case "2": // Change to different phase.
-				err := processPhaseTransition(u)
+				err := processPhaseTransition(tx, u)
 				if err != nil {
-					return false, err
+					return "", err
 				}
 			}
 		}
-		u.Phase.Active = true
+		u.Phase.Status = "active"
 	}
-	return u.Phase.Active, nil
+	return u.Phase.Status, tx.Commit()
 }
 
 // getNextAction prompts user for the next action given that they've
@@ -840,7 +804,7 @@ func validateNextAction(a string) error {
 }
 
 // checkMaintenance ensures user is maintaining the same weight.
-func checkMaintenance(u *UserInfo, entries *[]Entry) (WeightMaintenanceStatus, float64, error) {
+func checkMaintenance(tx *sqlx.Tx, u *UserInfo, entries *[]Entry) (WeightMaintenanceStatus, float64, error) {
 	weeksGained := 0 // Consecutive weeks where the user gained too much weight.
 	weeksLost := 0   // Consecutive weeks where the user lost too much weight.
 	totalGain := 0.0
@@ -858,7 +822,7 @@ func checkMaintenance(u *UserInfo, entries *[]Entry) (WeightMaintenanceStatus, f
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(tx, entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -926,7 +890,7 @@ func metWeeklyGoalMainenance(u *UserInfo, totalWeekWeightChange float64) WeightM
 
 // checkBulkGain checks to see if user is on the track to meeting weight
 // gain goal.
-func checkBulkGain(u *UserInfo, entries *[]Entry) (WeightGainStatus, float64, error) {
+func checkBulkGain(tx *sqlx.Tx, u *UserInfo, entries *[]Entry) (WeightGainStatus, float64, error) {
 	weeksUnderGoal := 0 // Consecutive weeks where the user gained too much weight.
 	weeksOverGoal := 0  // Consecutive weeks where the user gained too little weight.
 	totalGainUnderGoal := 0.0
@@ -944,7 +908,7 @@ func checkBulkGain(u *UserInfo, entries *[]Entry) (WeightGainStatus, float64, er
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
-		valid, totalWeekWeightChange, _, err := validWeek(entries, weekStart, weekEnd, u)
+		valid, totalWeekWeightChange, _, err := validWeek(tx, entries, weekStart, weekEnd, u)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -1232,7 +1196,7 @@ func getPrecedingWeightToDay(u *UserInfo, entries *[]Entry, weight float64, star
 
 // processPhaseTransition transitions the user to a new diet phase
 // and saves the next phase to config file.
-func processPhaseTransition(u *UserInfo) error {
+func processPhaseTransition(tx *sqlx.Tx, u *UserInfo) error {
 	fmt.Println("Step 1: Diet phase recap")
 	fmt.Printf("Goal weight: %f. Current weight: %f\n", u.Phase.GoalWeight, u.Weight)
 
@@ -1241,7 +1205,7 @@ func processPhaseTransition(u *UserInfo) error {
 	processUserInfo(u)
 
 	// Save user info to config file.
-	err := saveUserInfo(u)
+	err := saveUserInfo(tx, u)
 	if err != nil {
 		log.Println("Failed to save user info:", err)
 		return err
@@ -1281,7 +1245,7 @@ func processUserInfo(u *UserInfo) {
 	// Set initial diet weight change theshold.
 	u.Phase.WeightChangeThreshold = u.Weight * 0.10
 
-	getPhaseInfo(u)
+	promptUserForPhaseInfo(u)
 
 	// Set min and max values for macros.
 	setMinMaxMacros(u)
@@ -1296,11 +1260,11 @@ func processUserInfo(u *UserInfo) {
 	promptConfirmation(u)
 }
 
-// getPhaseInfo prompts user for information to initialize the Phase
+// promptUserForPhaseInfo prompts user for information to initialize the Phase
 // struct, validates their response until they enter valid values, and
 // sets their value to the corresponding struct field. Some fields are
 // simply calculated.
-func getPhaseInfo(u *UserInfo) {
+func promptUserForPhaseInfo(u *UserInfo) {
 	// Fill out remaining userInfo struct fields given user preference on
 	// recommended or custom diet pace.
 	switch getDietChoice(u) {
@@ -1491,13 +1455,13 @@ func getStartDate(u *UserInfo) (date time.Time) {
 		// Prompt user for diet start date.
 		r := promptDate("Enter diet start date (YYYY-MM-DD) [Press Enter for today's date]: ")
 
-		u.Phase.Active = false // set active to false by default.
+		u.Phase.Status = "scheduled" // set active to scheduled by default.
 		// If user entered default date,
 		if r == "" {
 			// set date to today's date.
 			r = time.Now().Format(dateFormat)
 			// Set phase status to true.
-			u.Phase.Active = true
+			u.Phase.Status = "active"
 		}
 
 		// Ensure user response is a date.
