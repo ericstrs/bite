@@ -2,9 +2,12 @@ package calories
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 func ExampleCountEntriesPerWeek() {
@@ -270,9 +273,47 @@ func ExampleCheckCutLoss_withinRange() {
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.WeeklyChange = -0.5
 	u.Phase.GoalCalories = 2400
+	u.Phase.Status = "active"
 	u.Phase.Name = "cut"
 
-	status, avgTotal, err := checkCutLoss(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	/*
+	  // Insert dummy data
+	  _, err = db.Exec(`
+	    INSERT INTO macros (protein, min_protein, max_protein, carbs, min_carbs, max_carbs, fats, min_fats, max_fats)
+	    VALUES (100, 90, 110, 200, 180, 220, 50, 45, 55);
+
+	    INSERT INTO phase_info (user_id, name, goal_calories, start_weight, goal_weight, weight_change_threshold, weekly_change, start_date, end_date, last_checked_week, duration, max_duration, min_duration, active)
+	    VALUES (1, 'Weight Loss', 2000, 190, 170, 2, -1, '2023-01-01', '2023-04-01', '2023-01-07', 12, 16, 8, 1);
+
+	    INSERT INTO config (sex, weight, height, age, activity_level, tdee, system, macros_id, phase_id)
+	    VALUES ('M', 190, 175, 30, 'Moderate', 2500, 'Imperial', 1, 1);
+	    `)
+	  if err != nil {
+	    log.Printf("Failed to insert dummy data: %v", err)
+	    return
+	  }
+	*/
+
+	status, avgTotal, err := checkCutLoss(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(avgTotal)
@@ -336,8 +377,28 @@ func ExampleCheckCutLoss_tooLittle() {
 	u.Phase.WeeklyChange = -0.5
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "cut"
+	u.Phase.Status = "active"
 
-	status, avgTotal, err := checkCutLoss(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, avgTotal, err := checkCutLoss(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(avgTotal)
@@ -401,8 +462,28 @@ func ExampleCheckCutLoss_tooMuch() {
 	u.Phase.WeeklyChange = 0.5
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "cut"
+	u.Phase.Status = "active"
 
-	status, total, err := checkCutLoss(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, total, err := checkCutLoss(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(total)
@@ -478,7 +559,21 @@ func ExampleCheckMaintenance_within() {
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "maintenance"
 
-	status, total, err := checkMaintenance(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	status, total, err := checkMaintenance(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(total)
@@ -543,8 +638,28 @@ func ExampleCheckMaintenance_gained() {
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "maintain"
+	u.Phase.Status = "active"
 
-	status, total, err := checkMaintenance(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, total, err := checkMaintenance(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Printf("%.2f\n", total)
@@ -609,8 +724,28 @@ func ExampleCheckMaintenance_lost() {
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "maintain"
+	u.Phase.Status = "active"
 
-	status, total, err := checkMaintenance(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, total, err := checkMaintenance(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Printf("%.2f\n", total)
@@ -684,8 +819,28 @@ func ExampleCheckBulkGain_withinRange() {
 	u.Phase.WeeklyChange = 0.5
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "bulk"
+	u.Phase.Status = "active"
 
-	status, avgTotal, err := checkBulkGain(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, avgTotal, err := checkBulkGain(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(avgTotal)
@@ -749,8 +904,28 @@ func ExampleCheckBulkGain_tooLittle() {
 	u.Phase.WeeklyChange = 0.5
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "bulk"
+	u.Phase.Status = "active"
 
-	status, avgTotal, err := checkBulkGain(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, avgTotal, err := checkBulkGain(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(avgTotal)
@@ -814,8 +989,28 @@ func ExampleCheckBulkGain_tooMuch() {
 	u.Phase.WeeklyChange = 0.5
 	u.Phase.GoalCalories = 2400
 	u.Phase.Name = "bulk"
+	u.Phase.Status = "active"
 
-	status, total, err := checkBulkGain(&u, &entries)
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	err = setupTestConfigTables(tx)
+	if err != nil {
+		return
+	}
+
+	status, total, err := checkBulkGain(tx, &u, &entries)
 
 	fmt.Println(status)
 	fmt.Println(total)
@@ -1328,7 +1523,7 @@ func ExampleSummary() {
 	//u.Phase.StartDate, _ = time.Parse(dateFormat, logs.Series[dateCol].Value(0).(string))
 	u.Phase.StartDate = entries[0].Date
 	u.Phase.EndDate = today.AddDate(0, 0, 3)
-	u.Phase.Active = true
+	u.Phase.Status = "active"
 	u.Phase.GoalCalories = 2200
 	u.Phase.Name = "cut"
 	u.Phase.StartWeight = 183.2
@@ -1338,4 +1533,61 @@ func ExampleSummary() {
 
 	// Output:
 	// 0
+}
+
+func setupTestConfigTables(tx *sqlx.Tx) error {
+	_, err := tx.Exec(`
+    CREATE TABLE IF NOT EXISTS config (
+      user_id INTEGER PRIMARY KEY,
+      sex TEXT NOT NULL,
+      weight REAL NOT NULL,
+      height REAL NOT NULL,
+      age INTEGER NOT NULL,
+      activity_level TEXT NOT NULL,
+      tdee REAL NOT NULL,
+      system TEXT NOT NULL,
+      macros_id INTEGER,
+      phase_id INTEGER,
+      FOREIGN KEY (macros_id) REFERENCES macros(macros_id),
+      FOREIGN KEY (phase_id) REFERENCES phase_info(phase_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS macros (
+        macros_id INTEGER PRIMARY KEY,
+        protein REAL NOT NULL,
+        min_protein REAL NOT NULL,
+        max_protein REAL NOT NULL,
+        carbs REAL NOT NULL,
+        min_carbs REAL NOT NULL,
+        max_carbs REAL NOT NULL,
+        fats REAL NOT NULL,
+        min_fats REAL NOT NULL,
+        max_fats REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS phase_info (
+        phase_id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        goal_calories REAL NOT NULL,
+        start_weight REAL NOT NULL,
+        goal_weight REAL NOT NULL,
+        weight_change_threshold REAL NOT NULL,
+        weekly_change REAL NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        last_checked_week DATE NOT NULL,
+        duration REAL NOT NULL,
+        max_duration REAL NOT NULL,
+        min_duration REAL NOT NULL,
+				status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'paused', 'stopped', 'scheduled')),
+        FOREIGN KEY (user_id) REFERENCES config(user_id)
+    );
+  `)
+
+	if err != nil {
+		log.Println("Failed to setup tables:", err)
+		return err
+	}
+	return nil
 }
