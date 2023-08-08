@@ -2,7 +2,6 @@ package calories
 
 import (
 	"bufio"
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -14,8 +13,6 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/rocketlaunchr/dataframe-go"
-	"github.com/rocketlaunchr/dataframe-go/imports"
 )
 
 const (
@@ -130,6 +127,7 @@ func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	return &entries, nil
 }
 
+/*
 // ReadEntries reads user entries from CSV file into a dataframe.
 func ReadEntries() (*dataframe.DataFrame, error) {
 	// Does entries file exist?
@@ -156,6 +154,7 @@ func ReadEntries() (*dataframe.DataFrame, error) {
 
 	return logs, nil
 }
+*/
 
 // LogWeight gets weight and date from user to create a new weight entry.
 func LogWeight(u *UserInfo, db *sqlx.DB) {

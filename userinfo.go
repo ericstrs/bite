@@ -13,14 +13,16 @@ import (
 )
 
 const (
-	weightCol       = 0               // Dataframe column for weight.
-	calsCol         = 1               // Dataframe column for calories.
-	dateCol         = 2               // Dataframe column for weight.
-	calsInProtein   = 4               // Calories per gram of protein.
-	calsInCarbs     = 4               // Calories per gram of carbohydrate.
-	calsInFats      = 9               // Calories per gram of fat.
-	ConfigFilePath  = "./config.yaml" // Path to user config file.
-	EntriesFilePath = "./data.csv"    // Path to user entries file.
+	weightCol     = 0 // Dataframe column for weight.
+	calsCol       = 1 // Dataframe column for calories.
+	dateCol       = 2 // Dataframe column for weight.
+	calsInProtein = 4 // Calories per gram of protein.
+	calsInCarbs   = 4 // Calories per gram of carbohydrate.
+	calsInFats    = 9 // Calories per gram of fat.
+	/*
+		ConfigFilePath  = "./config.yaml" // Path to user config file.
+		EntriesFilePath = "./data.csv"    // Path to user entries file.
+	*/
 )
 
 type UserInfo struct {
