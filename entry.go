@@ -1428,6 +1428,7 @@ func promptCals() (calories float64, err error) {
 	return calories, checkInput(calories)
 }
 
+/*
 // Log appends a new entry to the csv file passed in as an agurment.
 func Log(u *UserInfo, s string) error {
 	var date time.Time
@@ -1473,7 +1474,7 @@ func Log(u *UserInfo, s string) error {
 	}
 
 	// Save updated user info.
-	err = saveUserInfo(u)
+	err = saveUserInfo(tx, u)
 	if err != nil {
 		return err
 	}
@@ -1498,6 +1499,7 @@ func Log(u *UserInfo, s string) error {
 
 	return nil
 }
+*/
 
 /*
 
