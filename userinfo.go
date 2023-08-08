@@ -1,15 +1,15 @@
 package calories
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -24,27 +24,336 @@ const (
 )
 
 type UserInfo struct {
-	Sex           string    `yaml:"sex"`
-	Weight        float64   `yaml:"weight"` // lbs
-	Height        float64   `yaml:"height"` // cm
-	Age           int       `yaml:"age"`
-	ActivityLevel string    `yaml:"activity_level"`
-	TDEE          float64   `yaml:"tdee"`
-	Macros        Macros    `taml:"macros"`
-	System        string    `yaml:"system"`
-	Phase         PhaseInfo `yaml:"phase"`
+	UserID        int       `db:"user_id"`
+	Sex           string    `db:"sex"`
+	Weight        float64   `db:"weight"` // lbs
+	Height        float64   `db:"height"` // cm
+	Age           int       `db:"age"`
+	ActivityLevel string    `db:"activity_level"`
+	TDEE          float64   `db:"tdee"`
+	Macros        Macros    `db:"macros"`
+	MacrosID      int       `db:"macros_id"`
+	System        string    `db:"system"`
+	Phase         PhaseInfo `db:"phase"`
+	PhaseID       int       `db:"phase_id"`
 }
 
 type Macros struct {
-	Protein    float64 `yaml:"protein"`
-	MinProtein float64 `yaml:"min_protein"`
-	MaxProtein float64 `yaml:"max_protein"`
-	Carbs      float64 `yaml:"carbs"`
-	MinCarbs   float64 `yaml:"min_carbs"`
-	MaxCarbs   float64 `yaml:"max_carbs"`
-	Fats       float64 `yaml:"fats"`
-	MinFats    float64 `yaml:"min_fats"`
-	MaxFats    float64 `yaml:"max_fats"`
+	MacrosID   int     `db:"macros_id"`
+	Protein    float64 `db:"protein"`
+	MinProtein float64 `db:"min_protein"`
+	MaxProtein float64 `db:"max_protein"`
+	Carbs      float64 `db:"carbs"`
+	MinCarbs   float64 `db:"min_carbs"`
+	MaxCarbs   float64 `db:"max_carbs"`
+	Fats       float64 `db:"fats"`
+	MinFats    float64 `db:"min_fats"`
+	MaxFats    float64 `db:"max_fats"`
+}
+
+// ReadConfig reads user info from the SQLite database
+func ReadConfig(db *sqlx.DB) (*UserInfo, error) {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return &UserInfo{}, err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	u := &UserInfo{}
+
+	// Query the database for the configuration (assuming only one
+	// config for now).
+	err = tx.Get(u, "SELECT * FROM config LIMIT 1")
+	if err != nil {
+		// If no config data in the database, generate a new config.
+		if err == sql.ErrNoRows {
+			u, err = generateAndSaveConfig(tx)
+			if err != nil {
+				return nil, err
+			}
+
+			return u, tx.Commit()
+		}
+		log.Printf("Error: Can't fetch config: %v\n", err)
+		return nil, err
+	}
+
+	// Fetch related data from the macros and phase_info tables.
+	macros, err := getMacros(tx, u.MacrosID)
+	if err != nil {
+		log.Printf("Error: Can't fetch macros: %v\n", err)
+		return nil, err
+	}
+	u.Macros = *macros
+
+	phase, err := getPhaseInfo(tx, u.PhaseID)
+	if err != nil {
+		log.Printf("Error: Can't fetch phase_info: %v\n", err)
+		return nil, err
+	}
+	u.Phase = *phase
+
+	log.Println("Loaded config.")
+	return u, tx.Commit()
+}
+
+/*
+// ReadConfig reads config file or creates it if it doesn't exist and
+// returns UserInfo struct.
+func ReadConfig() (u *UserInfo, err error) {
+  // If no config file exists,
+  if _, err := os.Stat(ConfigFilePath); os.IsNotExist(err) {
+    u, err = generateAndSaveConfig()
+    if err != nil {
+      return nil, err
+    }
+
+    return u, nil
+  }
+  // Otherwise, user has a config file.
+
+  // Read YAML file.
+  data, err := ioutil.ReadFile(ConfigFilePath)
+  if err != nil {
+    log.Printf("Error: Can't read file: %v\n", err)
+    return nil, err
+  }
+
+  // Unmarshal YAML data into struct.
+  err = yaml.Unmarshal(data, &u)
+  if err != nil {
+    log.Printf("Error: Can't unmarshal YAML: %v\n", err)
+    return nil, err
+  }
+  log.Println("Loaded user info.")
+
+  return u, nil
+}
+*/
+
+// generateAndSaveConfig generates a new config file for the user.
+func generateAndSaveConfig(tx *sqlx.Tx) (*UserInfo, error) {
+	fmt.Println("Please provide required information:")
+
+	u := UserInfo{}
+
+	// Get user details.
+	getUserInfo(&u)
+
+	processUserInfo(&u)
+
+	// Save user info.
+	err := saveUserInfo(tx, &u)
+	if err != nil {
+		log.Println("Failed to save user info:", err)
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+// getMacros fetches data from the macros table using the macros_id.
+func getMacros(tx *sqlx.Tx, macrosID int) (*Macros, error) {
+	m := &Macros{}
+	err := tx.Get(m, "SELECT * FROM macros WHERE macros_id = ?", macrosID)
+	return m, err
+}
+
+// getPhaseInfo fetches data from the phase_info table using the phase_id.
+func getPhaseInfo(tx *sqlx.Tx, phaseID int) (*PhaseInfo, error) {
+	p := &PhaseInfo{}
+	err := tx.Get(p, "SELECT * FROM phase_info WHERE phase_id = ?", phaseID)
+	return p, err
+}
+
+// saveUserInfo takes a transaction and user information and stores it
+// in the database. It breaks down the task into separate functions for
+// clarity and maintainability.
+func saveUserInfo(tx *sqlx.Tx, u *UserInfo) error {
+	// Insert or update macro nutritional data related to the user.
+	if err := insertOrUpdateMacros(tx, u); err != nil {
+		return err
+	}
+
+	// Insert or update phase information related to the user's current
+	// diet phase.
+	if err := insertOrUpdatePhaseInfo(tx, u); err != nil {
+		return err
+	}
+
+	// Insert or update general user information.
+	if err := insertOrUpdateUserInfo(tx, u); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// insertOrUpdateUserInfo attempts to insert a new user information
+// record into the database. If a record for the user already exists,
+// it updates the existing record with new data.
+func insertOrUpdateUserInfo(tx *sqlx.Tx, u *UserInfo) error {
+	_, err := tx.Exec(`
+        INSERT INTO config(sex, weight, height, age, activity_level, tdee, system, macros_id, phase_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT(user_id)
+        DO UPDATE SET
+            sex = $1, weight = $2, height = $3, age = $4,
+            activity_level = $5, tdee = $6, system = $7, macros_id = $8, phase_id = $9`,
+		u.Sex, u.Weight, u.Height, u.Age, u.ActivityLevel, u.TDEE, u.System, u.Macros.MacrosID, u.Phase.PhaseID)
+	return err
+}
+
+// insertOrUpdateMacros attempts to insert new macro nutritional data
+// for the user. If a record for the user's macros already exists, it
+// updates the existing record.
+func insertOrUpdateMacros(tx *sqlx.Tx, u *UserInfo) error {
+	res, err := tx.Exec(`
+        INSERT INTO macros(protein, min_protein, max_protein, carbs,
+													min_carbs, max_carbs, fats, min_fats, max_fats)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT(macros_id)
+        DO UPDATE SET
+            protein = $1, min_protein = $2, max_protein = $3,
+            carbs = $4, min_carbs = $5, max_carbs = $6,
+            fats = $7, min_fats = $8, max_fats = $9`,
+		u.Macros.Protein, u.Macros.MinProtein, u.Macros.MaxProtein,
+		u.Macros.Carbs, u.Macros.MinCarbs, u.Macros.MaxCarbs,
+		u.Macros.Fats, u.Macros.MinFats, u.Macros.MaxFats)
+	if err != nil {
+		return err
+	}
+
+	macrosID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	// update the UserInfo struct
+	u.Macros.MacrosID = int(macrosID)
+
+	return err
+}
+
+func insertOrUpdatePhaseInfo(tx *sqlx.Tx, u *UserInfo) error {
+	// Check if there's an existing active phase for this user
+	var existingPhaseID int
+	err := tx.Get(&existingPhaseID, "SELECT phase_id FROM phase_info WHERE user_id = $1 AND status = 'active'", u.UserID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	// If active phase found, update it
+	if err != sql.ErrNoRows {
+		// Update the existing active phase
+		_, err = tx.Exec(`
+      UPDATE phase_info SET
+        name = $2, goal_calories = $3, start_weight = $4, goal_weight = $5,
+        weight_change_threshold = $6, weekly_change = $7, start_date = $8,
+        end_date = $9, last_checked_week = $10, duration = $11,
+        max_duration = $12, min_duration = $13, status = $14
+        WHERE phase_id = $1`,
+			existingPhaseID, u.Phase.Name, u.Phase.GoalCalories, u.Phase.StartWeight, u.Phase.GoalWeight,
+			u.Phase.WeightChangeThreshold, u.Phase.WeeklyChange, u.Phase.StartDate.Format(dateFormat),
+			u.Phase.EndDate.Format(dateFormat), u.Phase.LastCheckedWeek.Format(dateFormat), u.Phase.Duration,
+			u.Phase.MaxDuration, u.Phase.MinDuration, u.Phase.Status)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+	// Otherwise, Insert a new phase
+	res, err := tx.Exec(`
+      INSERT INTO phase_info(user_id, name, status, goal_calories, start_weight, goal_weight,
+        weight_change_threshold, weekly_change, start_date,
+        end_date, last_checked_week, duration, max_duration,
+        min_duration, status)
+      VALUES ($1, $2, 'active', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		u.UserID, u.Phase.Name, u.Phase.GoalCalories, u.Phase.StartWeight, u.Phase.GoalWeight,
+		u.Phase.WeightChangeThreshold, u.Phase.WeeklyChange, u.Phase.StartDate.Format(dateFormat),
+		u.Phase.EndDate.Format(dateFormat), u.Phase.LastCheckedWeek.Format(dateFormat), u.Phase.Duration,
+		u.Phase.MaxDuration, u.Phase.MinDuration, u.Phase.Status)
+	if err != nil {
+		return err
+	}
+
+	phaseID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	// update the UserInfo struct
+	u.Phase.PhaseID = int(phaseID)
+
+	return nil
+}
+
+// insertOrUpdatePhaseInfo attempts to insert new phase data for
+// the user. If a record for the user's phase info already exists, it
+// updates the existing record.
+/*
+func insertOrUpdatePhaseInfo(tx *sqlx.Tx, u *UserInfo) error {
+	res, err := tx.Exec(`
+        INSERT INTO phase_info(user_id, name, goal_calories, start_weight, goal_weight,
+                              weight_change_threshold, weekly_change, start_date,
+                              end_date, last_checked_week, duration, max_duration,
+                              min_duration, active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT(phase_id)
+        DO UPDATE SET
+            user_id = $1, name = $2, goal_calories = $3, start_weight = $4, goal_weight = $5,
+            weight_change_threshold = $6, weekly_change = $7, start_date = $8,
+            end_date = $9, last_checked_week = $10, duration = $11,
+            max_duration = $12, min_duration = $13, active = $14`,
+		u.UserID, u.Phase.Name, u.Phase.GoalCalories, u.Phase.StartWeight, u.Phase.GoalWeight,
+		u.Phase.WeightChangeThreshold, u.Phase.WeeklyChange, u.Phase.StartDate.Format(dateFormat),
+		u.Phase.EndDate.Format(dateFormat), u.Phase.LastCheckedWeek.Format(dateFormat), u.Phase.Duration, u.Phase.MaxDuration,
+		u.Phase.MinDuration, u.Phase.Active)
+	if err != nil {
+		return err
+	}
+
+	phaseID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	// update the UserInfo struct
+	u.Phase.PhaseID = int(phaseID)
+
+	return err
+}
+*/
+
+/*
+func saveUserInfo(u *UserInfo) error {
+	// First, we'll save the main UserInfo details
+	_, err := db.NamedExec(`INSERT INTO user_info (sex, weight, height, age, activity_level, tdee, system)
+		VALUES (:sex, :weight, :height, :age, :activity_level, :tdee, :system)
+		ON CONFLICT (user_id) DO UPDATE SET
+		sex = :sex, weight = :weight, height = :height, age = :age, activity_level = :activity_level, tdee = :tdee, system = :system`, u)
+	if err != nil {
+		return err
+	}
+
+	// Next, save the Macros
+	_, err = db.NamedExec(`INSERT INTO macros (protein, min_protein, max_protein, carbs, min_carbs, max_carbs, fats, min_fats, max_fats)
+		VALUES (:protein, :min_protein, :max_protein, :carbs, :min_carbs, :max_carbs, :fats, :min_fats, :max_fats)
+		ON CONFLICT (macros_id) DO UPDATE SET
+		protein = :protein, min_protein = :min_protein, max_protein = :max_protein, carbs = :carbs, min_carbs = :min_carbs, max_carbs = :max_carbs, fats = :fats, min_fats = :min_fats, max_fats = :max_fats`, u.Macros)
+	if err != nil {
+		return err
+	}
+
+	// Finally, save the PhaseInfo
+	_, err = db.NamedExec(`INSERT INTO phase_info (name, goal_calories, start_weight, goal_weight, weight_change_threshold, weekly_change, start_date, end_date, last_checked_week, duration, max_duration, min_duration, active)
+		VALUES (:name, :goal_calories, :start_weight, :goal_weight, :weight_change_threshold, :weekly_change, :start_date, :end_date, :last_checked_week, :duration, :max_duration, :min_duration, :active)
+		ON CONFLICT (phase_id) DO UPDATE SET
+		name = :name, goal_calories = :goal_calories, start_weight = :start_weight, goal_weight = :goal_weight, weight_change_threshold = :weight_change_threshold, weekly_change = :weekly_change, start_date = :start_date, end_date = :end_date, last_checked_week = :last_checked_week, duration = :duration, max_duration = :max_duration, min_duration = :min_duration, active = :active`, u.Phase)
+	return err
 }
 
 // Save user information to yaml config file.
@@ -55,6 +364,7 @@ func saveUserInfo(u *UserInfo) error {
 	}
 	return ioutil.WriteFile(ConfigFilePath, data, 0644)
 }
+*/
 
 // activity returns the scale based on the user's activity level.
 func activity(a string) (float64, error) {
@@ -736,7 +1046,15 @@ func PrintUserInfo(u *UserInfo) {
 }
 
 // UpdateUserInfo lets the user update their information.
-func UpdateUserInfo(u *UserInfo) {
+func UpdateUserInfo(db *sqlx.DB, u *UserInfo) error {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	fmt.Println("Update your information.")
 	getUserInfo(u)
 
@@ -749,13 +1067,15 @@ func UpdateUserInfo(u *UserInfo) {
 	u.Macros.Carbs = carbs
 	u.Macros.Fats = fats
 
-	// Save the update UserInfo to config file.
-	err := saveUserInfo(u)
+	// Save the updated UserInfo.
+	err = saveUserInfo(tx, u)
 	if err != nil {
 		log.Printf("Failed to save user info: %v\n", err)
-		return
+		return err
 	}
 
 	fmt.Println("Updated information:")
 	PrintUserInfo(u)
+
+	return tx.Commit()
 }
