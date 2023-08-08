@@ -993,13 +993,14 @@ func ShowFoodLog(db *sqlx.DB) error {
 // getAllFoodEntries retrieves all logged food entries. Ordered by most
 // most recent date.
 func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
+	// Since DailyFood struct does not currently support time field, the
+	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT df.*, f.food_name, f.serving_unit
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         ORDER BY df.date DESC
     `
-
 	var entries []DailyFood
 	if err := tx.Select(&entries, query); err != nil {
 		return nil, err
