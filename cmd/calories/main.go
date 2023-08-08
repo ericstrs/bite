@@ -1,30 +1,24 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 
 	"github.com/jmoiron/sqlx"
 	c "github.com/oneseIf/calories"
-	"github.com/rocketlaunchr/dataframe-go"
 )
 
 func main() {
-	var active_logs *dataframe.DataFrame
+	var active_log *[]c.Entry
 
-	// Read user's config file.
-	u, err := c.ReadConfig()
-	if err != nil {
-		return
-	}
-
-	// Read user entries.
-	logs, err := c.ReadEntries()
-	if err != nil {
-		return
-	}
+	/*
+		// Read user entries.
+		logs, err := c.ReadEntries()
+		if err != nil {
+			return
+		}
+	*/
 
 	/* ---------- Database ----------- */
 	// Create a new SQLite database
@@ -52,18 +46,36 @@ func main() {
 	}
 	/* ------------------------------- */
 
-	active, err := c.CheckPhaseStatus(u)
+	// Read user's config file.
+	u, err := c.ReadConfig(db)
+	if err != nil {
+		return
+	}
+
+	// Read user entries.
+	entries, err := c.GetAllEntries(db)
+	if err != nil {
+		return
+	}
+
+	status, err := c.CheckPhaseStatus(db, u)
 	if err != nil {
 		return
 	}
 	// If there is an active diet,
-	if active {
-		// Obtain valid log indices for the active diet phase.
-		indices := c.GetValidLogIndices(u, logs)
-		// Subset the logs for the active diet phase.
-		active_logs = c.Subset(logs, indices)
+	if status == "active" {
+		/*
+			// Obtain valid log indices for the active diet phase.
+			indices := c.GetValidLogIndices(u, logs)
+			// Subset the logs for the active diet phase.
+			active_logs = c.Subset(logs, indices)
+		*/
 
-		err = c.CheckProgress(u, active_logs)
+		// Subset the log for the active diet phase.
+		active_log = c.GetValidLog(u, entries)
+
+		// Get user progress.
+		err = c.CheckProgress(db, u, active_log)
 		if err != nil {
 			return
 		}
@@ -134,21 +146,27 @@ func main() {
 			}
 		case "show":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log show [all|weight|food|meal]")
+				log.Println("Usage: ./calories log show [all|weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "all":
 				// TODO
-			case "meal":
-				// TODO
 			case "food":
-				c.ShowFoodLog(db)
+				err := c.ShowFoodLog(db)
+				if err != nil {
+					log.Println(err)
+					return
+				}
 			case "weight":
-				c.ShowWeightLog(db)
+				err := c.ShowWeightLog(db)
+				if err != nil {
+					log.Println(err)
+					return
+				}
 			default:
-				log.Println("Usage: ./calories log show [all|weight|food|meal]")
+				log.Println("Usage: ./calories log show [all|weight|food]")
 				return
 			}
 		default:
@@ -157,58 +175,85 @@ func main() {
 		}
 	case "add":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories add [log|food|meal]")
+			log.Println("Usage: ./calories add [food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
-		case "log": // TODO: remove case once ./cmd log is made
-			err := c.Log(u, c.EntriesFilePath)
+		case "meal":
+			err := c.CreateAndAddMeal(db)
 			if err != nil {
-				fmt.Println(err)
 				return
 			}
-			fmt.Print(logs.Table())
-			return
-		case "meal":
-			// TODO
 		case "food":
-			// TODO
+			err := c.CreateAndAddFood(db)
+			if err != nil {
+				return
+			}
 		default:
-			log.Println("Usage: ./calories add [log|food|meal]")
+			log.Println("Usage: ./calories add [food|meal]")
 			return
 		}
 	case "delete":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories delete [log|food|meal]")
+			log.Println("Usage: ./calories delete [food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
-		case "log":
-			// TODO
 		case "meal":
-			// TODO
+			err := c.SelectAndDeleteMeal(db)
+			if err != nil {
+				return
+			}
 		case "food":
-			// TODO
+			err := c.SelectAndDeleteFood(db)
+			if err != nil {
+				return
+			}
 		default:
-			log.Println("Usage: ./calories delete [log|food|meal]")
+			log.Println("Usage: ./calories delete [food|meal]")
 			return
 		}
 	case "update":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories update [user]")
+			log.Println("Usage: ./calories update [user|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "user":
-			c.UpdateUserInfo(u)
+			err := c.UpdateUserInfo(db, u)
+			if err != nil {
+				return
+			}
+		case "meal":
+			if len(os.Args) < 4 {
+				log.Println("Usage: ./calories update meal [add|delete]")
+				return
+			}
+
+			switch os.Args[3] {
+			case "add": // Adds a food to an existing meal.
+				err := c.GetUserInputAddMealFood(db)
+				if err != nil {
+					return
+				}
+			case "delete": // Deletes a food from an existing meal.
+				err := c.SelectAndDeleteFoodMealFood(db)
+				if err != nil {
+					return
+				}
+			default:
+				log.Println("Usage: ./calories update meal [add|delete]")
+				return
+			}
+
 		default:
-			log.Println("Usage: ./calories update [user]")
+			log.Println("Usage: ./calories update [user|meal]")
 			return
 		}
 	case "summary":
@@ -221,13 +266,16 @@ func main() {
 		switch os.Args[2] {
 		case "phase":
 			// Only call Summary with the active logs if a diet phase is active.
-			if active {
-				c.Summary(u, active_logs)
+			if status == "active" {
+				c.Summary(u, active_log)
 				return
 			}
 			log.Println("Diet is not active. Skipping summary.")
 		case "diet":
-			// TODO: give summary on foods ate
+			err := c.FoodLogSummary(db)
+			if err != nil {
+				return
+			}
 		case "user":
 			c.PrintUserInfo(u)
 		default:
@@ -263,8 +311,6 @@ func main() {
 			log.Println("Usage: ./calories stop [phase]")
 			return
 		}
-	case "test": // TODO: REMOVE AFTER TESTING.
-		c.Run(db)
 	default:
 		log.Println("Usage: ./calories [log|add|delete|update|summary|start|stop]")
 	}
