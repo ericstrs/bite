@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS daily_meals (
 CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
-  time TIME,
+  time TIME NOT NULL,
   weight REAL NOT NULL
 );
 
