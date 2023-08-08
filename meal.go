@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -454,7 +455,9 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 	}
 
 	fmt.Println("Added meal.")
-	return nil
+
+	// Commit the transaction
+	return tx.Commit()
 }
 
 // SelectAndDeleteMeal selects a meal deletes a meal from the
@@ -671,22 +674,59 @@ func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
 		return err
 	}
 
-	// Select a food.
-	food, err := selectFood(tx)
+	// TODO: should select a food that makes up the meal. Not just any food.
+
+	// Get the foods that make up the meal.
+	mealFoods, err := getMealFoodsWithPref(tx, meal.ID)
 	if err != nil {
-		if errors.Is(err, ErrDone) {
-			return err // If the user entered "done", return early.
-		}
 		log.Println(err)
+		return err
 	}
 
-	// Delete meal food.
-	err = deleteMealFood(tx, meal.ID, food.ID)
+	// Print the foods that make up the meal and their preferences.
+	printMealDetails(mealFoods)
+
+	// Let user select food to delete.
+	var idx int
+	for {
+		// Get user response.
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Printf("Enter index of food to remove: ")
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatalf("SelectAndDeleteFoodMealFood: %v\n", err)
+		}
+		// Remove the newline character at the end of the string
+		response = strings.TrimSpace(response)
+
+		idx, err = strconv.Atoi(response)
+
+		// If user enters an invalid integer,
+		if 1 > idx || idx > len(mealFoods) {
+			fmt.Println("Number must be between 0 and number of foods. Please try again.")
+			continue
+		}
+		break
+	}
+
+	/*
+		// Select a food.
+		food, err := selectFood(tx)
+		if err != nil {
+			if errors.Is(err, ErrDone) {
+				return err // If the user entered "done", return early.
+			}
+			log.Println(err)
+		}
+	*/
+
+	// Using selected food ID, remove it from the meal.
+	err = deleteMealFood(tx, meal.ID, mealFoods[idx-1].Food.ID)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully removed food %d to meal %d\n", food.ID, meal.ID)
+	fmt.Printf("Successfully removed food %s from %s meal.\n", mealFoods[idx-1].Food.Name, meal.Name)
 	return tx.Commit()
 }
 
