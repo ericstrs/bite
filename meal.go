@@ -31,9 +31,13 @@ type Food struct {
 	Name             string  `db:"food_name"`
 	ServingUnit      string  `db:"serving_unit"`
 	ServingSize      float64 `db:"serving_size"`
+	NumberOfServings float64 `db:"number_of_servings"`
 	HouseholdServing string  `db:"household_serving"`
-	PortionCals      float64
+	Calories         float64
 	FoodMacros       *FoodMacros
+	// Indicates if there is a serving size preference set for this food in
+	// the meal (in food_prefs).
+	HasPreference bool `db:"has_preference"`
 }
 
 // MealFood extends Food with additional fields to represent a food
@@ -72,9 +76,9 @@ type MealFoodPref struct {
 }
 
 type FoodMacros struct {
-	Protein float64
-	Fat     float64
-	Carbs   float64
+	Protein float64 `db:"protein"`
+	Fat     float64 `db:"fat"`
+	Carbs   float64 `db:"carbs"`
 }
 
 // CreateAndAddFood creates a new food and adds it into the database.
@@ -91,7 +95,7 @@ func CreateAndAddFood(db *sqlx.DB) error {
 		return fmt.Errorf("failed to get food nutrients user input: %w", err)
 	}
 	newFood.FoodMacros = newFoodMacros
-	newFood.PortionCals = cals
+	newFood.Calories = cals
 
 	// Start a new transaction.
 	tx, err := db.Beginx()
@@ -232,7 +236,7 @@ func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
 		"Protein":                     food.FoodMacros.Protein,
 		"Total lipid (fat)":           food.FoodMacros.Fat,
 		"Carbohydrate, by difference": food.FoodMacros.Carbs,
-		"Energy":                      food.PortionCals,
+		"Energy":                      food.Calories,
 	}
 
 	insertFoodNutrientsSQL := `
@@ -887,7 +891,7 @@ func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
 		return nil, err
 	}
 
-	err = db.Get(&f.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = db.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		return nil, err
 	}
