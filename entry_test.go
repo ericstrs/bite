@@ -103,19 +103,23 @@ func ExampleGetAllEntries() {
   meal_ID INTEGER REFERENCES meals(meal_id),
   date DATE NOT NULL,
 	time TIME NOT NULL,
-  number_of_servings REAL DEFAULT 1 NOT NULL
+  number_of_servings REAL DEFAULT 1 NOT NULL,
+	calories REAL NOT NULL,
+  protein REAL NOT NULL,
+  fat REAL NOT NULL,
+  carbs REAL NOT NULL
 	)`)
 
 	// Note: 5th day user did not log any foods.
-	db.MustExec(`INSERT INTO daily_foods (food_id, date, time, number_of_servings) VALUES
-(1, '2023-01-01', '00:00:00', 1),
-	(2, '2023-01-01', '00:00:00', 1),
-	(2, '2023-01-02','00:00:00',  1),
-	(4, '2023-01-02','00:00:00',  1),
-	(5, '2023-01-03', '00:00:00', 1),
-	(1, '2023-01-03', '00:00:00', 1),
-	(3, '2023-01-04', '00:00:00', 1),
-	(4, '2023-01-04', '00:00:00', 1)
+	db.MustExec(`INSERT INTO daily_foods (food_id, date, time, number_of_servings, calories, protein, fat, carbs) VALUES
+		(1, '2023-01-01', '00:00:00', 1, 165, 31, 3.6, 0),
+		(2, '2023-01-01', '00:00:00', 1, 34, 2.8, 0.4, 7),
+		(2, '2023-01-02', '00:00:00', 1, 34, 2.8, 0.4, 7),
+		(4, '2023-01-02', '00:00:00', 1, 266, 11, 10, 33),
+		(5, '2023-01-03', '00:00:00', 1, 216, 12, 12, 15),
+		(1, '2023-01-03', '00:00:00', 1, 165, 31, 3.6, 0),
+		(3, '2023-01-04', '00:00:00', 1, 122, 2.73, 0.96, 25.5),
+		(4, '2023-01-04', '00:00:00', 1, 266, 11, 10, 33)
 	`)
 
 	// Create the daily_weights table
@@ -158,6 +162,14 @@ func ExampleGetAllEntries() {
   FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
 	)`)
 
+	// This tests to ensure that entering food and meal food preference
+	// only affect future food logging. That is, the inserts below should
+	// not change the output values.
+	_, err = db.Exec(`
+				INSERT INTO food_prefs VALUES (1, 160, 1);
+		  	INSERT INTO meal_food_prefs VALUES (1, 1, 180, 2);
+			`)
+
 	// Get all entries
 	entries, err := GetAllEntries(db)
 	if err != nil {
@@ -167,7 +179,7 @@ func ExampleGetAllEntries() {
 	for _, entry := range *entries {
 		fmt.Println("Date: ", entry.Date.Format(dateFormat))
 		fmt.Println("Weight: ", entry.UserWeight)
-		fmt.Println("Calories: ", entry.UserCals)
+		fmt.Println("Calories: ", entry.Calories)
 	}
 
 	// Output:
@@ -398,21 +410,34 @@ func ExampleUpdateFoodEntry() {
   date DATE NOT NULL,
 	time TIME NOT NULL,
   serving_size REAL NOT NULL,
-  number_of_servings REAL DEFAULT 1 NOT NULL
+  number_of_servings REAL DEFAULT 1 NOT NULL,
+	calories REAL NOT NULL,
+  protein REAL NOT NULL,
+  fat REAL NOT NULL,
+  carbs REAL NOT NULL
 )`)
 
 	// Insert daily food entry.
-	tx.MustExec(`INSERT INTO daily_foods (food_id, date, time, serving_size) VALUES
-(1, "2023-01-01", "00:00:00", 100)
+	tx.MustExec(`INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs) VALUES
+(1, "2023-01-01", "00:00:00", 100, 1, 56, 5, 4, 5)
 	`)
 
-	pref := &FoodPref{
-		FoodID:           1,
+	food := &Food{
+		ID:               1,
+		Name:             "Chicken Breast",
+		ServingUnit:      "g",
 		ServingSize:      100,
+		HouseholdServing: "1/2 piece",
 		NumberOfServings: 2,
+		Calories:         112,
+		FoodMacros: &FoodMacros{
+			Protein: 10,
+			Fat:     8,
+			Carbs:   10,
+		},
 	}
 
-	err = updateFoodEntry(tx, 1, *pref)
+	err = updateFoodEntry(tx, 1, *food)
 	if err != nil {
 		log.Println(err)
 		return
@@ -422,7 +447,7 @@ func ExampleUpdateFoodEntry() {
 
 	// Verify the food entry was updated
 	var numServings float64
-	err = db.Get(&numServings, `SELECT number_of_servings FROM daily_foods WHERE date = ?`, "2023-01-01")
+	err = db.Get(&numServings, `SELECT number_of_servings FROM daily_foods WHERE date = $1`, "2023-01-01")
 
 	fmt.Println(numServings)
 	fmt.Println(err)
@@ -499,7 +524,11 @@ func ExampleGetMealFoodWithPref() {
   		date DATE NOT NULL,
 			time TIME NOT NULL,
   		serving_size REAL NOT NULL,
-  		number_of_servings REAL DEFAULT 1 NOT NULL
+  		number_of_servings REAL DEFAULT 1 NOT NULL,
+			calories REAL NOT NULL,
+			protein REAL NOT NULL,
+  		fat REAL NOT NULL,
+  		carbs REAL NOT NULL
 		);
   `)
 	if err != nil {
@@ -551,7 +580,7 @@ func ExampleGetMealFoodWithPref() {
 	fmt.Printf("Food Name: %s\n", mealFood.Food.Name)
 	fmt.Printf("Serving Size: %.2f\n", mealFood.ServingSize)
 	fmt.Printf("Number of Servings: %.2f\n", mealFood.NumberOfServings)
-	fmt.Printf("Calories: %.2f\n", mealFood.Food.PortionCals)
+	fmt.Printf("Calories: %.2f\n", mealFood.Food.Calories)
 	fmt.Println("Macros:")
 	fmt.Printf("  - Protein: %.2f\n", mealFood.Food.FoodMacros.Protein)
 	fmt.Printf("  - Fat: %.2f\n", mealFood.Food.FoodMacros.Fat)
@@ -566,6 +595,122 @@ func ExampleGetMealFoodWithPref() {
 	//   - Protein: 1.08
 	//   - Fat: 0.72
 	//   - Carbs: 43.20
+}
+
+func ExampleGetFoodWithPref() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Create tables.
+	_, err = tx.Exec(`
+    CREATE TABLE IF NOT EXISTS foods (
+      food_id INTEGER PRIMARY KEY,
+      food_name TEXT NOT NULL,
+      serving_size REAL NOT NULL,
+      serving_unit TEXT NOT NULL,
+      household_serving TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS food_prefs (
+      food_id INTEGER PRIMARY KEY,
+      serving_size REAL,
+      number_of_servings REAL DEFAULT 1 NOT NULL,
+      FOREIGN KEY(food_id) REFERENCES foods(food_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS food_nutrients (
+    id INTEGER PRIMARY KEY,
+    food_id INTEGER NOT NULL,
+    nutrient_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    derivation_id REAL NOT NULL,
+    FOREIGN KEY (food_id) REFERENCES foods(food_id),
+    FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
+    FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS nutrients (
+      nutrient_id INTEGER PRIMARY KEY,
+      nutrient_name TEXT NOT NULL,
+      unit_name TEXT NOT NULL
+    );
+
+  `)
+	if err != nil {
+		log.Fatalf("failed to create schema: %s", err)
+	}
+
+	// Insert test data.
+	_, err = tx.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+  (1, 'Protein', 'g'),
+  (2, 'Total lipid (fat)', 'g'),
+  (3, 'Carbohydrate, by difference', 'g'),
+  (4, 'Energy', 'KCAL')`)
+	if err != nil {
+		log.Fatalf("failed to insert data into nutrients: %s", err)
+	}
+
+	_, err = tx.Exec(`
+  INSERT INTO foods VALUES (1, 'Apple', 100, 'g', '1 medium');
+  INSERT INTO food_prefs VALUES (1, 160, 1);
+`)
+	if err != nil {
+		log.Fatalf("failed to insert data into foods, food_prefs: %s", err)
+	}
+
+	_, err = tx.Exec(`
+  INSERT INTO food_nutrients VALUES (1, 1, 1, 0.3, 71);  -- 0.3g Protein
+  INSERT INTO food_nutrients VALUES (2, 1, 2, 0.2, 71);  -- 0.2g Fat
+  INSERT INTO food_nutrients VALUES (3, 1, 3, 12, 71);   -- 12g Carbohydrates
+  INSERT INTO food_nutrients VALUES (4, 1, 4, 52, 71);   -- 52KCAL Energy
+`)
+	if err != nil {
+		log.Fatalf("failed to insert data into food_nutrients: %s", err)
+	}
+
+	// Test getFoodWithPref.
+	food, err := getFoodWithPref(tx, 1)
+	if err != nil {
+		log.Fatalf("getFoodWithPref failed: %s", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		fmt.Printf("Failed to commit transaction: %v\n.", err)
+		return
+	}
+
+	// Print the result for verification.
+	fmt.Printf("Food Name: %s\n", food.Name)
+	fmt.Printf("Serving Size: %.2f\n", food.ServingSize)
+	fmt.Printf("Number of Servings: %.2f\n", food.NumberOfServings)
+	fmt.Printf("Calories: %.2f\n", food.Calories)
+	fmt.Println("Macros:")
+	fmt.Printf("  - Protein: %.2f\n", food.FoodMacros.Protein)
+	fmt.Printf("  - Fat: %.2f\n", food.FoodMacros.Fat)
+	fmt.Printf("  - Carbs: %.2f\n", food.FoodMacros.Carbs)
+
+	// Output:
+	// Food Name: Apple
+	// Serving Size: 160.00
+	// Number of Servings: 1.00
+	// Calories: 83.20
+	// Macros:
+	//   - Protein: 0.48
+	//   - Fat: 0.32
+	//   - Carbs: 19.20
 }
 
 func ExampleAddMealEntry() {
@@ -678,7 +823,11 @@ func ExampleAddMealFoodEntries() {
   date DATE NOT NULL,
 	time TIME NOT NULL,
   serving_size REAL NOT NULL,
-  number_of_servings REAL DEFAULT 1 NOT NULL
+  number_of_servings REAL DEFAULT 1 NOT NULL,
+	calories REAL NOT NULL,
+  protein REAL NOT NULL,
+  fat REAL NOT NULL,
+  carbs REAL NOT NULL
 	);
 
 	CREATE TABLE IF NOT EXISTS meals (
@@ -718,6 +867,12 @@ func ExampleAddMealFoodEntries() {
 				ServingSize:      100,
 				ServingUnit:      "g",
 				HouseholdServing: "1/2 piece",
+				Calories:         165,
+				FoodMacros: &FoodMacros{
+					Protein: 31,
+					Fat:     3.6,
+					Carbs:   0,
+				},
 			},
 			NumberOfServings: 1,
 			ServingSize:      100,
@@ -729,6 +884,12 @@ func ExampleAddMealFoodEntries() {
 				ServingSize:      100,
 				ServingUnit:      "g",
 				HouseholdServing: "1/2 cup",
+				Calories:         130,
+				FoodMacros: &FoodMacros{
+					Protein: 2.6,
+					Fat:     0.3,
+					Carbs:   28,
+				},
 			},
 			NumberOfServings: 1,
 			ServingSize:      100,
@@ -740,6 +901,12 @@ func ExampleAddMealFoodEntries() {
 				ServingSize:      156,
 				ServingUnit:      "g",
 				HouseholdServing: "1 cup",
+				Calories:         50,
+				FoodMacros: &FoodMacros{
+					Protein: 4,
+					Fat:     0.6,
+					Carbs:   10,
+				},
 			},
 			NumberOfServings: 1,
 			ServingSize:      156,
@@ -784,7 +951,7 @@ func ExampleGetValidLog() {
 	entries := &[]Entry{
 		{
 			UserWeight: 70.5,
-			UserCals:   2000,
+			Calories:   2000,
 			Date:       time.Date(2023, 1, 2, 0, 0, 0, 0, time.UTC),
 			Protein:    150, // Assuming 30% of calories from protein for this entry
 			Carbs:      200, // Assuming 40% of calories from carbs for this entry
@@ -792,7 +959,7 @@ func ExampleGetValidLog() {
 		},
 		{
 			UserWeight: 70.5,
-			UserCals:   2000,
+			Calories:   2000,
 			Date:       time.Date(2023, 1, 3, 0, 0, 0, 0, time.UTC),
 			Protein:    150, // Assuming 30% of calories from protein for this entry
 			Carbs:      200, // Assuming 40% of calories from carbs for this entry
@@ -800,7 +967,7 @@ func ExampleGetValidLog() {
 		},
 		{
 			UserWeight: 70.1,
-			UserCals:   1900,
+			Calories:   1900,
 			Date:       time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC),
 			Protein:    142.5, // Assuming 30% of calories from protein for this entry
 			Carbs:      190,   // Assuming 40% of calories from carbs for this entry
@@ -808,7 +975,7 @@ func ExampleGetValidLog() {
 		},
 		{
 			UserWeight: 69.8,
-			UserCals:   1850,
+			Calories:   1850,
 			Date:       time.Date(2023, 1, 7, 0, 0, 0, 0, time.UTC),
 			Protein:    138.75, // Assuming 30% of calories from protein for this entry
 			Carbs:      185,    // Assuming 40% of calories from carbs for this entry
@@ -824,7 +991,7 @@ func ExampleGetValidLog() {
 	subset := GetValidLog(&u, entries)
 	fmt.Println("Weight Calories Date")
 	for _, entry := range *subset {
-		fmt.Println(entry.UserWeight, entry.UserCals, entry.Date)
+		fmt.Println(entry.UserWeight, entry.Calories, entry.Date)
 	}
 
 	// Output:
@@ -1026,48 +1193,3 @@ func ExampleGetFrequentFoods() {
 	// Chicken: 3 times
 	// Beef: 2 times
 }
-
-/*
-func ExampleGetValidLogIndices() {
-  u := UserInfo{}
-
-  var weightSeriesElements []interface{}
-  var caloriesSeriesElements []interface{}
-  var dateSeriesElements []interface{}
-
-  weightVal := 184.0
-  caloriesVal := 2300.0
-
-  today := time.Now()
-
-	// Initialize dataframe with 18 days prior to today.
-  for i := 0; i < 18; i++ {
-    dateVal := today.AddDate(0, 0, -17+i).Format(dateFormat)
-    dateSeriesElements = append(dateSeriesElements, dateVal)
-
-    weightVal -= 0.10
-    weightSeriesElements = append(weightSeriesElements, strconv.FormatFloat(weightVal, 'f', 1, 64))
-
-    caloriesVal -= 10
-    caloriesSeriesElements = append(caloriesSeriesElements, strconv.Itoa(int(caloriesVal)))
-  }
-
-  weightSeries := dataframe.NewSeriesString("weight", nil, weightSeriesElements...)
-  caloriesSeries := dataframe.NewSeriesString("calories", nil, caloriesSeriesElements...)
-  dateSeries := dataframe.NewSeriesString("date", nil, dateSeriesElements...)
-
-  logs := dataframe.NewDataFrame(weightSeries, caloriesSeries, dateSeries)
-
-	// Set starting date a few indices past 0; this simulates entries that
-	// were logged before a diet phase began.
-  u.Phase.StartDate, _ = time.Parse(dateFormat, logs.Series[dateCol].Value(10).(string))
-	// Set end date to some arbitrary point past last logged entry (today)
-  u.Phase.EndDate = today.AddDate(0, 0, 7)
-  u.Phase.Active = true
-
-  fmt.Println(getValidLogIndices(&u, logs))
-
-  // Output:
-  // [10 11 12 13 14 15 16]
-}
-*/
