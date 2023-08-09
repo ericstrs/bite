@@ -152,7 +152,7 @@ func main() {
 
 			switch os.Args[3] {
 			case "all":
-				// TODO
+				c.PrintEntries(*entries)
 			case "food":
 				err := c.ShowFoodLog(db)
 				if err != nil {
@@ -272,8 +272,22 @@ func main() {
 			}
 			log.Println("Diet is not active. Skipping summary.")
 		case "diet":
-			err := c.FoodLogSummary(db)
-			if err != nil {
+			if len(os.Args) < 4 {
+				log.Println("Usage: ./calories summary diet [all|day]")
+				return
+			}
+
+			switch os.Args[3] {
+			case "all":
+				if err := c.FoodLogSummary(db); err != nil {
+					return
+				}
+			case "day":
+				if err := c.FoodLogSummaryDay(db, u); err != nil {
+					return
+				}
+			default:
+				log.Println("Usage: ./calories summary diet [all|day]")
 				return
 			}
 		case "user":
@@ -306,7 +320,9 @@ func main() {
 		// Execute subcommand
 		switch os.Args[2] {
 		case "phase":
-			// TODO
+			if err := c.StopPhase(db, u); err != nil {
+				return
+			}
 		default:
 			log.Println("Usage: ./calories stop [phase]")
 			return
