@@ -23,7 +23,11 @@ CREATE TABLE IF NOT EXISTS daily_foods (
   date DATE NOT NULL,
   time TIME NOT NULL,
   serving_size REAL NOT NULL,
-  number_of_servings REAL DEFAULT 1 NOT NULL
+  number_of_servings REAL DEFAULT 1 NOT NULL,
+  calories REAL NOT NULL,
+  protein REAL NOT NULL,
+  fat REAL NOT NULL,
+  carbs REAL NOT NULL
 );
 
 -- user_meals contains the user's meal consumption logs.
