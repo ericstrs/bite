@@ -255,13 +255,23 @@ func checkCutThreshold(tx *sqlx.Tx, u *UserInfo) error {
 
 		switch option {
 		case "1":
-			err := transitionToMaintenance(tx, u)
-			if err != nil {
+			// Update current diet phase status to: "completed".
+			u.Phase.Status = "completed"
+			if err := updatePhaseInfo(tx, u); err != nil {
+				return err
+			}
+
+			if err := transitionToMaintenance(tx, u); err != nil {
 				return err
 			}
 		case "2": // Change to different phase.
-			err := processPhaseTransition(tx, u)
-			if err != nil {
+			// Update current diet phase status to: "stopped".
+			u.Phase.Status = "stopped"
+			if err := updatePhaseInfo(tx, u); err != nil {
+				return err
+			}
+
+			if err := processPhaseTransition(tx, u); err != nil {
 				return err
 			}
 		case "3": // Continue with the cut.
@@ -437,7 +447,7 @@ func getCalsWeek(entries *[]Entry, weekStart, WeekEnd time.Time) ([]float64, err
 	// Iterate over each day of the week starting from startIdx.
 	for i := startIdx; i < endIdx; i++ {
 		// Get entry calories.
-		cal := (*entries)[i].UserCals
+		cal := (*entries)[i].Calories
 		/*
 			c := logs.Series[calsCol].Value(i).(string)
 			cal, err := strconv.ParseFloat(c, 64)
@@ -595,18 +605,28 @@ func checkBulkThreshold(tx *sqlx.Tx, u *UserInfo) error {
 	if weightGain > u.Phase.WeightChangeThreshold {
 		option := getBulkAction()
 		switch option {
-		case "1":
-			fmt.Println("Going from a bulk to a maintenance phase, you should gradually drop your calories down to your TDEE.")
-			err := transitionToMaintenance(tx, u)
-			if err != nil {
-				return nil
-			}
-		case "2": // Change to different phase.
-			err := processPhaseTransition(tx, u)
-			if err != nil {
+		case "1": // User wants to transition to maintenance phase.
+			// Update current diet phase status to: "completed".
+			u.Phase.Status = "completed"
+			if err := updatePhaseInfo(tx, u); err != nil {
 				return err
 			}
-		case "3": // Continue with the bulk.
+
+			fmt.Println("Going from a bulk to a maintenance phase, you should gradually drop your calories down to your TDEE.")
+			if err := transitionToMaintenance(tx, u); err != nil {
+				return nil
+			}
+		case "2": // User want to change to different phase.
+			// Update current diet phase status to: "stopped".
+			u.Phase.Status = "stopped"
+			if err := updatePhaseInfo(tx, u); err != nil {
+				return err
+			}
+
+			if err := processPhaseTransition(tx, u); err != nil {
+				return err
+			}
+		case "3": // User wants to continue with the bulk.
 			u.Phase.WeightChangeThreshold += u.Weight * 0.10 // 10% of current weight.
 			// Save user info to config file.
 			err := saveUserInfo(tx, u)
@@ -710,9 +730,14 @@ func CheckPhaseStatus(db *sqlx.DB, u *UserInfo) (string, error) {
 	// If today comes after diet end date, diet phase is over.
 	if t.After(u.Phase.EndDate) {
 		fmt.Println("Diet phase completed! Starting the diet phase transistion process.")
+		//  Update current diet phase status to: "completed".
+		u.Phase.Status = "completed"
+		if err := updatePhaseInfo(tx, u); err != nil {
+			return "", err
+		}
+
 		// Process phase transition
-		err := processPhaseTransition(tx, u)
-		if err != nil {
+		if err := processPhaseTransition(tx, u); err != nil {
 			return "", err
 		}
 
@@ -735,8 +760,13 @@ func CheckPhaseStatus(db *sqlx.DB, u *UserInfo) (string, error) {
 			case "1": // Get new goal weight.
 				u.Phase.GoalWeight = getGoalWeight(u)
 			case "2": // Change to different phase.
-				err := processPhaseTransition(tx, u)
-				if err != nil {
+				// Update current diet phase status to: "stopped".
+				u.Phase.Status = "stopped"
+				if err := updatePhaseInfo(tx, u); err != nil {
+					return "", err
+				}
+
+				if err := processPhaseTransition(tx, u); err != nil {
 					return "", err
 				}
 			}
@@ -757,8 +787,7 @@ func getNextAction(u *UserInfo) (a string) {
 		a := promptNextAction()
 
 		// Validate user response.
-		err := validateNextAction(a)
-		if err != nil {
+		if err := validateNextAction(a); err != nil {
 			fmt.Println("Invalid next action. Please try again.")
 			continue
 		}
@@ -1800,7 +1829,7 @@ func daySummary(u *UserInfo, entries *[]Entry) {
 		calsStr := logs.Series[calsCol].Value(i).(string)
 		cals, _ := strconv.ParseFloat(calsStr, 64)
 	*/
-	cals := (*entries)[i].UserCals
+	cals := (*entries)[i].Calories
 
 	fmt.Printf("%sDay Summary for %s%s\n", colorUnderline, tailDate.Format(dateFormat), colorReset)
 	fmt.Printf("Current Weight: %.2f\n", u.Weight)
@@ -1892,7 +1921,7 @@ func weekSummary(u *UserInfo, entries *[]Entry) {
 				calsStr = logs.Series[calsCol].Value(idx).(string)
 				cals, _ := strconv.ParseFloat(calsStr, 64)
 			*/
-			cals := (*entries)[idx].UserCals
+			cals := (*entries)[idx].Calories
 			s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 
 			calsOfWeek = append(calsOfWeek, s)
@@ -1960,7 +1989,7 @@ func monthSummary(u *UserInfo, entries *[]Entry) {
 					calsStr = logs.Series[calsCol].Value(idx).(string)
 					cals, _ := strconv.ParseFloat(calsStr, 64)
 				*/
-				cals := (*entries)[idx].UserCals
+				cals := (*entries)[idx].Calories
 				s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 
 				calsOfWeek = append(calsOfWeek, s)
@@ -2011,4 +2040,28 @@ func printDietPhaseInfo(u *UserInfo) {
 
 	fmt.Println("Goal Weight:", u.Phase.GoalWeight)
 	fmt.Println("Start Weight:", u.Phase.StartWeight)
+}
+
+// StopPhase stops the ongoing diet and prompts the user for
+// information on the next phase.
+func StopPhase(db *sqlx.DB, u *UserInfo) error {
+	// Start a new transaction.
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Update current diet phase status to: "stopped".
+	u.Phase.Status = "stopped"
+	if err := updatePhaseInfo(tx, u); err != nil {
+		return err
+	}
+
+	if err := processPhaseTransition(tx, u); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
