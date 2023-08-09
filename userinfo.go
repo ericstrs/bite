@@ -293,6 +293,40 @@ func insertOrUpdatePhaseInfo(tx *sqlx.Tx, u *UserInfo) error {
 	return nil
 }
 
+// updatePhaseInfo updates the user's ongoing phase details.
+func updatePhaseInfo(tx *sqlx.Tx, u *UserInfo) error {
+	// Check if there's an existing active phase for this user
+	var activePhaseID int
+	err := tx.Get(&activePhaseID, "SELECT phase_id FROM phase_info WHERE user_id = $1 AND status = 'active' LIMIT 1", u.UserID)
+	if err != nil && err != sql.ErrNoRows {
+		// If no active phase found, return error
+		if err == sql.ErrNoRows {
+			log.Printf("Could not find an active diet phase: %v\n", err)
+			return err
+		}
+		return err
+	}
+
+	// Update the existing active phase
+	_, err = tx.Exec(`
+      UPDATE phase_info SET
+        name = $2, goal_calories = $3, start_weight = $4, goal_weight = $5,
+        weight_change_threshold = $6, weekly_change = $7, start_date = $8,
+        end_date = $9, last_checked_week = $10, duration = $11,
+        max_duration = $12, min_duration = $13, status = $14
+        WHERE phase_id = $1`,
+		activePhaseID, u.Phase.Name, u.Phase.GoalCalories, u.Phase.StartWeight, u.Phase.GoalWeight,
+		u.Phase.WeightChangeThreshold, u.Phase.WeeklyChange, u.Phase.StartDate.Format(dateFormat),
+		u.Phase.EndDate.Format(dateFormat), u.Phase.LastCheckedWeek.Format(dateFormat), u.Phase.Duration,
+		u.Phase.MaxDuration, u.Phase.MinDuration, u.Phase.Status)
+	if err != nil {
+		log.Println("Error updating diet phase information.")
+		return err
+	}
+
+	return nil
+}
+
 // insertOrUpdatePhaseInfo attempts to insert new phase data for
 // the user. If a record for the user's phase info already exists, it
 // updates the existing record.
