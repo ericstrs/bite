@@ -18,16 +18,17 @@ import (
 const (
 	weightSearchLimit = 10
 	dateFormatTime    = "15:04:05"
+	fullBlock         = "\u2588"
+	lightBlock        = "\u2592"
 )
 
 var ErrDone = errors.New("done")
 
 // Entry fields will be constructed from daily_weights and daily_foods
 // table during runtime.
-// Nutrients are for portion size (100 serving unit)
 type Entry struct {
 	UserWeight float64   `db:"user_weight"`
-	UserCals   float64   `db:"user_cals"`
+	Calories   float64   `db:"calories"`
 	Date       time.Time `db:"date"`
 	Protein    float64   `db:"protein"`
 	Carbs      float64   `db:"carbs"`
@@ -42,13 +43,15 @@ type WeightEntry struct {
 
 type DailyFood struct {
 	ID               int       `db:"id"`
+	FoodName         string    `db:"food_name"`
 	FoodID           int       `db:"food_id"`
 	MealID           *int      `db:"meal_id"`
 	Date             time.Time `db:"date"`
 	ServingSize      float64   `db:"serving_size"`
 	ServingUnit      string    `db:"serving_unit"`
 	NumberOfServings float64   `db:"number_of_servings"`
-	FoodName         string    `db:"food_name"`
+	Calories         float64   `db:"calories"`
+	FoodMacros       *FoodMacros
 }
 
 type DailyFoodCount struct {
@@ -59,64 +62,18 @@ type DailyFoodCount struct {
 // GetAllEntries returns all the user's entries from the database.
 func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	query := `
-  SELECT
-    dw.date,
-    dw.weight AS user_weight,
-
-    -- Calculate sum of calories and macros for each day, taking into account the serving size and the number of servings.
-    -- If a nutrient is not logged for a particular day, its amount is treated as 0.
-    -- If no preference is set for a food, default serving size is assumed to be 1 (to maintain the existing nutrient portion size).
-    -- If a food is part of a meal, preference is taken from 'meal_food_prefs', otherwise from 'food_prefs'.
-    SUM(
-      CASE WHEN fn.nutrient_id = 1008
-        THEN fn.amount * COALESCE(mfp.serving_size, fp.serving_size, 1)
-                      * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1)
-        ELSE 0 END
-    ) AS user_cals,
-
-    SUM(
-      CASE WHEN fn.nutrient_id = 1003
-        THEN fn.amount * COALESCE(mfp.serving_size, fp.serving_size, 1)
-                      * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1)
-        ELSE 0 END
-    ) AS protein,
-
-    SUM(
-      CASE WHEN fn.nutrient_id = 1005
-        THEN fn.amount * COALESCE(mfp.serving_size, fp.serving_size, 1)
-                      * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1)
-        ELSE 0 END
-    ) AS carbs,
-
-    SUM(
-      CASE WHEN fn.nutrient_id = 1004
-        THEN fn.amount * COALESCE(mfp.serving_size, fp.serving_size, 1)
-                      * COALESCE(mfp.number_of_servings, fp.number_of_servings, 1)
-        ELSE 0 END
-    ) AS fat
-
-  FROM daily_weights dw -- User's weight data.
-		-- Join daily food data on date. Only if food_id is not null.
-    JOIN daily_foods df ON dw.date = df.date AND df.food_id IS NOT NULL
-		-- Join with food nutrients data on food_id.
-    JOIN food_nutrients fn ON df.food_id = fn.food_id
-		-- Join with food preferences data on food_id. This data is used when food is consumed outside of a meal.
-    LEFT JOIN food_prefs fp ON df.food_id = fp.food_id
-		-- Join with meal food preferences data on food_id and meal_id. This data is used when food is consumed as part of a meal.
-    LEFT JOIN meal_food_prefs mfp ON df.food_id = mfp.food_id AND df.meal_id = mfp.meal_id
-
-	-- Filter only specific nutrient_ids.
-  WHERE fn.nutrient_id IN (1008, 1003, 1005, 1004)
-
-	-- Group by date and user weight to aggregate nutrition data by day.
-  GROUP BY dw.date, dw.weight
-
-	-- Ensure groups include at least one food_id, which indicates at least one food was logged for that day.
-  HAVING SUM(df.food_id) IS NOT NULL
-
-	-- Sort results by date.
-  ORDER BY dw.date
-`
+	SELECT
+		dw.date,
+		dw.weight AS user_weight,
+		SUM(df.calories) AS calories,
+		SUM(df.protein) AS protein,
+		SUM(df.carbs) AS carbs,
+		SUM(df.fat) AS fat
+	FROM daily_weights dw
+	JOIN daily_foods df ON dw.date = df.date
+	GROUP BY dw.date, dw.weight
+	ORDER BY dw.date
+	`
 
 	var entries []Entry
 	err := db.Select(&entries, query)
@@ -127,34 +84,17 @@ func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	return &entries, nil
 }
 
-/*
-// ReadEntries reads user entries from CSV file into a dataframe.
-func ReadEntries() (*dataframe.DataFrame, error) {
-	// Does entries file exist?
-	if _, err := os.Stat(EntriesFilePath); os.IsNotExist(err) {
-		log.Println("ERROR: Entries file not found.")
-		return nil, err
+// PrintEntries prints given slice of entries.
+func PrintEntries(entries []Entry) {
+	fmt.Println("-------------------------------------------------------------------------")
+	fmt.Println("| Date       | Weight      | Calories | Protein (g) | Carbs (g) | Fat (g) |")
+	fmt.Println("-------------------------------------------------------------------------")
+	for _, entry := range entries {
+		dateStr := entry.Date.Format("2006-01-02")
+		fmt.Printf("| %-10s | %-12.2f | %-8.2f | %-11.2f | %-9.2f | %-7.2f |\n", dateStr, entry.UserWeight, entry.Calories, entry.Protein, entry.Carbs, entry.Fat)
 	}
-
-	// Open entries file
-	csvfile, err := os.Open(EntriesFilePath)
-	if err != nil {
-		log.Printf("ERROR: Couldn't open %s\n", EntriesFilePath)
-		return nil, err
-	}
-	defer csvfile.Close()
-
-	// Read entries from CSV into a dataframe.
-	ctx := context.TODO()
-	logs, err := imports.LoadFromCSV(ctx, csvfile)
-	if err != nil {
-		log.Printf("ERROR: Couldn't read %s\n", EntriesFilePath)
-		return nil, err
-	}
-
-	return logs, nil
+	fmt.Println("-------------------------------------------------------------------------")
 }
-*/
 
 // LogWeight gets weight and date from user to create a new weight entry.
 func LogWeight(u *UserInfo, db *sqlx.DB) {
@@ -538,12 +478,18 @@ func LogFood(db *sqlx.DB) error {
 		}
 	}
 
+	// Get food with up to date food preferences.
+	foodWithPref, err := getFoodWithPref(tx, food.ID)
+	if err != nil {
+		return err
+	}
+
 	// Get date of food entry.
 	date := getDateNotPast("Enter food entry date")
 
 	// Log selected food to the food log database table. Taking into
 	// account food preferences.
-	err = addFoodEntry(tx, f, date)
+	err = addFoodEntry(tx, foodWithPref, date)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -656,15 +602,15 @@ func promptSelectResponse(item string) string {
 
 // getFoodPref gets the food preferences for the given food.
 func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
-	query := `
+	const query = `
     SELECT
       f.food_id,
       COALESCE(fp.serving_size, f.serving_size) AS serving_size,
 			COALESCE(fp.number_of_servings, 1) AS number_of_servings,
-			f.ServingUnit
+			f.serving_unit
     FROM foods f
     LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
-    WHERE f.food_id = ?
+    WHERE f.food_id = $1
   `
 
 	var pref FoodPref
@@ -684,8 +630,7 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 
 // printFoodPref prints the perferences for a food.
 func printFoodPref(pref FoodPref) {
-	// TODO: add unit and household serving size to serving size
-	fmt.Printf("Serving size: %.2f %s", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
+	fmt.Printf("Serving size: %.2f %s\n", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
 	fmt.Printf("Number of serving: %.1f\n", math.Round(10*pref.NumberOfServings)/10)
 }
 
@@ -743,15 +688,17 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 }
 
 // addFoodEntry inserts a food entry into the database.
-func addFoodEntry(tx *sqlx.Tx, pref *FoodPref, date time.Time) error {
+func addFoodEntry(tx *sqlx.Tx, f *Food, date time.Time) error {
 	const query = `
-		INSERT INTO daily_foods	(food_id, date, time, serving_size, number_of_servings)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		`
-
-	_, err := tx.Exec(query, pref.FoodID, date.Format(dateFormat), date.Format(dateFormatTime), pref.ServingSize, pref.NumberOfServings)
+	_, err := tx.Exec(query, f.ID, date.Format(dateFormat), date.Format(dateFormatTime),
+		f.ServingSize, f.NumberOfServings, f.Calories, f.FoodMacros.Protein,
+		f.FoodMacros.Fat, f.FoodMacros.Carbs)
 	// If there was an error executing the query, return the error
 	if err != nil {
+		log.Println("Failed to insert food entry into daily_foods.")
 		return err
 	}
 
@@ -777,8 +724,19 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	// Get new food preferences.
 	pref := getFoodPrefUserInput(entry.FoodID)
 
+	// Make database update for food preferences.
+	if err := updateFoodPrefs(tx, pref); err != nil {
+		return err
+	}
+
+	// Get food with up to date food preferences.
+	foodWithPref, err := getFoodWithPref(tx, entry.FoodID)
+	if err != nil {
+		return err
+	}
+
 	// Update food entry.
-	err = updateFoodEntry(tx, entry.ID, *pref)
+	err = updateFoodEntry(tx, entry.ID, *foodWithPref)
 	if err != nil {
 		return err
 	}
@@ -918,18 +876,19 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 }
 
 // updateFoodEntry updates the given food entry in the database.
-func updateFoodEntry(tx *sqlx.Tx, entryID int, pref FoodPref) error {
+func updateFoodEntry(tx *sqlx.Tx, entryID int, f Food) error {
 	query := `
         UPDATE daily_foods
-        SET serving_size = $1, number_of_servings = $2
-        WHERE id = $3
+        SET serving_size = $1, number_of_servings = $2, calories = $3, protein = $4, fat = $5, carbs = $6
+        WHERE id = $7
     `
 
 	// Execute the update statement
-	_, err := tx.Exec(query, pref.ServingSize, pref.NumberOfServings, entryID)
+	_, err := tx.Exec(query, f.ServingSize, f.NumberOfServings, f.Calories, f.FoodMacros.Protein, f.FoodMacros.Fat, f.FoodMacros.Carbs, entryID)
 
 	// If there was an error executing the query, return the error
 	if err != nil {
+		log.Println("Failed to update entry in daily_foods.")
 		return fmt.Errorf("updateFoodEntry: %w", err)
 	}
 
@@ -1003,7 +962,7 @@ func ShowFoodLog(db *sqlx.DB) error {
 			currentDate = entry.Date
 			fmt.Printf("\n%v\n", currentDate.Format(("January 2, 2006")))
 		}
-		fmt.Printf("- %s, Serving size: %.2f %s Num Servings: %.2f\n", entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings)
+		fmt.Printf("- %s: %.2f %s x %.2f serving | %.2f cals |\n", entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings, entry.Calories)
 	}
 
 	return tx.Commit()
@@ -1015,14 +974,31 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, df.calories, f.food_name, f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         ORDER BY df.date DESC
     `
 	var entries []DailyFood
 	if err := tx.Select(&entries, query); err != nil {
+		log.Println("Failed to get main details from daily food entries.")
 		return nil, err
+	}
+
+	const macrosQuery = `
+    SELECT protein, fat, carbs
+    FROM daily_foods
+    WHERE id = $1
+`
+
+	for i, entry := range entries {
+		macros := &FoodMacros{}
+		err := tx.Get(macros, macrosQuery, entry.ID)
+		if err != nil {
+			log.Printf("Failed to get macros from daily foods entries: %v\n", err)
+			return nil, err
+		}
+		entries[i].FoodMacros = macros
 	}
 
 	return entries, nil
@@ -1231,7 +1207,6 @@ func getMealFoodsWithPref(tx *sqlx.Tx, mealID int) ([]*MealFood, error) {
 
 // getMealFoodWithPref retrieves one of the foods for a given meal,
 // along its preferences.
-// Nutrients are for portion size (100 serving unit)
 func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, error) {
 	mf := MealFood{}
 
@@ -1264,7 +1239,7 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 
 	// Execute the SQL query and assign the result to the calories field
 	// in the MealFood struct
-	err = tx.Get(&mf.Food.PortionCals, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = tx.Get(&mf.Food.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		log.Println("Failed to select portion calories.")
 		return nil, err
@@ -1282,13 +1257,73 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 	if mf.HasPreference {
 		// 100 is for porition size which nutrient amounts represent.
 		ratio := mf.ServingSize / 100
-		mf.Food.PortionCals *= ratio * mf.NumberOfServings
+		mf.Food.Calories *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
 	}
 
 	return &mf, nil
+}
+
+// getFoodWithPref retrieves one food, along its preferences.
+func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
+	f := Food{}
+
+	// Get the food details.
+	err := tx.Get(&f, "SELECT * FROM foods WHERE food_id = ?", foodID)
+	if err != nil {
+		log.Println("Failed to get food.")
+		return nil, err
+	}
+
+	// Override existing serving size and number of servings if there
+	// exists a matching entry in the food_prefs table for the food id.
+	query := `
+        SELECT
+            COALESCE(fp.serving_size, f.serving_size) AS serving_size,
+            COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+            CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+        FROM foods f
+        LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
+        WHERE f.food_id = $1
+        LIMIT 1
+    `
+
+	// Execute the SQL query and assign the result to the Food struct
+	err = tx.Get(&f, query, foodID)
+	if err != nil {
+		log.Println("Failed to select serving size and number of servings.")
+		return nil, err
+	}
+
+	// Execute the SQL query and assign the result to the calories field
+	// in the Food struct
+	err = tx.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM  nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	if err != nil {
+		log.Println("Failed to select portion calories.")
+		return nil, err
+	}
+
+	// Get the macros for the food.
+	f.FoodMacros, err = getFoodMacros(tx, foodID)
+	if err != nil {
+		log.Println("Failed to get food macros.")
+		return nil, err
+	}
+
+	// If a preference was found (either in food_prefs),
+	// adjust nutrient values based on the serving size and number of servings.
+	if f.HasPreference {
+		// 100 is for porition size which nutrient amounts represent.
+		ratio := f.ServingSize / 100
+		f.Calories *= ratio * f.NumberOfServings
+		f.FoodMacros.Protein *= ratio * f.NumberOfServings
+		f.FoodMacros.Fat *= ratio * f.NumberOfServings
+		f.FoodMacros.Carbs *= ratio * f.NumberOfServings
+	}
+
+	return &f, nil
 }
 
 // printMealDetails prints the foods that make up the meal and their preferences.
@@ -1302,10 +1337,9 @@ func printMealDetails(mealFoods []*MealFood) {
 // printMealFood prints details of a given MealFood object.
 func printMealFood(mealFood *MealFood) {
 	fmt.Printf("%s\n", mealFood.Food.Name)
-	//871682fmt.Printf("\t%.2f %s\n", math.Round(100*mealFood.NumberOfServings*mealFood.ServingSize)/100, mealFood.Food.ServingUnit)
 	fmt.Printf("Serving Size: %.2f\n", mealFood.ServingSize)
 	fmt.Printf("Number of Servings: %.2f\n", mealFood.NumberOfServings)
-	fmt.Printf("Calories: %.2f\n", mealFood.Food.PortionCals)
+	fmt.Printf("Calories: %.2f\n", mealFood.Food.Calories)
 
 	fmt.Println("Macros:")
 	fmt.Printf("  - Protein: %.2f\n", mealFood.Food.FoodMacros.Protein)
@@ -1350,7 +1384,7 @@ func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 // addMealFoodEntries bulk inserts foods that make up the meal into the database.
 func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date time.Time) error {
 	// Prepare a statement for bulk insert
-	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings) VALUES (?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
 	if err != nil {
 		return err
 	}
@@ -1358,8 +1392,9 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 
 	// Iterate over each food and insert into the database
 	for _, mf := range mealFoods {
-		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings)
+		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings, mf.Food.Calories, mf.Food.FoodMacros.Protein, mf.Food.FoodMacros.Fat, mf.Food.FoodMacros.Carbs)
 		if err != nil {
+			log.Println("Failed to execute bulk meal food insert.")
 			return err
 		}
 	}
@@ -1433,123 +1468,126 @@ func getFrequentFoods(tx *sqlx.Tx, limit int) ([]DailyFoodCount, error) {
 	return foods, nil
 }
 
-// checkInput checks if the user input is positive
-func checkInput(n float64) error {
-	if n < 0 {
-		return errors.New("invalid number")
+// FoodLogSummaryDay prints the current nutritional totals for a given
+// day and provides insight on progress towards nutritional goals.
+func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
 	}
-	return nil
-}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
 
-// promptCals prompts the user to enter caloric intake for the previous
-// day.
-func promptCals() (calories float64, err error) {
-	fmt.Print("Enter caloric intake for the day: ")
-	fmt.Scanln(&calories)
-
-	return calories, checkInput(calories)
-}
-
-/*
-// Log appends a new entry to the csv file passed in as an agurment.
-func Log(u *UserInfo, s string) error {
-	var date time.Time
-	var err error
-
-	// Get user weight.
-	u.Weight, err = getWeight(u.System)
+	// Get the food entries for the present day.
+	entries, err := getFoodEntriesForDate(tx, time.Now())
 	if err != nil {
 		return err
 	}
 
-	// Get user calories for the day.
-	cals, err := promptCals()
-	if err != nil {
-		return err
+	var calorieTotal float64
+	var proteinTotal float64
+	var fatTotal float64
+	var carbTotal float64
+
+	// Calculate nutritional totals.
+	for _, entry := range entries {
+		calorieTotal += entry.Calories
+		proteinTotal += entry.FoodMacros.Protein
+		fatTotal += entry.FoodMacros.Fat
+		carbTotal += entry.FoodMacros.Carbs
 	}
 
-	for {
-		// Prompt user entry date.
-		r := promptDate("Enter entry date (YYYY-MM-DD) [Press Enter for today's date]: ")
+	// Get nutritional goals.
+	calorieGoal := u.Phase.GoalCalories
+	if u.Phase.Status != "active" {
+		calorieGoal = u.TDEE
+	}
+	proteinGoal := u.Macros.Protein
+	fatGoal := u.Macros.Fats
+	carbGoal := u.Macros.Carbs
 
-		// If user entered default date,
-		if r == "" {
-			// set date to today's date.
-			date = time.Now()
-			break
+	printNutrientProgress(proteinTotal, proteinGoal, "Protein")
+	printNutrientProgress(fatTotal, fatGoal, "Fat")
+	printNutrientProgress(carbTotal, carbGoal, "Carbs")
+	printCalorieProgress(calorieTotal, calorieGoal, "Calories")
+	fmt.Printf("\n%.2f calories remaining\n", calorieGoal-calorieTotal)
+
+	return tx.Commit()
+}
+
+// getFoodEntriesForDate retrieves the food entries for a given date.
+func getFoodEntriesForDate(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
+	// Since DailyFood struct does not currently support time field, the
+	// queury excludes the time field from the selected records.
+	const query = `
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, df.calories, f.food_name, f.serving_unit
+        FROM daily_foods df
+        INNER JOIN foods f ON df.food_id = f.food_id
+				WHERE date = $1
+        ORDER BY df.date DESC
+    `
+
+	var entries []DailyFood
+	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
+		log.Println("Failed to get main details from daily food entries.")
+		return nil, err
+	}
+
+	const macrosQuery = `
+    SELECT protein, fat, carbs
+    FROM daily_foods
+    WHERE id = $1
+	`
+
+	// Retrieve the macros.
+	for i, entry := range entries {
+		macros := &FoodMacros{}
+		if err := tx.Get(macros, macrosQuery, entry.ID); err != nil {
+			log.Printf("Failed to get macros from daily foods entries: %v\n", err)
+			return nil, err
 		}
-
-		// Check if date is a valid date.
-		date, err = validateDateStr(r)
-		if err != nil {
-			fmt.Printf("%v. Please try again.\n", err)
-			continue
-		}
-
-		// Validate the date is not in the past.
-		if date.Before(time.Now()) {
-			fmt.Println("The entered date is in the past. Please enter today's date or a future date.")
-			continue
-		}
-
-		break
+		entries[i].FoodMacros = macros
 	}
 
-	// Save updated user info.
-	err = saveUserInfo(tx, u)
-	if err != nil {
-		return err
-	}
-
-	// Open file for append.
-	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer f.Close()
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-
-	// Append user calorie input to csv file.
-	line := fmt.Sprintf("%.2f,%.2f,%s\n", u.Weight, cals, date.Format(dateFormat))
-	_, err = f.WriteString(line)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-
-	fmt.Println("Added entry.")
-
-	return nil
+	return entries, nil
 }
-*/
 
-/*
+// printNutrientProgress prints the nutrient progress
+func printNutrientProgress(current, goal float64, name string) {
+	progressBar := renderProgressBar(current, goal)
+	fmt.Printf("%-9s %s %3.0f%% (%.0fg / %.0fg)\n", name+":", progressBar, current*100/goal, current, goal)
+}
 
-// Subset creates and returns and array containing the
-// valid log entries.
-//
-// Assumptions:
-// * Diet phase activity has been checked. That is, this function should
-// not be called for a diet phase that is not currently active.
+// printCalorieProgress prints the calories progress
+func printCalorieProgress(current, goal float64, name string) {
+	progressBar := renderProgressBar(current, goal)
+	fmt.Printf("%-9s %s %3.0f%% (%.0f / %.0f)\n", name+":", progressBar, current*100/goal, current, goal)
+}
 
-// subset returns a subset of the dataframe containing the entries that
-// were logged during an active diet phase.
-func Subset(logs *dataframe.DataFrame, indices []int) *dataframe.DataFrame {
-	s1 := dataframe.NewSeriesString("weight", nil)
-	s2 := dataframe.NewSeriesString("calories", nil)
-	s3 := dataframe.NewSeriesString("date", nil)
-	s := dataframe.NewDataFrame(s1, s2, s3)
+// renderProgressBar renders an ASCII progress bar
+func renderProgressBar(current, goal float64) string {
+	const barLength = 10
+	percentage := current / goal
+	filledLength := int(percentage * float64(barLength))
 
-	for _, idx := range indices {
-		row := logs.Row(idx, false, dataframe.SeriesIdx|dataframe.SeriesName)
-		s.Append(nil, row)
+	// If percentage is greater than 100%, set a full bar.
+	if percentage > 100 {
+		filledLength = barLength
 	}
 
-	return s
+	bar := "["
+	for i := 0; i < filledLength; i++ {
+		bar += fullBlock
+	}
+	for i := filledLength; i < barLength; i++ {
+		bar += lightBlock
+	}
+	bar += "]"
+	return bar
 }
-*/
 
-// getValidLog creates and returns array containing the
+// GetValidLog creates and returns array containing the
 // valid log entries.
 //
 // Assumptions:
@@ -1569,32 +1607,3 @@ func GetValidLog(u *UserInfo, entries *[]Entry) *[]Entry {
 
 	return &subset
 }
-
-/*
-// getValidLogIndices creates and returns and int array containing the
-// indices of the the valid log entries.
-//
-// Assumptions:
-// * Diet phase activity has been checked. That is, this function should
-// not be called for a diet phase that is not currently active.
-func GetValidLogIndices(u *UserInfo, logs *dataframe.DataFrame) []int {
-	today := time.Now()
-
-	var validIndices []int
-	for i := 0; i < logs.NRows(); i++ {
-		date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-		if err != nil {
-			log.Println("ERROR: Couldn't parse date:", err)
-			return nil
-		}
-
-		// Only consider dates that fall somewhere inbetween the diet
-		// start date and the current date.
-		if (date.After(u.Phase.StartDate) || isSameDay(date, u.Phase.StartDate)) && (date.Before(today) || isSameDay(date, today)) {
-			validIndices = append(validIndices, i)
-		}
-	}
-
-	return validIndices
-}
-*/
