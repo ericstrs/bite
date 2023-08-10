@@ -1193,3 +1193,94 @@ func ExampleGetFrequentFoods() {
 	// Chicken: 3 times
 	// Beef: 2 times
 }
+
+func ExampleGetFoodEntriesForDate() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Create tables.
+	_, err = tx.Exec(`
+    CREATE TABLE IF NOT EXISTS foods (
+      food_id INTEGER PRIMARY KEY,
+      food_name TEXT NOT NULL,
+      serving_size REAL NOT NULL,
+      serving_unit TEXT NOT NULL,
+      household_serving TEXT NOT NULL
+    );
+		CREATE TABLE IF NOT EXISTS daily_foods (
+      id INTEGER PRIMARY KEY,
+      food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+      meal_id INTEGER REFERENCES meals(meal_id),
+      date DATE NOT NULL,
+      time TIME NOT NULL,
+      serving_size REAL NOT NULL,
+      number_of_servings REAL DEFAULT 1 NOT NULL,
+      calories REAL NOT NULL,
+      protein REAL NOT NULL,
+      fat REAL NOT NULL,
+      carbs REAL NOT NULL
+    );
+  `)
+
+	// Insert foods
+	tx.MustExec(`
+    INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+    (1, 'Chicken', 100, 'g', '1/2 piece'),
+    (2, 'Beef', 100, 'g', '1/2 cup'),
+    (3, 'Pork', 100, 'g', '1 cup')
+  `)
+
+	// Note: 5th day user did not log any foods.
+	tx.MustExec(`INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs) VALUES
+    (1, '2023-01-01', '00:00:00', 100, 1, 165, 31, 3.6, 0),
+    (1, '2023-01-01', '00:00:00', 100, 1, 165, 31, 3.6, 0),
+    (2, '2023-01-01', '00:00:00', 100, 1, 216, 12, 12, 15),
+    (1, '2023-01-01', '00:00:00', 100, 1, 165, 31, 3.6, 0),
+    (2, '2023-01-03', '00:00:00', 100, 1, 216, 12, 12, 15),
+    (2, '2023-01-03', '00:00:00', 100, 1, 165, 31, 3.6, 0),
+    (3, '2023-01-04', '00:00:00', 100, 1, 122, 2.73, 0.96, 25.5)
+  `)
+
+	date := time.Date(2023, time.January, 1, 0, 0, 0, 0, time.UTC)
+	entries, err := getFoodEntriesForDate(tx, date)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	for i, entry := range entries {
+		fmt.Printf("Entry %d: %s\n", i, entry.FoodName)
+	}
+
+	// Output:
+	// Entry 0: Chicken
+	// Entry 1: Chicken
+	// Entry 2: Beef
+	// Entry 3: Chicken
+}
+
+func ExampleRenderProgressBar() {
+	fmt.Println(renderProgressBar(10, 100))
+
+	// Output:
+	// [█▒▒▒▒▒▒▒▒▒]
+}
+
+func ExampleRenderProgressBar_full() {
+	fmt.Println(renderProgressBar(110, 100))
+
+	// Output:
+	// [███████████]
+}
