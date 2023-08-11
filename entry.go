@@ -440,9 +440,6 @@ func LogFood(db *sqlx.DB) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	// TODO: Display most recently selected foods
-	// 			 Refactor selectFood to be able to pick from one of the selected
-	// 			 foods or search term.
 	// Get selected food
 	food, err := selectFood(tx)
 	if err != nil {
@@ -566,20 +563,38 @@ func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
 	// Prioritize exact match, then match foods where `food_name` starts
 	// with the search term, and finally any foods where the `food_name`
 	// contains the search term.
+	/*
+		SELECT f.* FROM foods f INNER JOIN foods_fts ff ON ff.food_id = f.food_id WHERE foods_fts MATCH 'ribeye steak' ORDER BY bm25(foods_fts) LIMIT 20;
+	*/
 	query := `
-        SELECT * FROM foods
-        WHERE food_name LIKE $1
-        ORDER BY
-            CASE
-                WHEN food_name = $2 THEN 1
-                WHEN food_name LIKE $3 THEN 2
-                ELSE 3
-            END
+				SELECT f.*
+				FROM
+				foods f
+				INNER JOIN foods_fts s ON s.food_id = f.food_id
+				WHERE foods_fts MATCH $1
+				ORDER BY bm25(foods_fts)
         LIMIT $4`
 
-	// Search for foods in the database
-	err := tx.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
-	if err != nil {
+	/*
+			query := `
+		        SELECT * FROM foods
+		        WHERE food_name LIKE $1
+		        ORDER BY
+		            CASE
+		                WHEN food_name = $2 THEN 1
+		                WHEN food_name LIKE $3 THEN 2
+		                ELSE 3
+		            END
+		        LIMIT $4`
+
+			// Search for foods in the database
+			err := tx.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
+			if err != nil {
+				log.Printf("Search for foods failed: %v\n", err)
+				return nil, err
+			}
+	*/
+	if err := tx.Select(&foods, query, response, searchLimit); err != nil {
 		log.Printf("Search for foods failed: %v\n", err)
 		return nil, err
 	}
