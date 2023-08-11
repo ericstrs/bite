@@ -37,7 +37,9 @@ type Food struct {
 	FoodMacros       *FoodMacros
 	// Indicates if there is a serving size preference set for this food in
 	// the meal (in food_prefs).
-	HasPreference bool `db:"has_preference"`
+	HasPreference bool     `db:"has_preference"`
+	BrandName     *string  `db:"brand_name"`
+	Price         *float64 `db:"cost"`
 }
 
 // MealFood extends Food with additional fields to represent a food
