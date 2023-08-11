@@ -457,6 +457,146 @@ func ExampleUpdateFoodEntry() {
 	// <nil>
 }
 
+func ExampleGetRecentFoodEntries() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+	CREATE TABLE IF NOT EXISTS foods (
+		food_id INTEGER PRIMARY KEY,
+		food_name TEXT NOT NULL,
+		serving_size REAL NOT NULL,
+		serving_unit TEXT NOT NULL,
+		household_serving TEXT NOT NULL,
+		brand_name TEXT,
+		cost REAL
+	);
+
+	CREATE TABLE IF NOT EXISTS daily_foods (
+		id INTEGER PRIMARY KEY,
+		food_id INTEGER REFERENCES foods(food_id) NOT NULL,
+		meal_id INTEGER REFERENCES meals(meal_id),
+		date DATE NOT NULL,
+		time TIME NOT NULL,
+		serving_size REAL NOT NULL,
+		number_of_servings REAL DEFAULT 1 NOT NULL,
+		calories REAL NOT NULL,
+		protein REAL NOT NULL,
+		fat REAL NOT NULL,
+		carbs REAL NOT NULL
+	);
+	`)
+
+	if err != nil {
+		fmt.Printf("Failed to build tables: %v\n", err)
+		return
+	}
+
+	_, err = tx.Exec(`
+	INSERT INTO foods VALUES (1, 'Apple', 100, 'g', '1 medium', NULL, NULL);
+	INSERT INTO foods VALUES (2, 'Bread', 100, 'g', '1 medium', NULL, NULL);
+	INSERT INTO foods VALUES (3, 'Tomato', 100, 'g', '1 medium', NULL, NULL);
+	INSERT INTO daily_foods VALUES (1, 1, NULL, '2023-01-01', '00:00:00', 42, 1, 50, 5, 5, 5);
+	INSERT INTO daily_foods VALUES (2, 1, NULL, '2023-01-01', '00:00:00', 42, 1, 50, 5, 5, 5);
+	INSERT INTO daily_foods VALUES (3, 2, NULL, '2023-01-02', '00:00:00', 42, 1, 50, 5, 5, 5);
+	`)
+	if err != nil {
+		fmt.Println("Failed to insert data:", err)
+		return
+	}
+
+	dailyFoods, err := getRecentFoodEntries(tx, 10)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for _, food := range dailyFoods {
+		fmt.Println(food.FoodName)
+	}
+
+	// Output:
+	// Bread
+	// Apple
+}
+
+func ExampleGetMealsWithRecentFirst() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`
+    CREATE TABLE IF NOT EXISTS meals (
+        meal_id INTEGER PRIMARY KEY,
+        meal_name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_meals (
+      id INTEGER PRIMARY KEY,
+      meal_id INTEGER REFERENCES meals(meal_id),
+      date DATE NOT NULL,
+      time TIME NOT NULL
+    );
+  `)
+
+	_, err = tx.Exec(`
+	INSERT INTO meals VALUES
+	(1, 'Pie'),
+	(2, 'Shake'),
+	(3, 'Pizza')
+	`)
+	if err != nil {
+		log.Printf("Failed to insert data into the meals table: %v\n", err)
+	}
+
+	_, err = tx.Exec(`
+	INSERT INTO daily_meals VALUES (1, 3, '2023-01-01', '00:00:00:');
+	INSERT INTO daily_meals VALUES (2, 3, '2023-01-01', '00:00:00:');
+	INSERT INTO daily_meals VALUES (3, 2, '2023-01-01', '00:00:00:');
+	`)
+	if err != nil {
+		log.Printf("Failed to insert data into the daily meals table: %v\n", err)
+	}
+
+	meals, err := getMealsWithRecentFirst(tx)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for _, meal := range meals {
+		fmt.Println(meal.Name)
+	}
+
+	// Output:
+	// Shake
+	// Pizza
+	// Pie
+}
+
 func ExampleGetMealFoodWithPref() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
