@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -12,14 +11,6 @@ import (
 func main() {
 	var active_log *[]c.Entry
 
-	/*
-		// Read user entries.
-		logs, err := c.ReadEntries()
-		if err != nil {
-			return
-		}
-	*/
-
 	/* ---------- Database ----------- */
 	// Create a new SQLite database
 	db, err := sqlx.Connect("sqlite", "../../database/mydata.db")
@@ -29,21 +20,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Read SQL file
-	sqlBytes, err := ioutil.ReadFile("../../database/sql/setup.sql")
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	sqlStr := string(sqlBytes)
-
-	// Execute setup SQL file
-	_, err = db.Exec(sqlStr)
-	if err != nil {
-		log.Println(err)
-		return
-	}
 	/* ------------------------------- */
 
 	// Read user's config file.
@@ -64,13 +40,6 @@ func main() {
 	}
 	// If there is an active diet,
 	if status == "active" {
-		/*
-			// Obtain valid log indices for the active diet phase.
-			indices := c.GetValidLogIndices(u, logs)
-			// Subset the logs for the active diet phase.
-			active_logs = c.Subset(logs, indices)
-		*/
-
 		// Subset the log for the active diet phase.
 		active_log = c.GetValidLog(u, entries)
 
