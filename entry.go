@@ -283,7 +283,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 	printWeightEntries(log)
 
 	// Get response.
-	response := promptSelectEntry()
+	response := promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 	idx, err := strconv.Atoi(response)
 
 	// While response is an integer
@@ -291,7 +291,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		// If integer is invalid,
 		if 1 > idx || idx > len(log) {
 			fmt.Println("Number must be between 0 and number of entries. Please try again.")
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			idx, err = strconv.Atoi(response)
 			continue
 		}
@@ -306,7 +306,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		date, err := validateDateStr(response)
 		if err != nil {
 			fmt.Printf("%v. Please try again.", err)
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			continue
 		}
 
@@ -319,14 +319,14 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		// If no match found,
 		if entry == nil {
 			fmt.Println("No match found. Please try again.")
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			continue
 		}
 
 		// Print entry.
 		fmt.Printf("[1] %s %f\n", entry.Date.Format(dateFormat), entry.Weight)
 
-		response = promptSelectEntry()
+		response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 		idx, err := strconv.Atoi(response)
 
 		// While response is an integer
@@ -334,7 +334,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 			// If integer is invalid,
 			if idx != 1 {
 				fmt.Println("Number must be 1. Please try again.")
-				response = promptSelectEntry()
+				response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
@@ -387,9 +387,10 @@ func getRecentWeightEntries(db *sqlx.DB) ([]WeightEntry, error) {
 
 // promptSelectEntry prompts and returns entry to select or a search
 // term.
-func promptSelectEntry() string {
+func promptSelectEntry(s string) string {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter entry index to select or date to search (YYYY-MM-DD): ")
+	//fmt.Printf("Enter entry index to select or date to search (YYYY-MM-DD): ")
+	fmt.Printf("%s: ", s)
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatal(err)
@@ -501,20 +502,43 @@ func LogFood(db *sqlx.DB) error {
 // serach term for a different food. This repeats until user enters a
 // valid index.
 func selectFood(tx *sqlx.Tx) (Food, error) {
-	// Get initial search term.
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter food name or 'done': ")
-	response, err := reader.ReadString('\n')
+	fmt.Println("Recently logged foods:")
+
+	// Get most recently logged foods.
+	recentFoods, err := getRecentFoodEntries(tx, searchLimit)
 	if err != nil {
-		return Food{}, fmt.Errorf("Failed to read string. %v", err)
+		log.Println(err)
+		return Food{}, err
 	}
-	// Remove the newline character at the end of the string.
-	response = strings.TrimSpace(response)
+
+	for i, entry := range recentFoods {
+		fmt.Printf("[%d] %s\n", i+1, entry.FoodName)
+	}
+
+	// Get response.
+	response := promptSelectEntry("Enter either food index, search term, or 'done': ")
+	idx, err := strconv.Atoi(response)
+
+	// While response is an integer
+	for err == nil {
+		// If integer is invalid,
+		if 1 > idx || idx > len(recentFoods) {
+			fmt.Println("Number must be between 0 and number of entries. Please try again.")
+			// Get response.
+			response := promptSelectEntry("Enter either food index, search term, or 'done': ")
+			idx, err = strconv.Atoi(response)
+			continue
+		}
+		// Otherwise, return food at valid index.
+		return Food{ID: recentFoods[idx-1].FoodID}, nil
+	}
 
 	// If user enters "done", then return early.
 	if response == "done" {
 		return Food{}, ErrDone
 	}
+
+	// User response was a search term.
 
 	// While user response is not an integer
 	for {
@@ -533,8 +557,19 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 
 		// Print foods.
 		for i, food := range *filteredFoods {
-			fmt.Printf("[%d] %s\n", i+1, food.Name)
+			brandDetail := ""
+			if food.BrandName != nil && *food.BrandName != "" {
+				brandDetail = " (Brand: " + *food.BrandName + ")"
+			}
+			fmt.Printf("[%d] %s%s\n", i+1, food.Name, brandDetail)
 		}
+
+		/*
+			// Print foods.
+			for i, food := range *filteredFoods {
+				fmt.Printf("[%d] %s\n", i+1, food.Name)
+			}
+		*/
 
 		response = promptSelectResponse("food")
 		idx, err := strconv.Atoi(response)
@@ -573,7 +608,7 @@ func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
 				INNER JOIN foods_fts s ON s.food_id = f.food_id
 				WHERE foods_fts MATCH $1
 				ORDER BY bm25(foods_fts)
-        LIMIT $4`
+        LIMIT $2`
 
 	/*
 			query := `
@@ -762,7 +797,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 
 // selectFoodEntry prints recently logged foods, prompts user to enter a
 // search term, prompts user to enter an index to select a food entry or
-// another serach term for a different food entry. This repeats until
+// another search term for a different food entry. This repeats until
 // user enters a valid index.
 func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	// Get most recently logged foods.
@@ -776,7 +811,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	printFoodEntries(recentFoods)
 
 	// Get response.
-	response := promptSelectEntry()
+	response := promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 	idx, err := strconv.Atoi(response)
 
 	// While response is an integer
@@ -784,7 +819,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		// If integer is invalid,
 		if 1 > idx || idx > len(recentFoods) {
 			fmt.Println("Number must be between 0 and number of entries. Please try again.")
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			idx, err = strconv.Atoi(response)
 			continue
 		}
@@ -799,7 +834,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		date, err := validateDateStr(response)
 		if err != nil {
 			fmt.Printf("%v. Please try again.", err)
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			continue
 		}
 
@@ -813,14 +848,14 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		// If no matches found,
 		if len(filteredEntries) == 0 {
 			fmt.Println("No match found. Please try again.")
-			response = promptSelectEntry()
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			continue
 		}
 
 		// Print the foods entries for given date.
 		printFoodEntries(filteredEntries)
 
-		response = promptSelectEntry()
+		response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 		idx, err := strconv.Atoi(response)
 
 		// While response is an integer
@@ -828,7 +863,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 			// If integer is invalid,
 			if idx != 1 {
 				fmt.Println("Number must be between 0 and number of entries. Please try again.")
-				response = promptSelectEntry()
+				response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
