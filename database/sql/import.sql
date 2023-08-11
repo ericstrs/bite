@@ -51,13 +51,14 @@ CREATE TEMPORARY TABLE temp_food_attributes (
 .import ./data/food_attribute.csv temp_food_attributes
 
 -- Insert foods into the food table from both temporary tables
-INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving)
+INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving, brand_name)
 SELECT
   CAST(food.fdc_id AS INTEGER),
   food.description,
   CAST(branded.serving_size AS REAL),
   COALESCE(branded.serving_size_unit, 'g'), -- assume grams if no unit given
-  COALESCE(branded.household_serving_fulltext, '') -- empty string if no household serving is given
+  COALESCE(branded.household_serving_fulltext, ''), -- empty string if no household serving is given
+  branded.brand_name
 FROM temp_foods AS food
 INNER JOIN temp_branded_foods AS branded ON food.fdc_id = branded.fdc_id;
 
@@ -114,9 +115,43 @@ JOIN
 
 DROP TABLE temp_food_nutrients;
 
+
 --------------------[ Data Modifications ]------------------------------
 
--- Ensure every food has a calorie entry for the food_nutrients table.
+-- Create a temporary table holding the IDs of foods that do not have
+-- macros logged
+CREATE TEMP TABLE temp_food_ids AS
+SELECT food_id
+FROM foods
+WHERE food_id NOT IN (
+  SELECT DISTINCT food_id
+  FROM food_nutrients
+  WHERE nutrient_id IN (1003, 1004, 1005)
+);
+
+-- Delete foods that don't have any macros logged from foods table
+DELETE FROM foods
+WHERE food_id IN (
+  SELECT food_id
+  FROM temp_food_ids
+);
+
+-- Insert food columns that will be used to find food names
+INSERT INTO foods_fts (food_id, food_name, brand_name)
+SELECT
+  food_id,
+  food_name,
+  brand_name
+FROM foods;
+
+-- Delete food nutrients that don't have any macros logged from food_nutrients table
+DELETE FROM food_nutrients
+WHERE food_id IN (
+  SELECT food_id
+  FROM temp_food_ids
+);
+
+-- Then, ensure every food has a calorie entry for the food_nutrients table.
 INSERT INTO food_nutrients(food_id, nutrient_id, amount, derivation_id)
 SELECT
     f.food_id,
@@ -131,27 +166,28 @@ FROM
 WHERE
     f.food_id NOT IN (SELECT food_id FROM food_nutrients WHERE nutrient_id = 1008);
 
--- Create a temporary table holding the IDs of foods that do not have
--- macros logged
-CREATE TEMP TABLE temp_food_ids AS
-SELECT food_id
-FROM foods
-WHERE food_id NOT IN (
-  SELECT DISTINCT food_id
-  FROM food_nutrients
-  WHERE nutrient_id IN (1003, 1004, 1005)
-);
+------------------------ [ Triggers ] ---------------------------------
 
--- Delete from foods table
-DELETE FROM foods
-WHERE food_id IN (
-  SELECT food_id
-  FROM temp_food_ids
-);
+CREATE TRIGGER insert_food_fts
+  after INSERT on foods
+BEGIN
+  INSERT INTO foods_fts (food_id, food_name, brand_name)
+  VALUES (NEW.food_id, NEW.food_name, NEW.brand_name);
+END;
 
--- Delete from food_nutrients table
-DELETE FROM food_nutrients
-WHERE food_id IN (
-  SELECT food_id
-  FROM temp_food_ids
-);
+CREATE TRIGGER update_food_fts
+  after UPDATE on foods
+BEGIN
+  UPDATE foods_fts
+  SET 
+    food_name = NEW.food_name,
+    brand_name = NEW.brand_name
+  WHERE food_id = NEW.food_id;
+END;
+
+CREATE TRIGGER delete_food_fts
+  after DELETE on foods
+BEGIN
+  DELETE FROM foods_fts
+  WHERE food_id = OLD.food_id;
+END;
