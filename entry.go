@@ -448,6 +448,7 @@ func LogFood(db *sqlx.DB) error {
 			fmt.Println("No food selected.")
 			return nil // Not really an "error" situation
 		}
+		log.Println(err)
 		return err
 	}
 
@@ -516,7 +517,7 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 	}
 
 	// Get response.
-	response := promptSelectEntry("Enter either food index, search term, or 'done': ")
+	response := promptSelectEntry("Enter either food index, search term, or 'done'")
 	idx, err := strconv.Atoi(response)
 
 	// While response is an integer
@@ -525,7 +526,7 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 		if 1 > idx || idx > len(recentFoods) {
 			fmt.Println("Number must be between 0 and number of entries. Please try again.")
 			// Get response.
-			response := promptSelectEntry("Enter either food index, search term, or 'done': ")
+			response := promptSelectEntry("Enter either food index, search term, or 'done'")
 			idx, err = strconv.Atoi(response)
 			continue
 		}
@@ -767,6 +768,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 
 	// Let user select food entry to update.
 	entry, err := selectFoodEntry(tx)
+
 	if err != nil {
 		return err
 	}
@@ -879,12 +881,16 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
-        FROM daily_foods df
-        INNER JOIN foods f ON df.food_id = f.food_id
-        ORDER BY df.date DESC
-        LIMIT $1
-    `
+  SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
+    FROM daily_foods
+  ) AS df
+  INNER JOIN foods f ON df.food_id = f.food_id
+  WHERE df.rn = 1
+  ORDER BY df.date DESC
+  LIMIT $1;
+`
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, limit); err != nil {
@@ -1135,8 +1141,8 @@ func LogMeal(db *sqlx.DB) error {
 // selectMeal prints the user's meals, prompts them to select a meal,
 // and returns the selected meal.
 func selectMeal(tx *sqlx.Tx) (Meal, error) {
-	// Get all meals.
-	meals, err := getAllMeals(tx)
+	// Get recently logged meals
+	meals, err := getMealsWithRecentFirst(tx)
 	if err != nil {
 		return Meal{}, err
 	}
@@ -1201,6 +1207,29 @@ func selectMeal(tx *sqlx.Tx) (Meal, error) {
 		}
 		// User response was a search term. Continue to next loop.
 	}
+}
+
+// getMealsWithRecentFirst retrieves the meals that have been logged
+// recently first and then retrieves the remaining meals.
+func getMealsWithRecentFirst(tx *sqlx.Tx) ([]Meal, error) {
+	const query = `
+		SELECT meals.*
+		FROM meals
+		LEFT JOIN (
+			SELECT meal_id, MAX(date) AS latest_date
+			FROM daily_meals
+			GROUP BY meal_id
+		) AS dm
+		ON meals.meal_id = dm.meal_id
+		ORDER BY dm.latest_date DESC, meals.meal_id;
+	`
+
+	var meals []Meal
+	if err := tx.Select(&meals, query); err != nil {
+		return nil, err
+	}
+
+	return meals, nil
 }
 
 // searchMeals searches through meals slice and returns meals that
