@@ -4,7 +4,15 @@ CREATE TABLE IF NOT EXISTS foods (
   food_name TEXT NOT NULL,
   serving_size REAL NOT NULL,
   serving_unit TEXT NOT NULL,
-  household_serving TEXT NOT NULL
+  household_serving TEXT NOT NULL,
+  brand_name TEXT,
+  cost REAL
+);
+
+-- create virtual table for full-text searching 
+CREATE VIRTUAL TABLE foods_fts
+USING fts5 (
+    food_id, food_name, brand_name
 );
 
 -- meals contains static information about the meals. A meal is a
