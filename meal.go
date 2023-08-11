@@ -16,7 +16,7 @@ import (
 const (
 	selectNutrientAmountSQL = "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id = ?"
 	selectNutrientIdSQL     = "SELECT nutrient_id FROM nutrients WHERE nutrient_name = ? LIMIT 1"
-	searchLimit             = 25
+	searchLimit             = 30
 	derivationIdPortion     = 71
 )
 
@@ -634,14 +634,14 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 	}
 
 	// Get any existing preferences for the selected food.
-	f, err := getMealFoodWithPref(tx, food.ID, int64(meal.ID))
+	mealFood, err := getMealFoodWithPref(tx, food.ID, int64(meal.ID))
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 
 	// Display any existing preferences for the selected food.
-	printMealFood(f)
+	printMealFood(mealFood)
 
 	var s string
 	fmt.Printf("Do you want to change these values? (y/n): ")
@@ -658,7 +658,7 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 		}
 	}
 
-	fmt.Printf("Successfully added food %d to meal %d\n", food.ID, meal.ID)
+	fmt.Printf("Successfully added %s to %s meal\n", mealFood.Name, meal.Name)
 	return tx.Commit()
 }
 
@@ -679,8 +679,6 @@ func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
 	if err != nil {
 		return err
 	}
-
-	// TODO: should select a food that makes up the meal. Not just any food.
 
 	// Get the foods that make up the meal.
 	mealFoods, err := getMealFoodsWithPref(tx, meal.ID)
@@ -715,24 +713,13 @@ func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
 		break
 	}
 
-	/*
-		// Select a food.
-		food, err := selectFood(tx)
-		if err != nil {
-			if errors.Is(err, ErrDone) {
-				return err // If the user entered "done", return early.
-			}
-			log.Println(err)
-		}
-	*/
-
 	// Using selected food ID, remove it from the meal.
 	err = deleteMealFood(tx, meal.ID, mealFoods[idx-1].Food.ID)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully removed food %s from %s meal.\n", mealFoods[idx-1].Food.Name, meal.Name)
+	fmt.Printf("Successfully removed %s from %s meal.\n", mealFoods[idx-1].Food.Name, meal.Name)
 	return tx.Commit()
 }
 
