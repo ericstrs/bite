@@ -414,7 +414,8 @@ func ExampleUpdateFoodEntry() {
 	calories REAL NOT NULL,
   protein REAL NOT NULL,
   fat REAL NOT NULL,
-  carbs REAL NOT NULL
+  carbs REAL NOT NULL,
+	price REAL DEFAULT 0
 )`)
 
 	// Insert daily food entry.
@@ -967,7 +968,8 @@ func ExampleAddMealFoodEntries() {
 	calories REAL NOT NULL,
   protein REAL NOT NULL,
   fat REAL NOT NULL,
-  carbs REAL NOT NULL
+  carbs REAL NOT NULL,
+	price REAL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS meals (
@@ -1370,9 +1372,15 @@ func ExampleGetFoodEntriesForDate() {
       calories REAL NOT NULL,
       protein REAL NOT NULL,
       fat REAL NOT NULL,
-      carbs REAL NOT NULL
+      carbs REAL NOT NULL,
+			price REAL DEFAULT 0
     );
   `)
+
+	if err != nil {
+		fmt.Println("Failed to setup tables:", err)
+		return
+	}
 
 	// Insert foods
 	tx.MustExec(`
