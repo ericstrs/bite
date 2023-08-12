@@ -93,6 +93,145 @@ func ExampleInsertFood() {
 	// <nil>
 }
 
+func ExampleUpdateFoodTable() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Create the food_nutrients table
+	tx.MustExec(`
+			CREATE TABLE IF NOT EXISTS foods (
+				food_id INTEGER PRIMARY KEY,
+				food_name TEXT NOT NULL,
+				serving_size REAL NOT NULL,
+				serving_unit TEXT NOT NULL,
+				household_serving TEXT NOT NULL,
+				brand_name TEXT DEFAULT '',
+				cost REAL DEFAULT 0
+			);
+	`)
+
+	tx.MustExec(`INSERT INTO foods (food_id, food_name, serving_size, serving_unit, household_serving) VALUES
+  (1, 'Chicken Breast', 100, 'g', '1/2 piece')
+  `)
+
+	updatedFood := &Food{
+		ID:               1,
+		Name:             "Chicken Breast",
+		ServingSize:      50,
+		ServingUnit:      "g",
+		HouseholdServing: "1/2 piece",
+		BrandName:        "Great Value",
+		Price:            15,
+	}
+
+	if err := updateFoodTable(tx, updatedFood); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var selectedFood Food
+	tx.Get(&selectedFood, `SELECT * FROM foods WHERE food_id = 1`)
+
+	fmt.Println(selectedFood.Name)
+	fmt.Println(selectedFood.ServingSize)
+	fmt.Println(selectedFood.ServingUnit)
+	fmt.Println(selectedFood.HouseholdServing)
+	fmt.Println(selectedFood.BrandName)
+	fmt.Println(selectedFood.Price)
+
+	// Output:
+	// Chicken Breast
+	// 50
+	// g
+	// 1/2 piece
+	// Great Value
+	// 15
+}
+
+func ExampleUpdateFoodNutrients() {
+	// Connect to the test database
+	db, err := sqlx.Connect("sqlite", ":memory:")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`
+	CREATE TABLE IF NOT EXISTS food_nutrients (
+		id INTEGER PRIMARY KEY,
+		food_id INTEGER NOT NULL,
+		nutrient_id INTEGER NOT NULL,
+		amount REAL NOT NULL,
+		derivation_id REAL NOT NULL,
+		FOREIGN KEY (food_id) REFERENCES foods(food_id),
+		FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
+		FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS nutrients (
+		nutrient_id INTEGER PRIMARY KEY,
+		nutrient_name TEXT NOT NULL,
+		unit_name TEXT NOT NULL
+	);
+
+	INSERT INTO nutrients VALUES (1003, 'Protein', 'g');
+	INSERT INTO nutrients VALUES (1004, 'Carbohydrate, by difference', 'g');
+	INSERT INTO nutrients VALUES (1005, 'Total lipid (fat)', 'g');
+	INSERT INTO nutrients VALUES (1008, 'Energy', 'KCAL');
+
+	INSERT INTO food_nutrients VALUES (1, 1, 1003, 50, 71);
+	INSERT INTO food_nutrients VALUES (2, 1, 1004, 5, 71);
+	INSERT INTO food_nutrients VALUES (3, 1, 1005, 0, 71);
+	INSERT INTO food_nutrients VALUES (4, 1, 1008, 106, 71);
+	`)
+
+	food := &Food{
+		ID: 1,
+		FoodMacros: &FoodMacros{
+			Protein: 61,
+			Carbs:   5,
+			Fat:     0,
+		},
+	}
+
+	if err := updateFoodNutrients(tx, food); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var updatedProtein float64
+	err = tx.Get(&updatedProtein, `SELECT amount FROM food_nutrients WHERE nutrient_id = 1003 AND food_id = 1`)
+	if err != nil {
+		fmt.Println("Failed to get protein:", err)
+		return
+	}
+
+	fmt.Println(updatedProtein)
+
+	// Output:
+	// 61
+}
+
 func ExampleDeleteFood() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
