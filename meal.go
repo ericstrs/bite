@@ -149,7 +149,7 @@ func getNewFoodUserInput() (*Food, error) {
 	// Remove newline character at the end
 	newFood.HouseholdServing = strings.TrimSuffix(newFood.HouseholdServing, "\n")
 
-	fmt.Printf("Enter the food's brand name (if any), or press <Enter> to skip: ")
+	fmt.Printf("Enter the food's brand name [Press <Enter> to skip]: ")
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	newFood.BrandName = input
@@ -167,7 +167,7 @@ func getFoodPriceUserInput() float64 {
 	var floatValue float64
 	var err error
 	for {
-		fmt.Printf("Enter the food's price per 100 serving units (if any), or press <Enter> to skip: ")
+		fmt.Printf("Enter food price per 100 serving units [Press <Enter> to skip]: ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSuffix(input, "\n")
 
@@ -359,7 +359,7 @@ func updateFoodUserInput(existingFood *Food) {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Printf("Current food name: %s\n", existingFood.Name)
-	fmt.Printf("Enter a new name or press <Enter> to keep: ")
+	fmt.Printf("Enter new food name [Press <Enter> to keep]: ")
 	newName, _ := reader.ReadString('\n')
 	newName = strings.TrimSpace(newName)
 	if newName != "" {
@@ -369,7 +369,7 @@ func updateFoodUserInput(existingFood *Food) {
 	existingFood.ServingSize = updateServingSizeUserInput(existingFood.ServingSize)
 
 	fmt.Printf("Current serving unit: %s\n", existingFood.ServingUnit)
-	fmt.Printf("Enter a new unit or press <Enter> to keep: ")
+	fmt.Printf("Enter new serving unit [Press <Enter> to keep]: ")
 	newServingUnit, _ := reader.ReadString('\n')
 	newServingUnit = strings.TrimSpace(newServingUnit)
 	if newServingUnit != "" {
@@ -377,7 +377,7 @@ func updateFoodUserInput(existingFood *Food) {
 	}
 
 	fmt.Printf("Current household serving: %s\n", existingFood.HouseholdServing)
-	fmt.Printf("Enter a new household serving or press <Enter> to keep: ")
+	fmt.Printf("Enter new household serving [Press <Enter> to keep]: ")
 	newHouseholdServing, _ := reader.ReadString('\n')
 	newHouseholdServing = strings.TrimSpace(newHouseholdServing)
 	if newHouseholdServing != "" {
@@ -385,7 +385,7 @@ func updateFoodUserInput(existingFood *Food) {
 	}
 
 	fmt.Printf("Current brand name: %s\n", existingFood.BrandName)
-	fmt.Printf("Enter a new brand name or press <Enter> to keep: ")
+	fmt.Printf("Enter new brand name [Press <Enter> to keep]: ")
 	newBrandName, _ := reader.ReadString('\n')
 	newBrandName = strings.TrimSpace(newBrandName)
 	if newBrandName != "" {
@@ -401,7 +401,7 @@ func updateServingSizeUserInput(existingServingSize float64) float64 {
 	var newServingSize string
 	fmt.Printf("Current serving size: %.2f\n", existingServingSize)
 	for {
-		fmt.Printf("Enter a new serving size or press <Enter> to keep: ")
+		fmt.Printf("Enter new serving size [Press <Enter> to keep]: ")
 		fmt.Scanln(&newServingSize)
 
 		// User pressed <Enter>
@@ -425,7 +425,7 @@ func updateFoodPriceUserInput(existingFoodPrice float64) float64 {
 	var newFoodPrice string
 	fmt.Printf("Current food price per 100 servings units: $%.2f\n", existingFoodPrice)
 	for {
-		fmt.Printf("Enter the food's price per 100 serving units (if any), or press <Enter> to keep: ")
+		fmt.Printf("Enter food price per 100 serving units [Press <Enter> to keep]: ")
 		fmt.Scanln(&newFoodPrice)
 
 		// User pressed <Enter>
@@ -488,7 +488,7 @@ OuterLoop:
 		}
 
 		for {
-			fmt.Printf("Enter a new amount per 100 serving units or press <Enter> to keep: ")
+			fmt.Printf("Enter new amount per 100 serving units [Press <Enter> to keep]: ")
 			fmt.Scanln(&newAmount)
 
 			// User pressed <Enter>
@@ -776,13 +776,16 @@ func SelectAndDeleteMeal(db *sqlx.DB) error {
 		return err
 	}
 
+	// Store meal name before deleting.
+	mealName := m.Name
+
 	// Remove meal from the database.
 	err = deleteMeal(tx, m.ID)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Deleted food.")
+	fmt.Printf("Successfully deleted %s meal.\n", mealName)
 	return tx.Commit()
 }
 
