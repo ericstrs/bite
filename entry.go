@@ -33,6 +33,7 @@ type Entry struct {
 	Protein    float64   `db:"protein"`
 	Carbs      float64   `db:"carbs"`
 	Fat        float64   `db:"fat"`
+	Price      float64   `db:"price"`
 }
 
 type WeightEntry struct {
@@ -51,6 +52,7 @@ type DailyFood struct {
 	ServingUnit      string    `db:"serving_unit"`
 	NumberOfServings float64   `db:"number_of_servings"`
 	Calories         float64   `db:"calories"`
+	Price            float64   `db:"price"`
 	FoodMacros       *FoodMacros
 }
 
@@ -506,14 +508,14 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 	fmt.Println("Recently logged foods:")
 
 	// Get most recently logged foods.
-	recentFoods, err := getRecentFoodEntries(tx, searchLimit)
+	recentFoods, err := getRecentlyLoggedFoods(tx, searchLimit)
 	if err != nil {
 		log.Println(err)
 		return Food{}, err
 	}
 
-	for i, entry := range recentFoods {
-		fmt.Printf("[%d] %s\n", i+1, entry.FoodName)
+	for i, food := range recentFoods {
+		fmt.Printf("[%d] %s\n", i+1, food.Name)
 	}
 
 	// Get response.
@@ -530,8 +532,7 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 			idx, err = strconv.Atoi(response)
 			continue
 		}
-		// Otherwise, return food at valid index.
-		return Food{ID: recentFoods[idx-1].FoodID}, nil
+		return recentFoods[idx-1], nil
 	}
 
 	// If user enters "done", then return early.
@@ -559,8 +560,8 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 		// Print foods.
 		for i, food := range *filteredFoods {
 			brandDetail := ""
-			if food.BrandName != nil && *food.BrandName != "" {
-				brandDetail = " (Brand: " + *food.BrandName + ")"
+			if food.BrandName != "" {
+				brandDetail = " (Brand: " + food.BrandName + ")"
 			}
 			fmt.Printf("[%d] %s%s\n", i+1, food.Name, brandDetail)
 		}
@@ -589,6 +590,28 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 		}
 		// User response was a search term. Continue to next loop.
 	}
+}
+
+// getRecentlyLoggedFoods retrieves most recently logged foods.
+func getRecentlyLoggedFoods(tx *sqlx.Tx, limit int) ([]Food, error) {
+	const query = `
+  SELECT f.*
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
+    FROM daily_foods
+  ) AS df
+  INNER JOIN foods f ON df.food_id = f.food_id
+  WHERE df.rn = 1
+  ORDER BY df.date DESC
+  LIMIT $1;
+`
+
+	var foods []Food
+	if err := tx.Select(&foods, query, limit); err != nil {
+		return nil, err
+	}
+
+	return foods, nil
 }
 
 // searchFoods searchs through all foods and returns food that contain
@@ -741,12 +764,12 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 // addFoodEntry inserts a food entry into the database.
 func addFoodEntry(tx *sqlx.Tx, f *Food, date time.Time) error {
 	const query = `
-		INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs, price)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		`
 	_, err := tx.Exec(query, f.ID, date.Format(dateFormat), date.Format(dateFormatTime),
 		f.ServingSize, f.NumberOfServings, f.Calories, f.FoodMacros.Protein,
-		f.FoodMacros.Fat, f.FoodMacros.Carbs)
+		f.FoodMacros.Fat, f.FoodMacros.Carbs, f.Price)
 	// If there was an error executing the query, return the error
 	if err != nil {
 		log.Println("Failed to insert food entry into daily_foods.")
@@ -881,7 +904,8 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-  SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
+  SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+	df.number_of_servings, f.food_name, f.serving_unit
   FROM (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
     FROM daily_foods
@@ -914,7 +938,8 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, f.food_name, f.serving_unit
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+				df.number_of_servings, f.food_name, f.serving_unit
     		FROM daily_foods df
     		JOIN foods f ON df.food_id = f.food_id
     		WHERE df.date = $1
@@ -933,14 +958,16 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 
 // updateFoodEntry updates the given food entry in the database.
 func updateFoodEntry(tx *sqlx.Tx, entryID int, f Food) error {
-	query := `
+	const query = `
         UPDATE daily_foods
-        SET serving_size = $1, number_of_servings = $2, calories = $3, protein = $4, fat = $5, carbs = $6
-        WHERE id = $7
+        SET serving_size = $1, number_of_servings = $2, calories = $3,
+				protein = $4, fat = $5, carbs = $6, price = $7
+        WHERE id = $8
     `
 
 	// Execute the update statement
-	_, err := tx.Exec(query, f.ServingSize, f.NumberOfServings, f.Calories, f.FoodMacros.Protein, f.FoodMacros.Fat, f.FoodMacros.Carbs, entryID)
+	_, err := tx.Exec(query, f.ServingSize, f.NumberOfServings, f.Calories,
+		f.FoodMacros.Protein, f.FoodMacros.Fat, f.FoodMacros.Carbs, f.Price, entryID)
 
 	// If there was an error executing the query, return the error
 	if err != nil {
@@ -1018,7 +1045,9 @@ func ShowFoodLog(db *sqlx.DB) error {
 			currentDate = entry.Date
 			fmt.Printf("\n%v\n", currentDate.Format(("January 2, 2006")))
 		}
-		fmt.Printf("- %s: %.2f %s x %.2f serving | %.2f cals |\n", entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings, entry.Calories)
+		fmt.Printf("- %s: %.2f %s x %.2f serving | %.2f cals |\n",
+			entry.FoodName, entry.ServingSize, entry.ServingUnit,
+			entry.NumberOfServings, entry.Calories)
 	}
 
 	return tx.Commit()
@@ -1030,7 +1059,10 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, df.calories, f.food_name, f.serving_unit
+        SELECT 
+				df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+				df.number_of_servings, df.calories, df.price, f.food_name,
+				f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
         ORDER BY df.date DESC
@@ -1290,7 +1322,7 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 	mf := MealFood{}
 
 	// Get the food details
-	err := tx.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = ?", foodID)
+	err := tx.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = $1", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
 		return nil, err
@@ -1340,6 +1372,7 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 		mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
+		mf.Food.Price *= ratio * mf.NumberOfServings
 	}
 
 	return &mf, nil
@@ -1350,7 +1383,7 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 	f := Food{}
 
 	// Get the food details.
-	err := tx.Get(&f, "SELECT * FROM foods WHERE food_id = ?", foodID)
+	err := tx.Get(&f, "SELECT * FROM foods WHERE food_id = $1", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
 		return nil, err
@@ -1400,6 +1433,7 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 		f.FoodMacros.Protein *= ratio * f.NumberOfServings
 		f.FoodMacros.Fat *= ratio * f.NumberOfServings
 		f.FoodMacros.Carbs *= ratio * f.NumberOfServings
+		f.Price *= ratio * f.NumberOfServings
 	}
 
 	return &f, nil
@@ -1463,7 +1497,7 @@ func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 // addMealFoodEntries bulk inserts foods that make up the meal into the database.
 func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date time.Time) error {
 	// Prepare a statement for bulk insert
-	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
+	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs, price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)")
 	if err != nil {
 		return err
 	}
@@ -1471,7 +1505,7 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 
 	// Iterate over each food and insert into the database
 	for _, mf := range mealFoods {
-		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings, mf.Food.Calories, mf.Food.FoodMacros.Protein, mf.Food.FoodMacros.Fat, mf.Food.FoodMacros.Carbs)
+		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings, mf.Food.Calories, mf.Food.FoodMacros.Protein, mf.Food.FoodMacros.Fat, mf.Food.FoodMacros.Carbs, mf.Food.Price)
 		if err != nil {
 			log.Println("Failed to execute bulk meal food insert.")
 			return err
@@ -1564,10 +1598,13 @@ func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
 		return err
 	}
 
+	// TODO: if there are zero entries for today, then return early.
+
 	var calorieTotal float64
 	var proteinTotal float64
 	var fatTotal float64
 	var carbTotal float64
+	var priceTotal float64
 
 	// Calculate nutritional totals.
 	for _, entry := range entries {
@@ -1575,6 +1612,7 @@ func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
 		proteinTotal += entry.FoodMacros.Protein
 		fatTotal += entry.FoodMacros.Fat
 		carbTotal += entry.FoodMacros.Carbs
+		priceTotal += entry.Price
 	}
 
 	// Get nutritional goals.
@@ -1591,6 +1629,7 @@ func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
 	printNutrientProgress(carbTotal, carbGoal, "Carbs")
 	printCalorieProgress(calorieTotal, calorieGoal, "Calories")
 	fmt.Printf("\n%.2f calories remaining\n", calorieGoal-calorieTotal)
+	fmt.Printf("Eaten $%.2f worth of food today.\n", priceTotal)
 
 	return tx.Commit()
 }
@@ -1600,7 +1639,8 @@ func getFoodEntriesForDate(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size, df.number_of_servings, df.calories, f.food_name, f.serving_unit
+        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+				df.number_of_servings, df.calories, df.price, f.food_name, f.serving_unit
         FROM daily_foods df
         INNER JOIN foods f ON df.food_id = f.food_id
 				WHERE date = $1
@@ -1609,7 +1649,7 @@ func getFoodEntriesForDate(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
-		log.Println("Failed to get main details from daily food entries.")
+		log.Printf("Failed to get main details from daily food entries: %v\n", err)
 		return nil, err
 	}
 
