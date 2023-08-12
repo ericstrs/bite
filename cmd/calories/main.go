@@ -188,15 +188,18 @@ func main() {
 		}
 	case "update":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories update [user|meal]")
+			log.Println("Usage: ./calories update [user|food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "user":
-			err := c.UpdateUserInfo(db, u)
-			if err != nil {
+			if err := c.UpdateUserInfo(db, u); err != nil {
+				return
+			}
+		case "food":
+			if err := c.UpdateFood(db); err != nil {
 				return
 			}
 		case "meal":
@@ -222,7 +225,7 @@ func main() {
 			}
 
 		default:
-			log.Println("Usage: ./calories update [user|meal]")
+			log.Println("Usage: ./calories update [user|food|meal]")
 			return
 		}
 	case "summary":
