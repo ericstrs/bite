@@ -142,7 +142,7 @@ func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 func getDateNotPast(s string) (date time.Time) {
 	for {
 		// Prompt user for diet start date.
-		r := promptDate(fmt.Sprintf("%s (YYYY-MM-DD) [Press Enter for today's date]: ", s))
+		r := promptDate(fmt.Sprintf("%s (YYYY-MM-DD) [Press <Enter> for today's date]: ", s))
 
 		// If user entered default date,
 		if r == "" {
@@ -1123,7 +1123,7 @@ func LogMeal(db *sqlx.DB) error {
 		// Get user response.
 		response := promptUserEditDecision()
 
-		// If the user pressed <enter>, break the loop.
+		// If user pressed <Enter>, break the loop.
 		if response == "" {
 			break
 		}
@@ -1441,30 +1441,32 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 
 // printMealDetails prints the foods that make up the meal and their preferences.
 func printMealDetails(mealFoods []*MealFood) {
+	var priceTotal float64
 	for i, mf := range mealFoods {
 		fmt.Printf("[%d] ", i+1)
 		printMealFood(mf)
+		priceTotal += mf.Food.Price
 	}
+	fmt.Printf("Total estimated cost of meal: $%.2f\n", priceTotal)
 }
 
 // printMealFood prints details of a given MealFood object.
 func printMealFood(mealFood *MealFood) {
-	fmt.Printf("%s\n", mealFood.Food.Name)
-	fmt.Printf("Serving Size: %.2f\n", mealFood.ServingSize)
-	fmt.Printf("Number of Servings: %.2f\n", mealFood.NumberOfServings)
-	fmt.Printf("Calories: %.2f\n", mealFood.Food.Calories)
+	fmt.Printf("%s: %.2f %s x %.2f serving, %.2f cals ($%.2f)\n",
+		mealFood.Food.Name, mealFood.ServingSize, mealFood.Food.ServingUnit,
+		mealFood.NumberOfServings, mealFood.Food.Calories, mealFood.Food.Price)
 
 	fmt.Println("Macros:")
-	fmt.Printf("  - Protein: %.2f\n", mealFood.Food.FoodMacros.Protein)
-	fmt.Printf("  - Fat: %.2f\n", mealFood.Food.FoodMacros.Fat)
-	fmt.Printf("  - Carbs: %.2f\n", mealFood.Food.FoodMacros.Carbs)
+	fmt.Printf("  - Protein: %-3.2f\n", mealFood.Food.FoodMacros.Protein)
+	fmt.Printf("  - Fat: %-3.2f\n", mealFood.Food.FoodMacros.Fat)
+	fmt.Printf("  - Carbs: %-3.2f\n", mealFood.Food.FoodMacros.Carbs)
 }
 
 // promptUserEditDecision prompts the user to select one of foods that
 // make up a meal to edit or <enter> to use existing values.
 func promptUserEditDecision() string {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Enter index of food to edit or press <enter> for existing values: ")
+	fmt.Printf("Enter index of food to edit [Press <Enter> for existing values]: ")
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		log.Fatalf("promptUserEditDecision: %v\n", err)
@@ -1628,7 +1630,7 @@ func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
 	printNutrientProgress(fatTotal, fatGoal, "Fat")
 	printNutrientProgress(carbTotal, carbGoal, "Carbs")
 	printCalorieProgress(calorieTotal, calorieGoal, "Calories")
-	fmt.Printf("\n%.2f calories remaining\n", calorieGoal-calorieTotal)
+	fmt.Printf("\n%.2f calories remaining.\n", calorieGoal-calorieTotal)
 	fmt.Printf("Eaten $%.2f worth of food today.\n", priceTotal)
 
 	return tx.Commit()
