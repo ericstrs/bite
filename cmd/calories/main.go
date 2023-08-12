@@ -52,7 +52,7 @@ func main() {
 
 	// Check if user has at least a single argument.
 	if len(os.Args) < 2 {
-		log.Println("Usage: ./calories [log|add|delete|update|summary|start|stop]")
+		log.Println("Usage: ./calories [log|create|update|delete|summary|start|stop]")
 		return
 	}
 
@@ -142,9 +142,9 @@ func main() {
 			log.Println("Usage: ./calories log [weight|food|meal|update|delete|show]")
 			return
 		}
-	case "add":
+	case "create":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories add [food|meal]")
+			log.Println("Usage: ./calories create [food|meal]")
 			return
 		}
 
@@ -161,7 +161,7 @@ func main() {
 				return
 			}
 		default:
-			log.Println("Usage: ./calories add [food|meal]")
+			log.Println("Usage: ./calories create [food|meal]")
 			return
 		}
 	case "delete":
@@ -300,7 +300,7 @@ func main() {
 			return
 		}
 	default:
-		log.Println("Usage: ./calories [log|add|delete|update|summary|start|stop]")
+		log.Println("Usage: ./calories [log|create|update|delete|summary|start|stop]")
 	}
 
 	return
