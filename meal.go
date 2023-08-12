@@ -37,9 +37,9 @@ type Food struct {
 	FoodMacros       *FoodMacros
 	// Indicates if there is a serving size preference set for this food in
 	// the meal (in food_prefs).
-	HasPreference bool     `db:"has_preference"`
-	BrandName     *string  `db:"brand_name"`
-	Price         *float64 `db:"cost"`
+	HasPreference bool    `db:"has_preference"`
+	BrandName     string  `db:"brand_name"`
+	Price         float64 `db:"cost"`
 }
 
 // MealFood extends Food with additional fields to represent a food
@@ -122,7 +122,7 @@ func CreateAndAddFood(db *sqlx.DB) error {
 		return fmt.Errorf("failed to insert food nutrients into database: %v", err)
 	}
 
-	fmt.Println("Added new food.")
+	fmt.Println("Successfully added new food.")
 
 	// Commit the transaction
 	return tx.Commit()
@@ -136,7 +136,6 @@ func getNewFoodUserInput() (*Food, error) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the food name: ")
 	newFood.Name, _ = reader.ReadString('\n')
-
 	// Remove newline character at the end
 	newFood.Name = strings.TrimSuffix(newFood.Name, "\n")
 
@@ -145,36 +144,61 @@ func getNewFoodUserInput() (*Food, error) {
 	fmt.Printf("Enter serving unit: ")
 	fmt.Scanln(&newFood.ServingUnit)
 
-	fmt.Print("Enter the household serving: ")
+	fmt.Printf("Enter the household serving: ")
 	newFood.HouseholdServing, _ = reader.ReadString('\n')
-
 	// Remove newline character at the end
 	newFood.HouseholdServing = strings.TrimSuffix(newFood.HouseholdServing, "\n")
 
+	fmt.Printf("Enter the food's brand name (if any), or press <Enter> to skip: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	newFood.BrandName = input
+
+	newFood.Price = getFoodPriceUserInput()
+
 	return newFood, nil
+}
+
+// getFoodPriceUserInput prompts user for price of a given food, validates user
+// response, and returns the valid food price.
+func getFoodPriceUserInput() float64 {
+	reader := bufio.NewReader(os.Stdin)
+
+	var floatValue float64
+	var err error
+	for {
+		fmt.Printf("Enter the food's price per 100 serving units (if any), or press <Enter> to skip: ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSuffix(input, "\n")
+
+		if input == "" {
+			return 0
+		}
+
+		floatValue, err = strconv.ParseFloat(input, 64)
+		if err != nil || floatValue < 0 {
+			fmt.Println("Value must be a number greater than 0. Please try again.")
+			continue
+		}
+		return floatValue
+	}
 }
 
 // getFoodNutrientsUserInput retrieves the food nutrients from the user.
 func getFoodNutrientsUserInput(db *sqlx.DB) (*FoodMacros, float64, error) {
 	var foodMacros FoodMacros
-	var cals float64
-	nutrientNames := []string{"Protein", "Fat", "Carbs", "Energy"}
+	nutrientNames := []string{"Protein", "Fat", "Carbs"}
 
 	for _, nutrientName := range nutrientNames {
 		fmt.Printf("Enter the amount of %s per 100 serving units: ", nutrientName)
 		var amount float64
 		_, err := fmt.Scan(&amount)
-		if err != nil {
+		if err != nil || amount < 0 {
 			fmt.Println("Invalid input. Try again.")
 			continue
 		}
 		if amount < 0 {
 			fmt.Println("Nutrient amount cannot be negative.")
-			continue
-		}
-
-		if nutrientName == "Energy" {
-			cals = amount
 			continue
 		}
 
@@ -191,12 +215,20 @@ func getFoodNutrientsUserInput(db *sqlx.DB) (*FoodMacros, float64, error) {
 		}
 	}
 
+	cals := calculateCalories(foodMacros.Protein, foodMacros.Carbs, foodMacros.Fat)
+
 	return &foodMacros, cals, nil
+}
+
+// calculateCalories calculates the calories of a food given
+// macronutrient amounts.
+func calculateCalories(protein, carbs, fats float64) float64 {
+	return (protein * calsInProtein) + (carbs * calsInCarbs) + (fats * calsInFats)
 }
 
 // insertFood inserts a food into the database and returns the id of the newly inserted food.
 func insertFood(tx *sqlx.Tx, food *Food) (int, error) {
-	query := `INSERT INTO foods (food_name, serving_size, serving_unit, household_serving) VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO foods (food_name, serving_size, serving_unit, household_serving) VALUES ($1, $2, $3, $4)`
 	res, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit, food.HouseholdServing)
 	if err != nil {
 		return 0, fmt.Errorf("insertFood: %w", err)
@@ -263,6 +295,266 @@ func insertFoodNutrientsIntoDB(tx *sqlx.Tx, food *Food) error {
 
 		_, err = tx.NamedExec(insertFoodNutrientsSQL, params)
 		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// UpdateFood prompts user for new food information and makes the update
+// to the database.
+func UpdateFood(db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	// Select food to update
+	food, err := selectFood(tx)
+	if err != nil {
+		if errors.Is(err, ErrDone) {
+			fmt.Println("No food selected.")
+			return nil // Not really an "error" situation
+		}
+		return err
+	}
+
+	// Get new food information
+	updateFoodUserInput(&food)
+
+	// Make update to foods table
+	err = updateFoodTable(tx, &food)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	// Get existing food macros
+	food.FoodMacros, err = getFoodMacros(tx, food.ID)
+	if err != nil {
+		return err
+	}
+
+	// Get new food nutrient information
+	updateFoodNutrientsUserInput(&food)
+
+	// Make update to food nutrients table
+	err = updateFoodNutrients(tx, &food)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully updated %s.\n", food.Name)
+
+	return tx.Commit()
+}
+
+// updateFoodUserInput prompts the user to update information for an existing food.
+func updateFoodUserInput(existingFood *Food) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Printf("Current food name: %s\n", existingFood.Name)
+	fmt.Printf("Enter a new name or press <Enter> to keep: ")
+	newName, _ := reader.ReadString('\n')
+	newName = strings.TrimSpace(newName)
+	if newName != "" {
+		existingFood.Name = newName
+	}
+
+	existingFood.ServingSize = updateServingSizeUserInput(existingFood.ServingSize)
+
+	fmt.Printf("Current serving unit: %s\n", existingFood.ServingUnit)
+	fmt.Printf("Enter a new unit or press <Enter> to keep: ")
+	newServingUnit, _ := reader.ReadString('\n')
+	newServingUnit = strings.TrimSpace(newServingUnit)
+	if newServingUnit != "" {
+		existingFood.ServingUnit = newServingUnit
+	}
+
+	fmt.Printf("Current household serving: %s\n", existingFood.HouseholdServing)
+	fmt.Printf("Enter a new household serving or press <Enter> to keep: ")
+	newHouseholdServing, _ := reader.ReadString('\n')
+	newHouseholdServing = strings.TrimSpace(newHouseholdServing)
+	if newHouseholdServing != "" {
+		existingFood.HouseholdServing = newHouseholdServing
+	}
+
+	fmt.Printf("Current brand name: %s\n", existingFood.BrandName)
+	fmt.Printf("Enter a new brand name or press <Enter> to keep: ")
+	newBrandName, _ := reader.ReadString('\n')
+	newBrandName = strings.TrimSpace(newBrandName)
+	if newBrandName != "" {
+		existingFood.BrandName = newBrandName
+	}
+
+	existingFood.Price = updateFoodPriceUserInput(existingFood.Price)
+}
+
+// updateServingSizeUserInput entered prints existing food serving size and prompts user
+// to enter a new one.
+func updateServingSizeUserInput(existingServingSize float64) float64 {
+	var newServingSize string
+	fmt.Printf("Current serving size: %.2f\n", existingServingSize)
+	for {
+		fmt.Printf("Enter a new serving size or press <Enter> to keep: ")
+		fmt.Scanln(&newServingSize)
+
+		// User pressed <Enter>
+		if newServingSize == "" {
+			return existingServingSize
+		}
+
+		newServingSizeFloat, err := strconv.ParseFloat(newServingSize, 64)
+		if err != nil || newServingSizeFloat < 0 {
+			fmt.Println("Invalid float value entered. Please try again.")
+			continue
+		}
+		return newServingSizeFloat
+	}
+}
+
+// updateFoodPriceUserInput prints current price for food prompts user
+// for price of a given food, validates user response, and returns the
+// valid food price.
+func updateFoodPriceUserInput(existingFoodPrice float64) float64 {
+	var newFoodPrice string
+	fmt.Printf("Current food price per 100 servings units: $%.2f\n", existingFoodPrice)
+	for {
+		fmt.Printf("Enter the food's price per 100 serving units (if any), or press <Enter> to keep: ")
+		fmt.Scanln(&newFoodPrice)
+
+		// User pressed <Enter>
+		if newFoodPrice == "" {
+			return existingFoodPrice
+		}
+
+		newFoodPriceFloat, err := strconv.ParseFloat(newFoodPrice, 64)
+		if err != nil || newFoodPriceFloat < 0 {
+			fmt.Println("Value must be a number greater than 0. Please try again.")
+			continue
+		}
+		return newFoodPriceFloat
+	}
+}
+
+// updateFoodTable updates one food from the foods table
+func updateFoodTable(tx *sqlx.Tx, food *Food) error {
+	const query = `
+	UPDATE foods SET
+	food_name = $1, serving_size = $2, serving_unit = $3,
+	household_serving = $4, brand_name = $5, cost = $6
+	WHERE food_id = $7
+	`
+	_, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit,
+		food.HouseholdServing, food.BrandName, food.Price, food.ID)
+
+	if err != nil {
+		return fmt.Errorf("Failed to update food: %v", err)
+	}
+
+	return nil
+}
+
+// updateFoodNutrientsUserInput prints existing nutrient information,
+// prompts user for new nutrient information, and returns information.
+//
+// Assumption:
+// * f.FoodMacros is not empty
+func updateFoodNutrientsUserInput(f *Food) error {
+	nutrientNames := []string{"Protein", "Fat", "Carbs"}
+	var newAmount string
+	var newAmountFloat float64
+	var err error
+
+OuterLoop:
+	for _, nutrientName := range nutrientNames {
+		// Print existing nutrient information
+		fmt.Printf("Current %s amount per 100 serving units: ", strings.ToLower(nutrientName))
+		switch nutrientName {
+		case "Protein":
+			fmt.Printf("%.0f\n", f.FoodMacros.Protein)
+		case "Fat":
+			fmt.Printf("%.0f\n", f.FoodMacros.Fat)
+		case "Carbs":
+			fmt.Printf("%.0f\n", f.FoodMacros.Carbs)
+		default:
+			fmt.Println("\nInvalid nutrient name:", nutrientName)
+			continue
+		}
+
+		for {
+			fmt.Printf("Enter a new amount per 100 serving units or press <Enter> to keep: ")
+			fmt.Scanln(&newAmount)
+
+			// User pressed <Enter>
+			if newAmount == "" {
+				continue OuterLoop
+			}
+
+			newAmountFloat, err = strconv.ParseFloat(newAmount, 64)
+			if err != nil || newAmountFloat < 0 {
+				fmt.Println("Nutrient amount be a number greater than 0. Please try again.")
+				continue
+			}
+		}
+
+		switch nutrientName {
+		case "Protein":
+			f.FoodMacros.Protein = newAmountFloat
+		case "Fat":
+			f.FoodMacros.Fat = newAmountFloat
+		case "Carbs":
+			f.FoodMacros.Carbs = newAmountFloat
+		default:
+			fmt.Println("Invalid nutrient name:", nutrientName)
+			continue
+		}
+	}
+
+	f.Calories = calculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+
+	return nil
+}
+
+// updateFoodNutrients updates the food nutrients for a given food.
+func updateFoodNutrients(tx *sqlx.Tx, food *Food) error {
+	// Nutrients and corresponding amounts.
+	nutrients := map[string]float64{
+		"Protein":                     food.FoodMacros.Protein,
+		"Total lipid (fat)":           food.FoodMacros.Fat,
+		"Carbohydrate, by difference": food.FoodMacros.Carbs,
+		"Energy":                      food.Calories,
+	}
+
+	updateFoodNutrientsSQL := `
+    UPDATE food_nutrients SET
+		amount = :amount, derivation_id = :derivation_id
+		WHERE nutrient_id = :nutrient_id AND food_id = :food_id
+  `
+
+	// Insert each nutrient into the food_nutrients table.
+	for nutrientName, amount := range nutrients {
+		nutrientID, err := getNutrientId(tx, nutrientName)
+		if err != nil {
+			continue // Skip this nutrient if there was an error retrieving the ID.
+		}
+
+		// Create a map with named parameters
+		params := map[string]interface{}{
+			"food_id":       food.ID,
+			"nutrient_id":   nutrientID,
+			"amount":        amount,
+			"derivation_id": derivationIdPortion,
+		}
+
+		_, err = tx.NamedExec(updateFoodNutrientsSQL, params)
+		if err != nil {
+			log.Println("Failed to update food nutrients:", err)
 			return err
 		}
 	}
@@ -460,7 +752,7 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 		}
 	}
 
-	fmt.Println("Added meal.")
+	fmt.Println("Successfully added meal.")
 
 	// Commit the transaction
 	return tx.Commit()
@@ -868,31 +1160,29 @@ func validateNumServings(numServings float64) error {
 	return nil
 }
 
-/*
 // getOneFood retrieves the details for a given food.
 // Nutrients
 // Nutrients are for portion size (100 serving unit)
-func getOneFood(db *sqlx.DB, foodID int) (*Food, error) {
+func getOneFood(tx *sqlx.Tx, foodID int) (*Food, error) {
 	f := Food{}
 
-	err := db.Get(&f, "SELECT * FROM foods WHERE food_id=?", foodID)
+	err := tx.Get(&f, "SELECT * FROM foods WHERE food_id=?", foodID)
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = tx.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		return nil, err
 	}
 
-	f.FoodMacros, err = getFoodMacros(db, foodID)
+	f.FoodMacros, err = getFoodMacros(tx, foodID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &f, nil
 }
-*/
 
 // getFoodMacros retrieves the macronutrients for a given food.
 func getFoodMacros(tx *sqlx.Tx, foodID int) (*FoodMacros, error) {
