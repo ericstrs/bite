@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS foods (
   serving_size REAL NOT NULL,
   serving_unit TEXT NOT NULL,
   household_serving TEXT NOT NULL,
-  brand_name TEXT,
-  cost REAL
+  brand_name TEXT DEFAULT '',
+  cost REAL DEFAULT 0
 );
 
 -- create virtual table for full-text searching 
@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS daily_foods (
   calories REAL NOT NULL,
   protein REAL NOT NULL,
   fat REAL NOT NULL,
-  carbs REAL NOT NULL
+  carbs REAL NOT NULL,
+  price REAL DEFAULT 0
 );
 
 -- user_meals contains the user's meal consumption logs.
