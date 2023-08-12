@@ -1160,6 +1160,7 @@ func validateNumServings(numServings float64) error {
 	return nil
 }
 
+/*
 // getOneFood retrieves the details for a given food.
 // Nutrients
 // Nutrients are for portion size (100 serving unit)
@@ -1183,6 +1184,7 @@ func getOneFood(tx *sqlx.Tx, foodID int) (*Food, error) {
 
 	return &f, nil
 }
+*/
 
 // getFoodMacros retrieves the macronutrients for a given food.
 func getFoodMacros(tx *sqlx.Tx, foodID int) (*FoodMacros, error) {
