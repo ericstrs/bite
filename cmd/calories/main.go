@@ -46,6 +46,7 @@ func main() {
 		// Get user progress.
 		err = c.CheckProgress(db, u, active_log)
 		if err != nil {
+			log.Println(err)
 			return
 		}
 	}
