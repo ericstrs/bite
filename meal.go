@@ -752,7 +752,7 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 		}
 	}
 
-	fmt.Println("Successfully added meal.")
+	fmt.Println("Successfully created meal.")
 
 	// Commit the transaction
 	return tx.Commit()
