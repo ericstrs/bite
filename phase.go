@@ -741,7 +741,7 @@ func CheckPhaseStatus(db *sqlx.DB, u *UserInfo) (string, error) {
 			return "", err
 		}
 
-		return u.Phase.Status, nil
+		return u.Phase.Status, tx.Commit()
 	}
 
 	// If today is the first day of the diet (active status has yet to be
