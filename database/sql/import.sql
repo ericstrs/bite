@@ -36,20 +36,6 @@ CREATE TEMPORARY TABLE temp_branded_foods (
 
 .import ./data/branded_food.csv temp_branded_foods
 
--- Create temporary table for food attribute data
--- Only used for second option in COALESCE statement for the food
--- table insert.
-CREATE TEMPORARY TABLE temp_food_attributes (
-  id TEXT,
-  fdc_id TEXT,
-  seq_num TEXT,
-  food_attribute_type_id TEXT,
-  name TEXT,
-  value TEXT
-);
-
-.import ./data/food_attribute.csv temp_food_attributes
-
 -- Insert foods into the food table from both temporary tables
 INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving, brand_name)
 SELECT
@@ -62,9 +48,52 @@ SELECT
 FROM temp_foods AS food
 INNER JOIN temp_branded_foods AS branded ON food.fdc_id = branded.fdc_id;
 
-DROP TABLE temp_foods;
 DROP TABLE temp_branded_foods;
-DROP TABLE temp_food_attributes;
+
+-- Create temporary table for food portion information for foundation
+-- foods.
+CREATE TEMPORARY TABLE temp_food_portion (
+  id TEXT,
+  fdc_id TEXT,
+  seq_num TEXT,
+  amount TEXT,
+  measure_unit_id TEXT,
+  portion_description TEXT,
+  modifier TEXT,
+  gram_weight TEXT,
+  data_points TEXT,
+  footnote TEXT,
+  min_year_acquired TEXT
+);
+
+.import ./data/food_portion.csv temp_food_portion
+
+-- Create temporary table for measure units to retreive fields for
+-- foundation foods.
+CREATE TEMPORARY TABLE temp_measure_unit (
+  id TEXT,
+  name TEXT
+);
+
+.import ./data/measure_unit.csv temp_measure_unit
+
+-- Insert foundation foods into the foods table
+INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving, brand_name)
+SELECT
+  CAST(food.fdc_id AS INTEGER),
+  food.description,
+  CAST(fp.gram_weight AS REAL),
+  'g',
+  COALESCE(fp.amount || ' ' || mu.name, ''),
+  'foundation food'
+FROM temp_foods AS food
+JOIN temp_food_portion AS fp ON food.fdc_id = fp.fdc_id AND fp.seq_num = '1'
+LEFT JOIN temp_measure_unit AS mu ON fp.measure_unit_id = mu.id
+WHERE food.data_type = 'foundation_food';
+
+DROP TABLE temp_food_portion;
+DROP TABLE temp_measure_unit;
+DROP TABLE temp_foods;
 
 CREATE TEMPORARY TABLE temp_nutrients(
     "id" TEXT,
@@ -110,17 +139,16 @@ SELECT
   CAST(tfn.derivation_id AS INT)
 FROM
   temp_food_nutrients tfn
-JOIN
+INNER JOIN
   foods f ON tfn.fdc_id = f.food_id;
 
 DROP TABLE temp_food_nutrients;
-
 
 --------------------[ Data Modifications ]------------------------------
 
 -- Create a temporary table holding the IDs of foods that do not have
 -- macros logged
-CREATE TEMP TABLE temp_food_ids AS
+CREATE TEMPORARY TABLE temp_food_ids AS
 SELECT food_id
 FROM foods
 WHERE food_id NOT IN (
@@ -151,6 +179,8 @@ WHERE food_id IN (
   FROM temp_food_ids
 );
 
+DROP TABLE temp_food_ids;
+
 -- Then, ensure every food has a calorie entry for the food_nutrients table.
 INSERT INTO food_nutrients(food_id, nutrient_id, amount, derivation_id)
 SELECT
@@ -163,8 +193,10 @@ FROM
     LEFT JOIN food_nutrients fnp ON f.food_id = fnp.food_id AND fnp.nutrient_id = 1003 -- 1003 is nutrient_id for protein
     LEFT JOIN food_nutrients fnc ON f.food_id = fnc.food_id AND fnc.nutrient_id = 1005 -- 1005 is nutrient_id for carbohydrates
     LEFT JOIN food_nutrients fnf ON f.food_id = fnf.food_id AND fnf.nutrient_id = 1004 -- 1004 is nutrient_id for fat
+    LEFT JOIN food_nutrients fn8 ON f.food_id = fn8.food_id AND fn8.nutrient_id = 1008 -- 1008 is nutrient_id for Energy (KCAL)
 WHERE
-    f.food_id NOT IN (SELECT food_id FROM food_nutrients WHERE nutrient_id = 1008);
+    fn8.food_id IS NULL;
+
 
 ------------------------ [ Triggers ] ---------------------------------
 
