@@ -101,14 +101,17 @@ func PrintEntries(entries []Entry) {
 // LogWeight gets weight and date from user to create a new weight entry.
 func LogWeight(u *UserInfo, db *sqlx.DB) {
 	for {
-		date := getDateNotPast("Enter weight entry date")
+		// Get weight from user
 		weight, err := getWeight(u.System)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
 		}
-		err = addWeightEntry(db, date, weight)
-		if err != nil {
+
+		// Get weight entry date from user
+		date := getDateNotPast("Enter weight entry date")
+
+		if err = addWeightEntry(db, date, weight); err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
 		}
@@ -133,7 +136,7 @@ func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 		return err
 	}
 
-	fmt.Println("Added weight entry.")
+	fmt.Println("Successfully added weight entry.")
 	return nil
 }
 
@@ -495,7 +498,7 @@ func LogFood(db *sqlx.DB) error {
 		log.Println(err)
 		return err
 	}
-	fmt.Println("Added food entry.")
+	fmt.Println("Successfully added food entry.")
 
 	return tx.Commit()
 }
@@ -679,7 +682,7 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 	const query = `
     SELECT
       f.food_id,
-      COALESCE(fp.serving_size, f.serving_size) AS serving_size,
+      COALESCE(fp.serving_size, 100) AS serving_size,
 			COALESCE(fp.number_of_servings, 1) AS number_of_servings,
 			f.serving_unit
     FROM foods f
@@ -1045,7 +1048,7 @@ func ShowFoodLog(db *sqlx.DB) error {
 			currentDate = entry.Date
 			fmt.Printf("\n%v\n", currentDate.Format(("January 2, 2006")))
 		}
-		fmt.Printf("- %s: %.2f %s x %.2f serving | %.2f cals |\n",
+		fmt.Printf("- %s: %.1f %s x %.1f serving | %.0f cals |\n",
 			entry.FoodName, entry.ServingSize, entry.ServingUnit,
 			entry.NumberOfServings, entry.Calories)
 	}
@@ -1165,7 +1168,7 @@ func LogMeal(db *sqlx.DB) error {
 		return err
 	}
 
-	fmt.Println("Added meal entry.")
+	fmt.Println("Successfully added meal entry.")
 
 	return tx.Commit()
 }
@@ -1331,7 +1334,7 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 	// Get the serving size and number of servings, preferring meal_food_prefs and then food_prefs and then default
 	query := `
         SELECT
-            COALESCE(mfp.serving_size, fp.serving_size, f.serving_size) AS serving_size,
+            COALESCE(mfp.serving_size, fp.serving_size, 100) AS serving_size,
             COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
 						CASE WHEN mfp.serving_size IS NOT NULL OR fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
         FROM foods f
@@ -1393,7 +1396,7 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 	// exists a matching entry in the food_prefs table for the food id.
 	query := `
         SELECT
-            COALESCE(fp.serving_size, f.serving_size) AS serving_size,
+            COALESCE(fp.serving_size, 100) AS serving_size,
             COALESCE(fp.number_of_servings, 1) AS number_of_servings,
             CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
         FROM foods f
@@ -1456,10 +1459,7 @@ func printMealFood(mealFood *MealFood) {
 		mealFood.Food.Name, mealFood.ServingSize, mealFood.Food.ServingUnit,
 		mealFood.NumberOfServings, mealFood.Food.Calories, mealFood.Food.Price)
 
-	fmt.Println("Macros:")
-	fmt.Printf("  - Protein: %-3.2f\n", mealFood.Food.FoodMacros.Protein)
-	fmt.Printf("  - Fat: %-3.2f\n", mealFood.Food.FoodMacros.Fat)
-	fmt.Printf("  - Carbs: %-3.2f\n", mealFood.Food.FoodMacros.Carbs)
+	fmt.Printf("\tMacros: | Protein: %-3.2fg | Carbs: %-3.2fg | Fat: %-3.2fg |\n", mealFood.Food.FoodMacros.Protein, mealFood.Food.FoodMacros.Carbs, mealFood.Food.FoodMacros.Fat)
 }
 
 // promptUserEditDecision prompts the user to select one of foods that
