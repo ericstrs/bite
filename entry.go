@@ -436,7 +436,7 @@ func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
 	return count > 0, nil
 }
 
-// LogFood gets selected food user to create a new food entry.
+// LogFood lets the user log multiple foods.
 func LogFood(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
@@ -446,58 +446,96 @@ func LogFood(db *sqlx.DB) error {
 	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	// Get selected food
-	food, err := selectFood(tx)
-	if err != nil {
-		if errors.Is(err, ErrDone) {
-			fmt.Println("No food selected.")
-			return nil // Not really an "error" situation
+	var selectedFoods []Food
+	// While user wants to keep logging foods.
+OuterLoop:
+	for {
+		// Get selected food
+		food, err := selectFood(tx)
+		if err != nil {
+			// If user has indicated they are done logging foods, then break
+			if errors.Is(err, ErrDone) {
+				break
+			}
+			log.Println(err)
+			return err
 		}
-		log.Println(err)
-		return err
-	}
 
-	// Get any existing preferences for the selected food.
-	f, err := getFoodPref(tx, food.ID)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
+		// Get any existing preferences for the selected food.
+		f, err := getFoodPref(tx, food.ID)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
 
-	// Display any existing preferences for the selected food.
-	printFoodPref(*f)
+		// Display any existing preferences for the selected food.
+		printFoodPref(*f)
 
-	var s string
-	fmt.Printf("Do you want to update these values? (y/n): ")
-	fmt.Scan(&s)
+		/*
+			var s string
+			fmt.Printf("Do you want to update these values? (y/n): ")
+			fmt.Scan(&s)
+		*/
 
-	// If the user decides to change existing food preferences,
-	if strings.ToLower(s) == "y" {
-		// Get updated food preferences.
-		f = getFoodPrefUserInput(food.ID, f.ServingSize, f.NumberOfServings)
-		// Make database update for food preferences.
-		err := updateFoodPrefs(tx, f)
+		reader := bufio.NewReader(os.Stdin)
+	UserInputLoop:
+		for {
+			fmt.Printf("What would you like to do? (1 = Update Values, 2 = Search Again) [Press <Enter> for Existing]: ")
+			s, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading input:", err)
+				continue
+			}
+			s = strings.TrimSpace(s)
+
+			switch s {
+			case "": // User indicates they want to keep existing food preferences
+				// Do nothing.
+				break UserInputLoop
+			case "1": // User indicates they want to change existing food preferences
+				// Get updated food preferences.
+				f = getFoodPrefUserInput(food.ID, f.ServingSize, f.NumberOfServings)
+				// Make database update for food preferences.
+				err := updateFoodPrefs(tx, f)
+				if err != nil {
+					return err
+				}
+				break
+			case "2": // User indicates they want to search again
+				continue OuterLoop
+			default:
+				fmt.Println("Invalid choice. Please enter 1, 2, or press <Enter>.")
+			}
+		}
+
+		// Get food with up to date food preferences.
+		foodWithPref, err := getFoodWithPref(tx, food.ID)
 		if err != nil {
 			return err
 		}
+
+		selectedFoods = append(selectedFoods, *foodWithPref)
 	}
 
-	// Get food with up to date food preferences.
-	foodWithPref, err := getFoodWithPref(tx, food.ID)
-	if err != nil {
-		return err
+	// When user indictes they are done before logging a single food,
+	// return early.
+	if len(selectedFoods) == 0 {
+		fmt.Println("No food selected.")
+		return nil
 	}
 
 	// Get date of food entry.
 	date := getDateNotPast("Enter food entry date")
 
-	// Log selected food to the food log database table. Taking into
-	// account food preferences.
-	err = addFoodEntry(tx, foodWithPref, date)
-	if err != nil {
-		log.Println(err)
-		return err
+	for _, selectedFoodWithPref := range selectedFoods {
+		// Log selected food to the food log database table. Taking into
+		// account food preferences.
+		if err := addFoodEntry(tx, &selectedFoodWithPref, date); err != nil {
+			log.Println(err)
+			return err
+		}
 	}
+
 	fmt.Println("Successfully added food entry.")
 
 	return tx.Commit()
@@ -569,13 +607,6 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 			fmt.Printf("[%d] %s%s\n", i+1, food.Name, brandDetail)
 		}
 
-		/*
-			// Print foods.
-			for i, food := range *filteredFoods {
-				fmt.Printf("[%d] %s\n", i+1, food.Name)
-			}
-		*/
-
 		response = promptSelectResponse("food")
 		idx, err := strconv.Atoi(response)
 
@@ -625,9 +656,6 @@ func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
 	// Prioritize exact match, then match foods where `food_name` starts
 	// with the search term, and finally any foods where the `food_name`
 	// contains the search term.
-	/*
-		SELECT f.* FROM foods f INNER JOIN foods_fts ff ON ff.food_id = f.food_id WHERE foods_fts MATCH 'ribeye steak' ORDER BY bm25(foods_fts) LIMIT 20;
-	*/
 	query := `
 				SELECT f.*
 				FROM
@@ -637,25 +665,6 @@ func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
 				ORDER BY bm25(foods_fts)
         LIMIT $2`
 
-	/*
-			query := `
-		        SELECT * FROM foods
-		        WHERE food_name LIKE $1
-		        ORDER BY
-		            CASE
-		                WHEN food_name = $2 THEN 1
-		                WHEN food_name LIKE $3 THEN 2
-		                ELSE 3
-		            END
-		        LIMIT $4`
-
-			// Search for foods in the database
-			err := tx.Select(&foods, query, "%"+response+"%", response, response+"%", searchLimit)
-			if err != nil {
-				log.Printf("Search for foods failed: %v\n", err)
-				return nil, err
-			}
-	*/
 	if err := tx.Select(&foods, query, response, searchLimit); err != nil {
 		log.Printf("Search for foods failed: %v\n", err)
 		return nil, err
@@ -956,12 +965,6 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 func printFoodEntries(entries []DailyFood) {
 	for i, entry := range entries {
 		fmt.Printf("[%d] %s %s %.2f %s x %.2f serving\n", i+1, entry.Date.Format(dateFormat), entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings)
-
-		/*
-			fmt.Printf("%s: %.2f %s x %.2f serving, %.2f cals ($%.2f)\n",
-				fmt.Printf("Serving size: %.2f %s\n", math.Round(100*entry.ServingSize)/100, entry.ServingUnit)
-				fmt.Printf("Number of servings: %.1f\n", math.Round(10*entry.NumberOfServings)/10)
-		*/
 	}
 }
 
@@ -1145,6 +1148,12 @@ func LogMeal(db *sqlx.DB) error {
 	if err != nil {
 		log.Println(err)
 		return err
+	}
+
+	// If meal does not contain any foods, then return early
+	if len(mealFoods) == 0 {
+		log.Printf("Meal \"%s\" does not contain any foods.\n", meal.Name)
+		return fmt.Errorf("Meal \"%s\" does not contain any foods.\n", meal.Name)
 	}
 
 	// Print the foods that make up the meal and their preferences.
@@ -1636,7 +1645,11 @@ func FoodLogSummaryDay(db *sqlx.DB, u *UserInfo) error {
 		return err
 	}
 
-	// TODO: if there are zero entries for today, then return early.
+	// If there are zero entries for today, then return early.
+	if len(entries) == 0 {
+		fmt.Println("No foods logged for today.")
+		return nil
+	}
 
 	var calorieTotal float64
 	var proteinTotal float64
