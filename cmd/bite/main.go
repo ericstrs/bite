@@ -69,11 +69,17 @@ func main() {
 		// Execute subcommand
 		switch os.Args[2] {
 		case "meal":
-			b.LogMeal(db)
+			if err := b.LogMeal(db); err != nil {
+				return
+			}
 		case "food":
-			b.LogFood(db)
+			if err := b.LogFood(db); err != nil {
+				return
+			}
 		case "weight":
-			b.LogWeight(u, db)
+			if err := b.LogWeight(u, db); err != nil {
+				return
+			}
 		case "update":
 			if len(os.Args) < 4 {
 				log.Println("Usage: ./bite log update [weight|food]")
