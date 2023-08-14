@@ -279,13 +279,13 @@ func deleteOneWeightEntry(db *sqlx.DB, id int) error {
 // a weight entry, and returns the selected weight entry.
 func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 	// Get all weight logs.
-	log, err := getRecentWeightEntries(db)
+	entries, err := getRecentWeightEntries(db)
 	if err != nil {
 		return WeightEntry{}, err
 	}
 
 	// Print recent weight entries.
-	printWeightEntries(log)
+	printWeightEntries(entries)
 
 	// Get response.
 	response := promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
@@ -294,14 +294,14 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 	// While response is an integer
 	for err == nil {
 		// If integer is invalid,
-		if 1 > idx || idx > len(log) {
+		if 1 > idx || idx > len(entries) {
 			fmt.Println("Number must be between 0 and number of entries. Please try again.")
 			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
 			idx, err = strconv.Atoi(response)
 			continue
 		}
 		// Otherwise, return food at valid index.
-		return log[idx-1], nil
+		return entries[idx-1], nil
 	}
 	// User response was a date to search.
 
@@ -474,7 +474,7 @@ func LogFood(db *sqlx.DB) error {
 	// If the user decides to change existing food preferences,
 	if strings.ToLower(s) == "y" {
 		// Get updated food preferences.
-		f = getFoodPrefUserInput(food.ID)
+		f = getFoodPrefUserInput(food.ID, f.ServingSize, f.NumberOfServings)
 		// Make database update for food preferences.
 		err := updateFoodPrefs(tx, f)
 		if err != nil {
@@ -721,33 +721,51 @@ func printFoodPref(pref FoodPref) {
 // getFoodPrefUserInput prompts user for food perferences, validates their
 // response until they've entered a valid response, and returns the
 // valid response.
-func getFoodPrefUserInput(foodID int) *FoodPref {
+func getFoodPrefUserInput(foodID int, servingSize, numOfServings float64) *FoodPref {
 	pref := &FoodPref{}
 
 	pref.FoodID = foodID
-	pref.ServingSize, pref.NumberOfServings = getServingSizeAndNumServings()
+	pref.ServingSize = updateServingSizeUserInput(servingSize)
+	pref.NumberOfServings = updateNumServingsUserInput(numOfServings)
 
 	return pref
+}
+
+// updateNumServingsUserInput entered prints existing food number of
+// serving and prompts user to enter a new one.
+func updateNumServingsUserInput(existingNumServings float64) float64 {
+	var newNumServings string
+	fmt.Printf("Current serving size: %.2f\n", existingNumServings)
+	for {
+		fmt.Printf("Enter new serving size [Press <Enter> to keep]: ")
+		fmt.Scanln(&newNumServings)
+
+		// User pressed <Enter>
+		if newNumServings == "" {
+			return existingNumServings
+		}
+
+		newNumServingsFloat, err := strconv.ParseFloat(newNumServings, 64)
+		if err != nil || newNumServingsFloat < 0 {
+			fmt.Println("Invalid float value entered. Please try again.")
+			continue
+		}
+		return newNumServingsFloat
+	}
 }
 
 // getMealFoodPrefUserInput prompts user for meal food perferences,
 // validates their response until they've entered a valid response,
 // and returns the valid response.
-func getMealFoodPrefUserInput(foodID int, mealID int64) *MealFoodPref {
+func getMealFoodPrefUserInput(foodID int, mealID int64, servingSize, numServings float64) *MealFoodPref {
 	pref := &MealFoodPref{}
 
 	pref.FoodID = foodID
 	pref.MealID = mealID
-	pref.ServingSize, pref.NumberOfServings = getServingSizeAndNumServings()
+	pref.ServingSize = updateServingSizeUserInput(servingSize)
+	pref.NumberOfServings = updateNumServingsUserInput(numServings)
 
 	return pref
-}
-
-// getServingSizeAndNumServings prompts user for serving size and number
-// of servings, validates their response until they've entered a valid
-// response, and returns the valid response.
-func getServingSizeAndNumServings() (float64, float64) {
-	return getServingSize(), getNumServings()
 }
 
 // updateFoodPrefs updates the user's preferences for a given
@@ -807,7 +825,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	}
 
 	// Get new food preferences.
-	pref := getFoodPrefUserInput(entry.FoodID)
+	pref := getFoodPrefUserInput(entry.FoodID, entry.ServingSize, entry.NumberOfServings)
 
 	// Make database update for food preferences.
 	if err := updateFoodPrefs(tx, pref); err != nil {
@@ -846,7 +864,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	printFoodEntries(recentFoods)
 
 	// Get response.
-	response := promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+	response := promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 	idx, err := strconv.Atoi(response)
 
 	// While response is an integer
@@ -854,7 +872,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		// If integer is invalid,
 		if 1 > idx || idx > len(recentFoods) {
 			fmt.Println("Number must be between 0 and number of entries. Please try again.")
-			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 			idx, err = strconv.Atoi(response)
 			continue
 		}
@@ -869,7 +887,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		date, err := validateDateStr(response)
 		if err != nil {
 			fmt.Printf("%v. Please try again.", err)
-			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 			continue
 		}
 
@@ -883,22 +901,22 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		// If no matches found,
 		if len(filteredEntries) == 0 {
 			fmt.Println("No match found. Please try again.")
-			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 			continue
 		}
 
 		// Print the foods entries for given date.
 		printFoodEntries(filteredEntries)
 
-		response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+		response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 		idx, err := strconv.Atoi(response)
 
 		// While response is an integer
 		for err == nil {
 			// If integer is invalid,
-			if idx != 1 {
+			if 1 > idx || idx > len(filteredEntries) {
 				fmt.Println("Number must be between 0 and number of entries. Please try again.")
-				response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
+				response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
@@ -937,9 +955,13 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 // printFoodEntries prints food entries for a date.
 func printFoodEntries(entries []DailyFood) {
 	for i, entry := range entries {
-		fmt.Printf("[%d] %s %s \n", i+1, entry.Date.Format(dateFormat), entry.FoodName)
-		fmt.Printf("Serving size: %.2f %s\n", math.Round(100*entry.ServingSize)/100, entry.ServingUnit)
-		fmt.Printf("Number of servings: %.1f\n", math.Round(10*entry.NumberOfServings)/10)
+		fmt.Printf("[%d] %s %s %.2f %s x %.2f serving\n", i+1, entry.Date.Format(dateFormat), entry.FoodName, entry.ServingSize, entry.ServingUnit, entry.NumberOfServings)
+
+		/*
+			fmt.Printf("%s: %.2f %s x %.2f serving, %.2f cals ($%.2f)\n",
+				fmt.Printf("Serving size: %.2f %s\n", math.Round(100*entry.ServingSize)/100, entry.ServingUnit)
+				fmt.Printf("Number of servings: %.1f\n", math.Round(10*entry.NumberOfServings)/10)
+		*/
 	}
 }
 
@@ -1010,7 +1032,7 @@ func DeleteFoodEntry(db *sqlx.DB) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Deleted weight entry.")
+	fmt.Println("Successfully deleted food entry.")
 
 	return tx.Commit()
 }
@@ -1147,7 +1169,7 @@ func LogMeal(db *sqlx.DB) error {
 		}
 
 		// Get updated food preferences.
-		f := getMealFoodPrefUserInput(mealFoods[idx-1].Food.ID, int64(meal.ID))
+		f := getMealFoodPrefUserInput(mealFoods[idx-1].Food.ID, int64(meal.ID), mealFoods[idx-1].ServingSize, mealFoods[idx-1].NumberOfServings)
 
 		// Make database update to meal food preferences.
 		err = updateMealFoodPrefs(tx, f)
@@ -1155,6 +1177,13 @@ func LogMeal(db *sqlx.DB) error {
 			return err
 		}
 		fmt.Println("Updated food.")
+	}
+
+	// Get the updated foods that make up the meal.
+	updatedMealFoods, err := getMealFoodsWithPref(tx, meal.ID)
+	if err != nil {
+		log.Println(err)
+		return err
 	}
 
 	// Get date of meal entry.
@@ -1169,7 +1198,7 @@ func LogMeal(db *sqlx.DB) error {
 	}
 
 	// Bulk insert the foods that make up the meal into the daily_foods table.
-	err = addMealFoodEntries(tx, meal.ID, mealFoods, date)
+	err = addMealFoodEntries(tx, meal.ID, updatedMealFoods, date)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1466,7 +1495,7 @@ func printMealFood(mealFood *MealFood) {
 		mealFood.Food.Name, mealFood.ServingSize, mealFood.Food.ServingUnit,
 		mealFood.NumberOfServings, mealFood.Food.Calories, mealFood.Food.Price)
 
-	fmt.Printf("\tMacros: | Protein: %-3.2fg | Carbs: %-3.2fg | Fat: %-3.2fg |\n", mealFood.Food.FoodMacros.Protein, mealFood.Food.FoodMacros.Carbs, mealFood.Food.FoodMacros.Fat)
+	fmt.Printf("    Macros: | Protein: %-3.2fg | Carbs: %-3.2fg | Fat: %-3.2fg |\n", mealFood.Food.FoodMacros.Protein, mealFood.Food.FoodMacros.Carbs, mealFood.Food.FoodMacros.Fat)
 }
 
 // promptUserEditDecision prompts the user to select one of foods that
@@ -1521,7 +1550,7 @@ func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date tim
 		}
 	}
 
-	return nil
+	return err
 }
 
 // FoodLogSummary fetches and prints a food log summary.
