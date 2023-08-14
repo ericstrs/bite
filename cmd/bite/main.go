@@ -5,11 +5,11 @@ import (
 	"os"
 
 	"github.com/jmoiron/sqlx"
-	c "github.com/oneseIf/calories"
+	b "github.com/oneseIf/bite"
 )
 
 func main() {
-	var active_log *[]c.Entry
+	var active_log *[]b.Entry
 
 	// Connect to SQLite database
 	db, err := sqlx.Connect("sqlite", "../../database/mydata.db")
@@ -20,28 +20,28 @@ func main() {
 	defer db.Close()
 
 	// Read user's config file.
-	u, err := c.ReadConfig(db)
+	u, err := b.ReadConfig(db)
 	if err != nil {
 		return
 	}
 
 	// Read user entries.
-	entries, err := c.GetAllEntries(db)
+	entries, err := b.GetAllEntries(db)
 	if err != nil {
 		return
 	}
 
-	status, err := c.CheckPhaseStatus(db, u)
+	status, err := b.CheckPhaseStatus(db, u)
 	if err != nil {
 		return
 	}
 	// If there is an active diet,
 	if status == "active" {
 		// Subset the log for the active diet phase.
-		active_log = c.GetValidLog(u, entries)
+		active_log = b.GetValidLog(u, entries)
 
 		// Get user progress.
-		err = c.CheckProgress(db, u, active_log)
+		err = b.CheckProgress(db, u, active_log)
 		if err != nil {
 			log.Println(err)
 			return
@@ -50,185 +50,185 @@ func main() {
 
 	// Check if user has at least a single argument.
 	if len(os.Args) < 2 {
-		log.Println("Usage: ./calories [log|create|update|delete|summary|start|stop]")
+		log.Println("Usage: ./bite [log|create|update|delete|summary|stop]")
 		return
 	}
 
 	switch os.Args[1] {
 	case "log":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories log [weight|food|meal|update|delete|show]")
+			log.Println("Usage: ./bite log [weight|food|meal|update|delete|show]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "meal":
-			c.LogMeal(db)
+			b.LogMeal(db)
 		case "food":
-			c.LogFood(db)
+			b.LogFood(db)
 		case "weight":
-			c.LogWeight(u, db)
+			b.LogWeight(u, db)
 		case "update":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log update [weight|food]")
+				log.Println("Usage: ./bite log update [weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "food":
-				err := c.UpdateFoodLog(db)
+				err := b.UpdateFoodLog(db)
 				if err != nil {
 					return
 				}
 			case "weight":
-				err := c.UpdateWeightLog(db, u)
+				err := b.UpdateWeightLog(db, u)
 				if err != nil {
 					return
 				}
 			default:
-				log.Println("Usage: ./calories log update [weight|food]")
+				log.Println("Usage: ./bite log update [weight|food]")
 				return
 			}
 		case "delete":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log delete [weight|food]")
+				log.Println("Usage: ./bite log delete [weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "food":
-				err := c.DeleteFoodEntry(db)
+				err := b.DeleteFoodEntry(db)
 				if err != nil {
 					return
 				}
 			case "weight":
-				err := c.DeleteWeightEntry(db)
+				err := b.DeleteWeightEntry(db)
 				if err != nil {
 					return
 				}
 			default:
-				log.Println("Usage: ./calories log delete [weight|food]")
+				log.Println("Usage: ./bite log delete [weight|food]")
 				return
 			}
 		case "show":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories log show [all|weight|food]")
+				log.Println("Usage: ./bite log show [all|weight|food]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "all":
-				c.PrintEntries(*entries)
+				b.PrintEntries(*entries)
 			case "food":
-				err := c.ShowFoodLog(db)
+				err := b.ShowFoodLog(db)
 				if err != nil {
 					log.Println(err)
 					return
 				}
 			case "weight":
-				err := c.ShowWeightLog(db)
+				err := b.ShowWeightLog(db)
 				if err != nil {
 					log.Println(err)
 					return
 				}
 			default:
-				log.Println("Usage: ./calories log show [all|weight|food]")
+				log.Println("Usage: ./bite log show [all|weight|food]")
 				return
 			}
 		default:
-			log.Println("Usage: ./calories log [weight|food|meal|update|delete|show]")
+			log.Println("Usage: ./bite log [weight|food|meal|update|delete|show]")
 			return
 		}
 	case "create":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories create [food|meal]")
+			log.Println("Usage: ./bite create [food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "meal":
-			err := c.CreateAndAddMeal(db)
+			err := b.CreateAndAddMeal(db)
 			if err != nil {
 				return
 			}
 		case "food":
-			err := c.CreateAndAddFood(db)
+			err := b.CreateAndAddFood(db)
 			if err != nil {
 				return
 			}
 		default:
-			log.Println("Usage: ./calories create [food|meal]")
+			log.Println("Usage: ./bite create [food|meal]")
 			return
 		}
 	case "delete":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories delete [food|meal]")
+			log.Println("Usage: ./bite delete [food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "meal":
-			err := c.SelectAndDeleteMeal(db)
+			err := b.SelectAndDeleteMeal(db)
 			if err != nil {
 				return
 			}
 		case "food":
-			err := c.SelectAndDeleteFood(db)
+			err := b.SelectAndDeleteFood(db)
 			if err != nil {
 				return
 			}
 		default:
-			log.Println("Usage: ./calories delete [food|meal]")
+			log.Println("Usage: ./bite delete [food|meal]")
 			return
 		}
 	case "update":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories update [user|food|meal]")
+			log.Println("Usage: ./bite update [user|food|meal]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "user":
-			if err := c.UpdateUserInfo(db, u); err != nil {
+			if err := b.UpdateUserInfo(db, u); err != nil {
 				return
 			}
 		case "food":
-			if err := c.UpdateFood(db); err != nil {
+			if err := b.UpdateFood(db); err != nil {
 				return
 			}
 		case "meal":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories update meal [add|delete]")
+				log.Println("Usage: ./bite update meal [add|delete]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "add": // Adds a food to an existing meal.
-				err := c.GetUserInputAddMealFood(db)
+				err := b.GetUserInputAddMealFood(db)
 				if err != nil {
 					return
 				}
 			case "delete": // Deletes a food from an existing meal.
-				err := c.SelectAndDeleteFoodMealFood(db)
+				err := b.SelectAndDeleteFoodMealFood(db)
 				if err != nil {
 					return
 				}
 			default:
-				log.Println("Usage: ./calories update meal [add|delete]")
+				log.Println("Usage: ./bite update meal [add|delete]")
 				return
 			}
 
 		default:
-			log.Println("Usage: ./calories update [user|food|meal]")
+			log.Println("Usage: ./bite update [user|food|meal]")
 			return
 		}
 	case "summary":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories summary [phase|user|diet]")
+			log.Println("Usage: ./bite summary [phase|user|diet]")
 			return
 		}
 
@@ -237,68 +237,53 @@ func main() {
 		case "phase":
 			// Only call Summary with the active logs if a diet phase is active.
 			if status == "active" {
-				c.Summary(u, active_log)
+				b.Summary(u, active_log)
 				return
 			}
 			log.Println("Diet is not active. Skipping summary.")
 		case "diet":
 			if len(os.Args) < 4 {
-				log.Println("Usage: ./calories summary diet [all|day]")
+				log.Println("Usage: ./bite summary diet [all|day]")
 				return
 			}
 
 			switch os.Args[3] {
 			case "all":
-				if err := c.FoodLogSummary(db); err != nil {
+				if err := b.FoodLogSummary(db); err != nil {
 					return
 				}
 			case "day":
-				if err := c.FoodLogSummaryDay(db, u); err != nil {
+				if err := b.FoodLogSummaryDay(db, u); err != nil {
 					return
 				}
 			default:
-				log.Println("Usage: ./calories summary diet [all|day]")
+				log.Println("Usage: ./bite summary diet [all|day]")
 				return
 			}
 		case "user":
-			c.PrintUserInfo(u)
+			b.PrintUserInfo(u)
 		default:
-			log.Println("Usage: ./calories summary [phase|user|diet]")
+			log.Println("Usage: ./bite summary [phase|user|diet]")
 			return
 		}
-	case "start":
-		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories start [phase]")
-			return
-		}
-
-		// Execute subcommand
-		switch os.Args[2] {
-		case "phase":
-			// TODO
-		default:
-			log.Println("Usage: ./calories start [phase]")
-			return
-		}
-
 	case "stop":
 		if len(os.Args) < 3 {
-			log.Println("Usage: ./calories stop [phase]")
+			log.Println("Usage: ./bite stop [phase]")
 			return
 		}
 
 		// Execute subcommand
 		switch os.Args[2] {
 		case "phase":
-			if err := c.StopPhase(db, u); err != nil {
+			if err := b.StopPhase(db, u); err != nil {
 				return
 			}
 		default:
-			log.Println("Usage: ./calories stop [phase]")
+			log.Println("Usage: ./bite stop [phase]")
 			return
 		}
 	default:
-		log.Println("Usage: ./calories [log|create|update|delete|summary|start|stop]")
+		log.Println("Usage: ./bite [log|create|update|delete|summary|stop]")
 	}
 
 	return

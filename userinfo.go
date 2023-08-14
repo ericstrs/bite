@@ -1,4 +1,4 @@
-package calories
+package bite
 
 import (
 	"database/sql"

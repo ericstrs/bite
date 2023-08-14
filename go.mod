@@ -1,4 +1,4 @@
-module github.com/oneseIf/calories
+module github.com/oneseIf/bite
 
 go 1.19
 

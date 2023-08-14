@@ -1,5 +1,5 @@
-// Calories package provides dietary insight.
-package calories
+// bite package provides dietary insight.
+package bite
 
 import (
 	"bufio"
