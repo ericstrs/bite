@@ -177,6 +177,9 @@ func insertOrUpdateUserInfo(tx *sqlx.Tx, u *UserInfo) error {
         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			u.Sex, u.Weight, u.Height, u.Age, u.ActivityLevel, u.TDEE, u.System, u.Macros.MacrosID, u.Phase.PhaseID)
 
+		if err != nil {
+			log.Printf("Failed to insert into config table: %v\n", err)
+		}
 		return err
 	}
 
@@ -188,6 +191,9 @@ func insertOrUpdateUserInfo(tx *sqlx.Tx, u *UserInfo) error {
 			WHERE user_id = 1`,
 		u.Sex, u.Weight, u.Height, u.Age, u.ActivityLevel, u.TDEE, u.System, u.Macros.MacrosID, u.Phase.PhaseID)
 
+	if err != nil {
+		log.Printf("Failed to update into config table: %v\n", err)
+	}
 	return err
 }
 
