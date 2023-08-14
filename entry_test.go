@@ -205,7 +205,15 @@ func ExampleAddWeightEntry() {
 	}
 	defer db.Close()
 
-	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
 	time TIME NOT NULL,
@@ -215,11 +223,13 @@ func ExampleAddWeightEntry() {
 	testWeight := 220.2
 	date := time.Now()
 
-	err = addWeightEntry(db, date, testWeight)
+	err = addWeightEntry(tx, date, testWeight)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+
+	tx.Commit()
 
 	// Verify the weight was logged correctly
 	var weight float64
@@ -242,7 +252,15 @@ func ExampleAddWeightEntry_exists() {
 	}
 	defer db.Close()
 
-	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
   weight REAL NOT NULL,
@@ -253,10 +271,10 @@ func ExampleAddWeightEntry_exists() {
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
+	tx.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
 	// Attempt to insert another weight for same date.
-	err = addWeightEntry(db, date, testWeight)
+	err = addWeightEntry(tx, date, testWeight)
 	fmt.Println(err)
 
 	// Output:
@@ -271,7 +289,15 @@ func ExampleCheckWeightExists() {
 	}
 	defer db.Close()
 
-	db.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
+	tx.MustExec(`CREATE TABLE IF NOT EXISTS daily_weights (
   id INTEGER PRIMARY KEY,
   date DATE NOT NULL,
   weight REAL NOT NULL,
@@ -282,9 +308,9 @@ func ExampleCheckWeightExists() {
 	date := time.Now()
 
 	// Insert a weight for date.
-	db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
+	tx.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), testWeight)
 
-	exists, err := checkWeightExists(db, date)
+	exists, err := checkWeightExists(tx, date)
 	fmt.Println(exists)
 	fmt.Println(err)
 
