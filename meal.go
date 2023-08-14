@@ -745,7 +745,7 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 		// If the user decides to change existing food preferences,
 		if strings.ToLower(s) == "y" {
 			// Get updated food preferences.
-			mf := getMealFoodPrefUserInput(food.ID, mealID)
+			mf := getMealFoodPrefUserInput(food.ID, mealID, f.ServingSize, f.NumberOfServings)
 			// Make database entry for meal food preferences.
 			err := updateMealFoodPrefs(tx, mf)
 			if err != nil {
@@ -893,7 +893,7 @@ func updateMealFoodPrefs(tx *sqlx.Tx, pref *MealFoodPref) error {
 		return err
 	}
 
-	return nil
+	return err
 }
 
 // GetUserInputAddMealFood prompts the user for existing meal and food
@@ -947,7 +947,7 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 	// If the user decides to change existing food preferences,
 	if strings.ToLower(s) == "y" {
 		// Get updated food preferences.
-		mf := getMealFoodPrefUserInput(food.ID, int64(meal.ID))
+		mf := getMealFoodPrefUserInput(food.ID, int64(meal.ID), mealFood.ServingSize, mealFood.NumberOfServings)
 		// Make database entry for meal food preferences.
 		err := updateMealFoodPrefs(tx, mf)
 		if err != nil {
