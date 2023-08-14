@@ -682,7 +682,9 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 	const query = `
     SELECT
       f.food_id,
+			f.serving_size AS default_serving_size,
       COALESCE(fp.serving_size, 100) AS serving_size,
+			f.household_serving,
 			COALESCE(fp.number_of_servings, 1) AS number_of_servings,
 			f.serving_unit
     FROM foods f
@@ -707,8 +709,13 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 
 // printFoodPref prints the perferences for a food.
 func printFoodPref(pref FoodPref) {
-	fmt.Printf("Serving size: %.2f %s\n", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
-	fmt.Printf("Number of serving: %.1f\n", math.Round(10*pref.NumberOfServings)/10)
+	householdStr := ""
+	if pref.HouseholdServing != "" {
+		householdStr = fmt.Sprintf("(%s)", pref.HouseholdServing)
+	}
+	fmt.Printf("Suggested Serving Size: %.2f %s %s\n", pref.DefaultServingSize, pref.ServingUnit, householdStr)
+	fmt.Printf("Current Serving Size: %.2f %s\n", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
+	fmt.Printf("Number of Servings: %.1f\n", math.Round(10*pref.NumberOfServings)/10)
 }
 
 // getFoodPrefUserInput prompts user for food perferences, validates their
