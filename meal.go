@@ -64,10 +64,12 @@ type MealFood struct {
 }
 
 type FoodPref struct {
-	FoodID           int     `db:"food_id"`
-	NumberOfServings float64 `db:"number_of_servings"`
-	ServingSize      float64 `db:"serving_size"`
-	ServingUnit      string  `db:"serving_unit"`
+	FoodID             int     `db:"food_id"`
+	NumberOfServings   float64 `db:"number_of_servings"`
+	DefaultServingSize float64 `db:"default_serving_size"`
+	ServingSize        float64 `db:"serving_size"`
+	ServingUnit        string  `db:"serving_unit"`
+	HouseholdServing   string  `db:"household_serving"`
 }
 
 type MealFoodPref struct {
