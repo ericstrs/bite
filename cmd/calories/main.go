@@ -11,16 +11,13 @@ import (
 func main() {
 	var active_log *[]c.Entry
 
-	/* ---------- Database ----------- */
-	// Create a new SQLite database
+	// Connect to SQLite database
 	db, err := sqlx.Connect("sqlite", "../../database/mydata.db")
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	defer db.Close()
-
-	/* ------------------------------- */
 
 	// Read user's config file.
 	u, err := c.ReadConfig(db)

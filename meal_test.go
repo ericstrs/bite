@@ -38,14 +38,6 @@ func ExampleInsertFood() {
 		ServingUnit:      "g",
 		ServingSize:      100,
 		HouseholdServing: "1 piece",
-		/*
-			PortionCals:      135,
-				FoodMacros: &FoodMacros{
-					Protein: 50,
-					Fat:     0,
-					Carbs:   10,
-				},
-		*/
 	}
 
 	// Insert food into table.
@@ -71,17 +63,6 @@ func ExampleInsertFood() {
 	fmt.Println("Serving Unit:", newFood.ServingUnit)
 	fmt.Println("Serving Size:", newFood.ServingSize)
 	fmt.Println("Household Serving:", newFood.HouseholdServing)
-	/*
-		fmt.Println("Portion Calories: ", newFood.PortionCals)
-		fmt.Println("Food Macros: ")
-			if newFood.FoodMacros != nil {
-				fmt.Println("\t- Protein: ", newFood.FoodMacros.Protein)
-				fmt.Println("\t- Fat: ", newFood.FoodMacros.Fat)
-				fmt.Println("\t- Carbs: ", newFood.FoodMacros.Carbs)
-			} else {
-				fmt.Println("FoodMacros is nil")
-			}
-	*/
 	fmt.Println(err)
 
 	// Output:

@@ -471,12 +471,6 @@ OuterLoop:
 		// Display any existing preferences for the selected food.
 		printFoodPref(*f)
 
-		/*
-			var s string
-			fmt.Printf("Do you want to update these values? (y/n): ")
-			fmt.Scan(&s)
-		*/
-
 		reader := bufio.NewReader(os.Stdin)
 	UserInputLoop:
 		for {

@@ -19,10 +19,6 @@ const (
 	calsInProtein = 4 // Calories per gram of protein.
 	calsInCarbs   = 4 // Calories per gram of carbohydrate.
 	calsInFats    = 9 // Calories per gram of fat.
-	/*
-		ConfigFilePath  = "./config.yaml" // Path to user config file.
-		EntriesFilePath = "./data.csv"    // Path to user entries file.
-	*/
 )
 
 type UserInfo struct {
@@ -443,11 +439,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 
 	fats := remainingCals / 9
 
-	/*
-		fmt.Printf("%f < protein=%f < %f\n%f < carbs=%f < %f\n%f < fats=%f < %f\n",
-			u.Macros.MinProtein, protein, u.Macros.MaxProtein, u.Macros.MinCarbs, carbs, u.Macros.MaxCarbs, u.Macros.MinFats, fats, u.Macros.MaxFats)
-	*/
-
 	// If fat calculation is less than minimum allowed fats,
 	if u.Macros.MinFats > fats {
 		fmt.Println("Fats are below minimum limit. Taking calories from carbs and moving them to fats.")
@@ -455,10 +446,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// fat.
 
 		fatsNeeded := u.Macros.MinFats - fats
-
-		/*
-			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
-		*/
 
 		fatCalsNeeded := fatsNeeded * 9
 		carbsToRemove := fatCalsNeeded / 4
@@ -494,10 +481,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// Calculate the remaining fats need to reach minimum limit.
 		fatsNeeded = u.Macros.MinFats - fats
 
-		/*
-			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
-		*/
-
 		fatCalsNeeded = fatsNeeded * calsInFats
 
 		// Convert the remaining calories into protein.
@@ -524,12 +507,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 
 		// Update fats using the protein that were able to be taken.
 		fats += proteinRemovedInCals / 9
-
-		/*
-			// Calculate the remaining fats needed to reach the minimum limit.
-			fatsNeeded = u.Macros.MinFats - fats
-			fmt.Printf("fatsNeeded := u.MinFats - fats. %f := %f - %f\n", fatsNeeded, u.Macros.MinFats, fats)
-		*/
 	}
 
 	// If fat caculation is greater than maximum allowed fats.
@@ -539,10 +516,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		fmt.Println("Calculated fats are above maximum amount. Taking calories from fats and moving them to carbs.")
 
 		fatsToRemove := fats - u.Macros.MaxFats
-
-		/*
-			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
-		*/
 
 		fatsToRemoveCals := fatsToRemove * calsInFats
 		carbsToAdd := fatsToRemoveCals / calsInCarbs
@@ -576,10 +549,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 		// Calculate the remaining fats need to be added reach maximum limit.
 		fatsToRemove = fats - u.Macros.MaxFats
 
-		/*
-			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
-		*/
-
 		fatsToRemoveCals = fatsToRemove * calsInFats
 
 		// Convert the remaining calories into protein.
@@ -606,12 +575,6 @@ func calculateMacros(u *UserInfo) (float64, float64, float64) {
 
 		// Update fats using the protein that were able to be added.
 		fats += proteinAddedInCals / calsInFats
-
-		/*
-			// Calculate the remaining fats needed to reach the maximum limit.
-			fatsToRemove = fats - u.Macros.MaxFats
-			fmt.Printf("fatsToRemove := fats - u.Macros.MaxFats. %f := %f - %f\n", fatsToRemove, fats, u.Macros.MaxFats)
-		*/
 	}
 
 	// Round macros to two decimal places

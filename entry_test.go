@@ -1069,14 +1069,6 @@ func ExampleAddMealFoodEntries() {
 		return
 	}
 
-	/*
-		err = tx.Commit()
-		if err != nil {
-			log.Printf("Failed to commit transaction: %v\n.", err)
-			return
-		}
-	*/
-
 	for _, id := range foodIDs {
 		fmt.Println(id)
 	}

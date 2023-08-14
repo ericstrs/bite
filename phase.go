@@ -182,9 +182,8 @@ func countEntriesPerWeek(u *UserInfo, entries *[]Entry) (*map[int]int, error) {
 	entryCountPerWeek[weekNumber] = entryCount
 	weekNumber++
 
-	// For subsequent weeks
-	// TODO: should condition be <= and NOT just <
-	for date := firstSunday.AddDate(0, 0, 1); date.Before(u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
+	// For subsequent weeks,
+	for date := firstSunday.AddDate(0, 0, 1); date.Before(u.Phase.EndDate) || isSameDay(date, u.Phase.EndDate); date = date.AddDate(0, 0, 7) {
 		weekStart := date
 		weekEnd := date.AddDate(0, 0, 6)
 
@@ -448,14 +447,6 @@ func getCalsWeek(entries *[]Entry, weekStart, WeekEnd time.Time) ([]float64, err
 	for i := startIdx; i < endIdx; i++ {
 		// Get entry calories.
 		cal := (*entries)[i].Calories
-		/*
-			c := logs.Series[calsCol].Value(i).(string)
-			cal, err := strconv.ParseFloat(c, 64)
-			if err != nil {
-				log.Printf("ERROR: %v\n", err)
-				return nil, err
-			}
-		*/
 		calsWeek = append(calsWeek, cal) // Append recorded daily calorie.
 	}
 
@@ -483,22 +474,13 @@ func metWeeklyGoalCut(u *UserInfo, totalWeekWeightChange float64) WeightLossStat
 
 	// If user did not lose enough this week,
 	if totalWeekWeightChange > u.Phase.WeeklyChange+upperTolerance {
-		/*
-			fmt.Printf("User did not lose enough this week. total > WeeklyChange+upperTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange-lowerTolerance)
-		*/
 		return lostTooLittle
 	}
 	// If user lost too much this week,
 	if totalWeekWeightChange < u.Phase.WeeklyChange+lowerTolerance {
-		/*
-			fmt.Printf("User lost too much this week. total < WeeklyChange+lowerTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange+upperTolerance)
-		*/
 		return lostTooMuch
 	}
 
-	/*
-		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
-	*/
 	return withinLossRange
 }
 
@@ -898,22 +880,13 @@ func metWeeklyGoalMainenance(u *UserInfo, totalWeekWeightChange float64) WeightM
 
 	// If user lost too much weight this week,
 	if totalWeekWeightChange < u.Phase.WeeklyChange-lowerTolerance {
-		/*
-			fmt.Printf("User lost too much this week. total < WeeklyChange-lowerTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange-lowerTolerance)
-		*/
 		return lost
 	}
 	// If user gained too much weight this week,
 	if totalWeekWeightChange > u.Phase.WeeklyChange+upperTolerance {
-		/*
-			fmt.Printf("User gained too much this week. total > WeeklyChange+upperTol:   %f > %f\n", totalWeekWeightChange, u.Phase.WeeklyChange+upperTolerance)
-		*/
 		return gained
 	}
 
-	/*
-		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
-	*/
 	return maintained
 }
 
@@ -984,22 +957,13 @@ func metWeeklyGoalBulk(u *UserInfo, totalWeekWeightChange float64) WeightGainSta
 
 	// If user did not gain enough this week,
 	if totalWeekWeightChange < u.Phase.WeeklyChange-lowerTolerance {
-		/*
-			fmt.Printf("User did not gain enough this week. total < WeeklyChange-lowerTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange-lowerTolerance)
-		*/
 		return gainedTooLittle
 	}
 	// If user gained too much this week,
 	if totalWeekWeightChange > u.Phase.WeeklyChange+upperTolerance {
-		/*
-			fmt.Printf("User gained too much this week. total < WeeklyChange+upperTol:   %f < %f\n", totalWeekWeightChange, u.Phase.WeeklyChange+upperTolerance)
-		*/
 		return gainedTooMuch
 	}
 
-	/*
-		fmt.Printf("User's change in weight was within range this week. avgWeek (%f) was close enough to WeeklyChange(%f):\n", totalWeekWeightChange, u.Phase.WeeklyChange)
-	*/
 	return withinGainRange
 }
 
@@ -1120,13 +1084,6 @@ func totalWeightChangeWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *Us
 	for i := startIdx; i < endIdx; i++ {
 		// Get entry date.
 		date := (*entries)[i].Date
-		/*
-			date, err := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
-			if err != nil {
-				log.Println("ERROR: Couldn't parse date:", err)
-				return 0, false, err
-			}
-		*/
 
 		// If date falls after the end of the week, break out of loop.
 		if date.After(weekEnd) {
@@ -1135,14 +1092,6 @@ func totalWeightChangeWeek(entries *[]Entry, weekStart, weekEnd time.Time, u *Us
 
 		// Get entry weight.
 		weight := (*entries)[i].UserWeight
-		/*
-			w := logs.Series[weightCol].Value(i).(string)
-			weight, err := strconv.ParseFloat(w, 64)
-			if err != nil {
-				log.Println("ERROR: Failed to convert string to float64:", err)
-				return 0, false, err
-			}
-		*/
 
 		// Get the previous weight to current day.
 		previousWeight, err := getPrecedingWeightToDay(u, entries, weight, i)
@@ -1178,23 +1127,6 @@ func findEntryIdx(entries *[]Entry, d time.Time) (int, error) {
 		continue
 	}
 
-	/*
-		// Find the index of the entry with the date.
-		for i := 0; i < log.NRows(); i++ {
-			date, err := time.Parse(dateFormat, log.Series[dateCol].Value(i).(string))
-			if err != nil {
-				log.Println("ERROR: Couldn't parse date:", err)
-				return -1, err
-			}
-
-			if isSameDay(date, d) {
-				return i, nil
-			}
-
-			continue
-		}
-	*/
-
 	return -1, nil
 }
 
@@ -1212,13 +1144,6 @@ func getPrecedingWeightToDay(u *UserInfo, entries *[]Entry, weight float64, star
 	//pw := logs.Series[weightCol].Value(startIdx - 1).(string)
 	// Get previous entry's weight.
 	previousWeight = (*entries)[startIdx-1].UserWeight
-	/*
-		previousWeight, err = strconv.ParseFloat(pw, 64)
-		if err != nil {
-			log.Println("ERROR: Failed to convert string to float64:", err)
-			return 0, err
-		}
-	*/
 
 	return previousWeight, nil
 }
@@ -1917,10 +1842,6 @@ func weekSummary(u *UserInfo, entries *[]Entry) {
 		idx, _ := findEntryIdx(entries, date)
 		// If date matches a logged entry date,
 		if idx != -1 {
-			/*
-				calsStr = logs.Series[calsCol].Value(idx).(string)
-				cals, _ := strconv.ParseFloat(calsStr, 64)
-			*/
 			cals := (*entries)[idx].Calories
 			s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 
@@ -1941,8 +1862,6 @@ func monthSummary(u *UserInfo, entries *[]Entry) {
 	today := time.Now()
 
 	currentYear, currentMonth, _ := today.Date()
-
-	//tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(logs.NRows()-1).(string))
 
 	i := len(*entries) - 1
 	// Find the most recent entry's date.
@@ -1968,7 +1887,6 @@ func monthSummary(u *UserInfo, entries *[]Entry) {
 
 		var daysOfWeek []string
 		var calsOfWeek []string
-		//var calsStr string
 
 		// Iterate over the days of the week.
 		for i := 0; i < 7; i++ {
@@ -1985,10 +1903,6 @@ func monthSummary(u *UserInfo, entries *[]Entry) {
 			idx, _ := findEntryIdx(entries, date)
 			// If date matches a logged entry date,
 			if idx != -1 {
-				/*
-					calsStr = logs.Series[calsCol].Value(idx).(string)
-					cals, _ := strconv.ParseFloat(calsStr, 64)
-				*/
 				cals := (*entries)[idx].Calories
 				s := getAdherenceColor(fmt.Sprintf("%-10.2f", cals), metCalDayGoal(u, cals))
 

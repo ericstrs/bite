@@ -43,25 +43,6 @@ func ExampleCountEntriesPerWeek() {
 		{UserWeight: 181.5, Calories: 2200, Date: time.Date(2023, 1, 25, 0, 0, 0, 0, time.UTC)},
 	}
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "180.1", "180.2", "180.3", "180.3", "180.4", "180.5",
-			"180.6", "180.5", "180.6", "180.7", "180.8", "180.0", "181",
-			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-			"2200", "2200", "2200", "2200", "2200", "2200", "2200")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
 
@@ -82,11 +63,6 @@ func ExampleCountEntriesPerWeek() {
 		fmt.Printf("Week %d entries: %d\n", week, entries)
 	}
 
-	/*
-		for week, entries := range *entryCountPerWeek {
-			fmt.Printf("Week %d entries: %d\n", week, entries)
-		}
-	*/
 	fmt.Println(err)
 
 	// Output:
@@ -98,19 +74,6 @@ func ExampleCountEntriesPerWeek() {
 }
 
 func ExampleCountEntriesInWeek() {
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "182", "183", "184", "185")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 182.0, Calories: 2400, Date: time.Date(2023, 1, 7, 0, 0, 0, 0, time.UTC)},
@@ -133,19 +96,6 @@ func ExampleCountEntriesInWeek() {
 }
 
 func ExampleCountEntriesInWeek_startDate() {
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "182", "183", "184", "185")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 182.0, Calories: 2400, Date: time.Date(2023, 1, 7, 0, 0, 0, 0, time.UTC)},
@@ -223,27 +173,6 @@ func ExampleValidateNextAction() {
 }
 
 func ExampleCheckCutLoss_withinRange() {
-	u := UserInfo{}
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5", // Within range
-			"180.6", "180.5", "180.6", "180.7", "180.8", "180.0", "180.1", // Lost too much.
-			"180", "180.1", "180.2", "180.3", "180.3", "180.4", "180.5") // Within range
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-			"2200", "2200", "2200", "2200", "2200", "2200", "2200")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 181.1, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 181.2, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -267,6 +196,8 @@ func ExampleCheckCutLoss_withinRange() {
 		{UserWeight: 180.4, Calories: 2200, Date: time.Date(2023, 1, 24, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 180.5, Calories: 2200, Date: time.Date(2023, 1, 25, 0, 0, 0, 0, time.UTC)},
 	}
+
+	u := UserInfo{}
 
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
@@ -295,24 +226,6 @@ func ExampleCheckCutLoss_withinRange() {
 		return
 	}
 
-	/*
-	  // Insert dummy data
-	  _, err = db.Exec(`
-	    INSERT INTO macros (protein, min_protein, max_protein, carbs, min_carbs, max_carbs, fats, min_fats, max_fats)
-	    VALUES (100, 90, 110, 200, 180, 220, 50, 45, 55);
-
-	    INSERT INTO phase_info (user_id, name, goal_calories, start_weight, goal_weight, weight_change_threshold, weekly_change, start_date, end_date, last_checked_week, duration, max_duration, min_duration, active)
-	    VALUES (1, 'Weight Loss', 2000, 190, 170, 2, -1, '2023-01-01', '2023-04-01', '2023-01-07', 12, 16, 8, 1);
-
-	    INSERT INTO config (sex, weight, height, age, activity_level, tdee, system, macros_id, phase_id)
-	    VALUES ('M', 190, 175, 30, 'Moderate', 2500, 'Imperial', 1, 1);
-	    `)
-	  if err != nil {
-	    log.Printf("Failed to insert dummy data: %v", err)
-	    return
-	  }
-	*/
-
 	status, avgTotal, err := checkCutLoss(tx, &u, &entries)
 
 	fmt.Println(status)
@@ -326,27 +239,6 @@ func ExampleCheckCutLoss_withinRange() {
 }
 
 func ExampleCheckCutLoss_tooLittle() {
-	u := UserInfo{}
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180.4", "180.3", "180.3", "180.5", "180.2", "180.1", "180.1", // Lost too little.
-			"180.1", "180", "179.9", "179.9", "180", "179.8", "179.8", // Lost too little.
-			"179.5", "179.4", "179.4", "179.3", "179.2", "179.2", "179")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-			"2200", "2200", "2200", "2200", "2200", "2200", "2200")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.4, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 180.3, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -371,6 +263,7 @@ func ExampleCheckCutLoss_tooLittle() {
 		{UserWeight: 179.0, Calories: 2200, Date: time.Date(2023, 1, 25, 0, 0, 0, 0, time.UTC)},
 	}
 
+	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 	u.Phase.LastCheckedWeek = u.Phase.StartDate
 	u.Phase.EndDate = time.Date(2023, time.January, 25, 0, 0, 0, 0, time.UTC)
@@ -412,25 +305,6 @@ func ExampleCheckCutLoss_tooLittle() {
 
 func ExampleCheckCutLoss_tooMuch() {
 	u := UserInfo{}
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"171.8", "171.6", "171.4", "171.4", "171.4", "171.2", "171.0", // Lost too    much.
-			"171", "170.8", "170.6", "170.6", "170.4", "170.4", "170.2", // Lost too    much.
-			"170", "170", "170", "170", "170", "170", "170")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2300", "2300", "2300", "2300", "2300", "2300", "2300",
-			"2200", "2200", "2200", "2200", "2200", "2200", "2200")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
 
 	entries := []Entry{
 		{UserWeight: 171.8, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
@@ -509,25 +383,6 @@ func ExampleCheckMaintenance_within() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180.3", "180.1", "180.1", "180.2", "180.15", "180.22", "180.42", // Maintained
-			"180.4", "180.1", "180.2", "180.2", "180.4", "180.39", "180.4", // Maintained
-			"180.3", "180.2", "180.2", "180.2", "180.1", "180.3", "180.1") // Maintained
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.3, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 180.1, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -588,25 +443,6 @@ func ExampleCheckMaintenance_within() {
 func ExampleCheckMaintenance_gained() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180.3", "180.1", "180.1", "180.2", "180.55", "180.82", "180.82", // Gained
-			"181.4", "181.1", "182.2", "182.2", "181.4", "182.39", "182.4", // Gained
-			"182.3", "183.2", "182.2", "183.2", "183.1", "183.3", "183.1")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
 
 	entries := []Entry{
 		{UserWeight: 180.3, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
@@ -674,25 +510,6 @@ func ExampleCheckMaintenance_gained() {
 func ExampleCheckMaintenance_lost() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"182.4", "181.1", "181.2", "181.2", "181.4", "181.09", "181.0", // Lost
-			"180.9", "180.7", "180.5", "180.5", "180.55", "180.22", "180.12", // Lost
-			"182.3", "183.2", "182.2", "183.2", "183.1", "183.3", "183.1")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
 
 	entries := []Entry{
 		{UserWeight: 182.4, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
@@ -770,25 +587,6 @@ func ExampleMetWeeklyGoalMaintenance() {
 func ExampleCheckBulkGain_withinRange() {
 	u := UserInfo{}
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "180.1", "180.2", "180.3", "180.3", "180.4", "180.5",
-			"180.6", "180.5", "180.6", "180.7", "180.8", "180.0", "181",
-			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2500", "2400",
-			"2500", "2500", "2500", "2550", "2550", "2450", "2500")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 180.1, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -855,25 +653,6 @@ func ExampleCheckBulkGain_withinRange() {
 func ExampleCheckBulkGain_tooLittle() {
 	u := UserInfo{}
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "180", "180", "180", "180", "180", "180", // Gained too little.
-			"175", "175", "175", "175", "175", "175", "175", // Gained too little.
-			"170", "170", "170", "170", "170", "170", "170")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2300", "2400", "2400", "2450", "2400", "2400", "2350",
-			"2450", "2400", "2450", "2400", "2400", "2400", "2500")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -939,25 +718,6 @@ func ExampleCheckBulkGain_tooLittle() {
 
 func ExampleCheckBulkGain_tooMuch() {
 	u := UserInfo{}
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"170", "170", "170", "170", "170", "170", "170", // Gained too little.
-			"170.2", "170.4", "170.4", "170.4", "170.6", "170.8", "170.8", // Gained too much.
-			"171.0", "171.2", "171.2", "171.4", "171.4", "171.6", "171.8") // Gained too much.
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2400", "2400", "2400", "2400", "2400", "2400", "2400",
-			"2500", "2500", "2500", "2500", "2500", "2200", "2500")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10", "2023-01-11",
-			"2023-01-12", "2023-01-13", "2023-01-14", "2023-01-15", "2023-01-16", "2023-01-17", "2023-01-18",
-			"2023-01-19", "2023-01-20", "2023-01-21", "2023-01-22", "2023-01-23", "2023-01-24", "2023-01-25")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
 
 	entries := []Entry{
 		{UserWeight: 170.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
@@ -1063,19 +823,6 @@ func ExampleTotalWeightChangeWeek() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 5, 0, 0, 0, 0, time.UTC)
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"180", "181", "183", "184", "185", "186")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2400", "2400", "2400", "2400", "2400", "2400")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-01-05", "2023-01-06", "2023-01-07", "2023-01-08", "2023-01-09", "2023-01-10")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2400, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 181.0, Calories: 2400, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -1096,17 +843,6 @@ func ExampleTotalWeightChangeWeek() {
 }
 
 func ExampleFindEntryIdx() {
-	/*
-		weight := dataframe.NewSeriesString("weight", nil, "180", "182", "180.5", "181.1",
-			"182.2", "182.1", "183.4", "183", "183.3", "183.2")
-		calories := dataframe.NewSeriesString("calories", nil, "2410", "2490", "2573", "2400",
-			"2408", "2499", "2550", "2570", "2600", "2599")
-		date := dataframe.NewSeriesString("date", nil, "2023-01-05", "2023-01-06", "2023-01-07",
-			"2023-01-08", "2023-01-09", "2023-01-10",
-			"2023-01-11", "2023-01-12", "2023-01-13", "2023-01-14")
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2410, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 182.0, Calories: 2490, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -1136,13 +872,6 @@ func ExampleGetPrecedingWeightToDay() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil, "180", "182", "180.5")
-		calories := dataframe.NewSeriesString("calories", nil, "2410", "2490", "2573")
-		date := dataframe.NewSeriesString("date", nil, "2023-01-05", "2023-01-06", "2023-01-07")
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
-
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2410, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
 		{UserWeight: 182.0, Calories: 2490, Date: time.Date(2023, 1, 6, 0, 0, 0, 0, time.UTC)},
@@ -1164,13 +893,6 @@ func ExampleGetPrecedingWeightToDay() {
 func ExampleGetPrecedingWeightToDay_beforePhase() {
 	u := UserInfo{}
 	u.Phase.StartDate = time.Date(2023, time.January, 06, 0, 0, 0, 0, time.UTC)
-
-	/*
-		weight := dataframe.NewSeriesString("weight", nil, "180", "182", "180.5")
-		calories := dataframe.NewSeriesString("calories", nil, "2410", "2490", "2573")
-		date := dataframe.NewSeriesString("date", nil, "2023-01-05", "2023-01-06", "2023-01-07")
-		logs := dataframe.NewDataFrame(weight, calories, date)
-	*/
 
 	entries := []Entry{
 		{UserWeight: 180.0, Calories: 2410, Date: time.Date(2023, 1, 5, 0, 0, 0, 0, time.UTC)},
@@ -1452,32 +1174,6 @@ func ExampleSummary() {
 	u.TDEE = TDEE(bmr, u.ActivityLevel)
 	today := time.Now()
 
-	/*
-		var weightSeriesElements []interface{}
-		var caloriesSeriesElements []interface{}
-		var dateSeriesElements []interface{}
-
-		weightVal := 184.0
-		caloriesVal := 2300.0
-
-		for i := 0; i < 28; i++ {
-			dateVal := today.AddDate(0, 0, -27+i).Format(dateFormat)
-			dateSeriesElements = append(dateSeriesElements, dateVal)
-
-			weightVal -= 0.10
-			weightSeriesElements = append(weightSeriesElements, strconv.FormatFloat(weightVal, 'f', 1, 64))
-
-			caloriesVal -= 10
-			caloriesSeriesElements = append(caloriesSeriesElements, strconv.Itoa(int(caloriesVal)))
-		}
-
-		weightSeries := dataframe.NewSeriesString("weight", nil, weightSeriesElements...)
-		caloriesSeries := dataframe.NewSeriesString("calories", nil, caloriesSeriesElements...)
-		dateSeries := dataframe.NewSeriesString("date", nil, dateSeriesElements...)
-
-		logs := dataframe.NewDataFrame(weightSeries, caloriesSeries, dateSeries)
-	*/
-
 	entries := make([]Entry, 28)
 
 	weightVal := 184.0
@@ -1496,31 +1192,7 @@ func ExampleSummary() {
 		}
 	}
 
-	/*
-		weight := dataframe.NewSeriesString("weight", nil,
-			"183.0", "183.2", "182.2", "182.3", "182.3", "182.4", "182.5",
-			"181.6", "181.5", "181.6", "181.7", "180.8", "180.0", "181",
-			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5",
-			"181.1", "181.2", "181.3", "181.4", "181.5", "181.5", "181.5")
-
-		calories := dataframe.NewSeriesString("calories", nil,
-			"2012", "2090", "2150", "2200", "2100", "2100", "2200",
-			"2200", "2100", "2100", "2200", "2300", "2300", "2300",
-			"2200", "2350", "2100", "2100", "2250", "2100", "2150",
-			"2200", "2350", "2100", "2100", "2250", "2100", "2150")
-
-		date := dataframe.NewSeriesString("date", nil,
-			"2023-06-02", "2023-06-03", "2023-06-04", "2023-06-05", "2023-06-06",
-			"2023-06-07", "2023-06-08", "2023-06-09", "2023-06-10", "2023-06-11", "2023-06-12", "2023-06-13",
-			"2023-06-14", "2023-06-15", "2023-06-16", "2023-06-17", "2023-06-18", "2023-06-19", "2023-06-20",
-			"2023-06-21", "2023-06-22", "2023-06-23", "2023-06-24", "2023-06-25", "2023-06-26", "2023-06-27", "2023-06-28", "2023-06-29")
-
-		logs := dataframe.NewDataFrame(weight, calories, date)
-		logs.Append(nil, "181.5", "2200", today.Format(dateFormat))
-	*/
-
 	u.Weight = 181.20000000000016
-	//u.Phase.StartDate, _ = time.Parse(dateFormat, logs.Series[dateCol].Value(0).(string))
 	u.Phase.StartDate = entries[0].Date
 	u.Phase.EndDate = today.AddDate(0, 0, 3)
 	u.Phase.Status = "active"
