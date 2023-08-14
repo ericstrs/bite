@@ -99,7 +99,15 @@ func PrintEntries(entries []Entry) {
 }
 
 // LogWeight gets weight and date from user to create a new weight entry.
-func LogWeight(u *UserInfo, db *sqlx.DB) {
+func LogWeight(u *UserInfo, db *sqlx.DB) error {
+	// Start a new transaction
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	// If anything goes wrong, rollback the transaction
+	defer tx.Rollback()
+
 	for {
 		// Get weight from user
 		weight, err := getWeight(u.System)
@@ -111,18 +119,26 @@ func LogWeight(u *UserInfo, db *sqlx.DB) {
 		// Get weight entry date from user
 		date := getDateNotPast("Enter weight entry date")
 
-		if err = addWeightEntry(db, date, weight); err != nil {
+		if err = addWeightEntry(tx, date, weight); err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
 		}
+
+		// Update users weight
+		u.Weight = weight
+		if err := insertOrUpdateUserInfo(tx, u); err != nil {
+			return err
+		}
 		break
 	}
+
+	return tx.Commit()
 }
 
 // addWeightEntry inserts a weight entry into the database.
-func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
+func addWeightEntry(tx *sqlx.Tx, date time.Time, weight float64) error {
 	// Ensure weight hasn't already been logged for given date.
-	exists, err := checkWeightExists(db, date)
+	exists, err := checkWeightExists(tx, date)
 	if err != nil {
 		return err
 	}
@@ -131,7 +147,7 @@ func addWeightEntry(db *sqlx.DB, date time.Time, weight float64) error {
 	}
 
 	// Insert the new weight entry into the weight database.
-	_, err = db.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), weight)
+	_, err = tx.Exec(`INSERT INTO daily_weights (date, time, weight) VALUES ($1, $2, $3)`, date.Format(dateFormat), date.Format(dateFormatTime), weight)
 	if err != nil {
 		return err
 	}
@@ -427,9 +443,9 @@ func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
 
 // checkWeightExists checks if a weight entry already exists for the
 // given date.
-func checkWeightExists(db *sqlx.DB, date time.Time) (bool, error) {
+func checkWeightExists(tx *sqlx.Tx, date time.Time) (bool, error) {
 	var count int
-	err := db.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = $1`, date.Format(dateFormat))
+	err := tx.Get(&count, `SELECT COUNT(*) FROM daily_weights WHERE date = $1`, date.Format(dateFormat))
 	if err != nil {
 		return false, err
 	}
