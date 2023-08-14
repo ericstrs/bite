@@ -229,7 +229,7 @@ func ExampleAddWeightEntry() {
 	fmt.Println(err)
 
 	// Output:
-	// Added weight entry.
+	// Successfully added weight entry.
 	// 220.2
 	// <nil>
 }
