@@ -11,8 +11,13 @@ import (
 func main() {
 	var active_log *[]b.Entry
 
+	dbPath := os.Getenv("BITE_DB_PATH")
+	if dbPath == "" {
+		log.Fatal("Environment variable BITE_DB_PATH must be set")
+	}
+
 	// Connect to SQLite database
-	db, err := sqlx.Connect("sqlite", "../../database/mydata.db")
+	db, err := sqlx.Connect("sqlite", dbPath)
 	if err != nil {
 		log.Println(err)
 		return
