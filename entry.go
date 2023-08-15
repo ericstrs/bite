@@ -510,7 +510,7 @@ OuterLoop:
 				if err != nil {
 					return err
 				}
-				break
+				break UserInputLoop
 			case "2": // User indicates they want to search again
 				continue OuterLoop
 			default:
