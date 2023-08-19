@@ -1741,7 +1741,6 @@ func daySummary(u *UserInfo, entries *[]Entry) {
 	i := len(*entries) - 1
 
 	// Get most recent entry date.
-	//tailDate, _ := time.Parse(dateFormat, logs.Series[dateCol].Value(i).(string))
 	tailDate := (*entries)[i].Date
 
 	// Ensure most recent entry date is equal to today's date.
@@ -1750,10 +1749,6 @@ func daySummary(u *UserInfo, entries *[]Entry) {
 		return
 	}
 
-	/*
-		calsStr := logs.Series[calsCol].Value(i).(string)
-		cals, _ := strconv.ParseFloat(calsStr, 64)
-	*/
 	cals := (*entries)[i].Calories
 
 	fmt.Printf("%sDay Summary for %s%s\n", colorUnderline, tailDate.Format(dateFormat), colorReset)
