@@ -91,6 +91,20 @@ JOIN temp_food_portion AS fp ON food.fdc_id = fp.fdc_id AND fp.seq_num = '1'
 LEFT JOIN temp_measure_unit AS mu ON fp.measure_unit_id = mu.id
 WHERE food.data_type = 'foundation_food';
 
+-- Insert sr legacy foods into the foods table
+INSERT INTO foods(food_id, food_name, serving_size, serving_unit, household_serving, brand_name)
+SELECT
+  CAST(food.fdc_id AS INTEGER),
+  food.description,
+  CAST(fp.gram_weight AS REAL),
+  'g',
+  COALESCE(fp.amount || ' ' || mu.name, ''),
+  'reference'
+FROM temp_foods AS food
+JOIN temp_food_portion AS fp ON food.fdc_id = fp.fdc_id AND fp.seq_num = '1'
+LEFT JOIN temp_measure_unit AS mu ON fp.measure_unit_id = mu.id
+WHERE food.data_type = 'sr_legacy_food';
+
 DROP TABLE temp_food_portion;
 DROP TABLE temp_measure_unit;
 DROP TABLE temp_foods;
