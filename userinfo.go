@@ -49,8 +49,8 @@ type Macros struct {
 	MaxFats    float64 `db:"max_fats"`
 }
 
-// ReadConfig reads user info from the SQLite database
-func ReadConfig(db *sqlx.DB) (*UserInfo, error) {
+// Config reads user info from the SQLite database
+func Config(db *sqlx.DB) (*UserInfo, error) {
 	// Start a new transaction.
 	tx, err := db.Beginx()
 	if err != nil {
@@ -63,8 +63,7 @@ func ReadConfig(db *sqlx.DB) (*UserInfo, error) {
 
 	// Query the database for the configuration (assuming only one
 	// config for now).
-	err = tx.Get(u, "SELECT * FROM config LIMIT 1")
-	if err != nil {
+	if err := tx.Get(u, `SELECT * FROM config LIMIT 1`); err != nil {
 		// If no config data in the database, generate a new config.
 		if err == sql.ErrNoRows {
 			u, err = generateAndSaveConfig(tx)
@@ -74,26 +73,22 @@ func ReadConfig(db *sqlx.DB) (*UserInfo, error) {
 
 			return u, tx.Commit()
 		}
-		log.Printf("Error: Can't fetch config: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("couldn't get config: %v", err)
 	}
 
 	// Fetch related data from the macros and phase_info tables.
 	macros, err := getMacros(tx, u.MacrosID)
 	if err != nil {
-		log.Printf("Error: Can't fetch macros: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("couldn't get macros: %v", err)
 	}
 	u.Macros = *macros
 
 	phase, err := getPhaseInfo(tx, u.PhaseID)
 	if err != nil {
-		log.Printf("Error: Can't fetch phase_info: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("couldn't get phase info: %v", err)
 	}
 	u.Phase = *phase
 
-	log.Println("Loaded config.")
 	return u, tx.Commit()
 }
 
