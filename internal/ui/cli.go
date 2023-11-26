@@ -14,37 +14,38 @@ import (
 const (
 	logUsage = `USAGE
 
-	bite log food -
-	bite log meal -
-	bite log update [weight|food]     -
-	bite log delete [weight|food]     -
-	bite log show   [all|weight|food] -
-	bite log weight [all|weight|food] -
+	bite log food   - Log food.
+	bite log meal   - Log meal.
+	bite log weight - Log weight.
+	bite log update [weight|food]     - Update food or weight log.
+	bite log delete [weight|food]     - Delete food or weight log.
+	bite log show   [all|weight|food] - Shows food and weight log and full log.
 `
 	createUsage = `USAGE
 
-	bite create meal -
-	bite create food -
+	bite create food - Create new food.
+	bite create meal - Create new meal.
 `
 	deleteUsage = `USAGE
 
-	bite delete meal -
-	bite delete food -
+	bite delete food - Delete existing food.
+	bite delete meal - Delete existing meal.
 `
 	updateUsage = `USAGE
 
-	bite update meal -
-	bite update food -
+	bite update food - Update food information.
+	bite update meal - Update meal information.
+	bite update user - Update user information.
 `
 	summaryUsage = `USAGE
 
-	bite summary phase -
-	bite summary diet  -
-	bite summary user  -
+	bite summary phase - Print phase summary.
+	bite summary diet  - Print diet summary.
+	bite summary user  - Print user summary.
 `
 	stopUsage = `USAGE
 
-	bite stop phase -
+	bite stop phase - Stop current phase.
 `
 )
 
@@ -67,7 +68,6 @@ func LogCmd(args []string) error {
 		return fmt.Errorf("ERROR: reading config: %v", err)
 	}
 
-	// Execute subcommand
 	switch strings.ToLower(args[2]) {
 	case `meal`:
 		if err := bite.LogMeal(db); err != nil {
@@ -135,6 +135,8 @@ func LogCmd(args []string) error {
 		default:
 			printUsageExit(`ERROR: Incorrect argument`, logUsage)
 		}
+	case `help`:
+		fmt.Printf(logUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, logUsage)
 	}
@@ -165,6 +167,8 @@ func CreateCmd(args []string) error {
 		if err := bite.CreateAndAddFood(db); err != nil {
 			return err
 		}
+	case `help`:
+		fmt.Printf(createUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, createUsage)
 	}
@@ -195,6 +199,8 @@ func DeleteCmd(args []string) error {
 		if err := bite.SelectAndDeleteFood(db); err != nil {
 			return err
 		}
+	case `help`:
+		fmt.Printf(deleteUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, deleteUsage)
 	}
@@ -245,6 +251,8 @@ func UpdateCmd(args []string) error {
 		default:
 			printUsageExit(`ERROR: Incorrect argument`, updateUsage)
 		}
+	case `help`:
+		fmt.Printf(updateUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, updateUsage)
 	}
@@ -319,6 +327,8 @@ func SummaryCmd(args []string) error {
 		}
 	case `user`:
 		bite.PrintUserInfo(c)
+	case `help`:
+		fmt.Printf(summaryUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, summaryUsage)
 	}
@@ -349,6 +359,8 @@ func StopCmd(args []string) error {
 		if err := bite.StopPhase(db, c); err != nil {
 			return err
 		}
+	case `help`:
+		fmt.Printf(stopUsage)
 	default:
 		printUsageExit(`ERROR: Incorrect argument`, stopUsage)
 	}
