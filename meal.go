@@ -85,8 +85,8 @@ type FoodMacros struct {
 	Carbs   float64 `db:"carbs"`
 }
 
-// CreateAndAddFood creates a new food and adds it into the database.
-func CreateAndAddFood(db *sqlx.DB) error {
+// CreateAddFood creates a new food and adds it into the database.
+func CreateAddFood(db *sqlx.DB) error {
 	// Get food information.
 	newFood, err := getNewFoodUserInput()
 	if err != nil {
@@ -564,9 +564,9 @@ func updateFoodNutrients(tx *sqlx.Tx, food *Food) error {
 	return nil
 }
 
-// SelectAndDeleteFood prompts user to select food to delete and removes
+// SelectDeleteFood prompts user to select food to delete and removes
 // the food from the database.
-func SelectAndDeleteFood(db *sqlx.DB) error {
+func SelectDeleteFood(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -690,8 +690,8 @@ func deleteFood(tx *sqlx.Tx, foodID int) error {
 	return nil
 }
 
-// CreateAndAddMeal creates a new meal and adds it into the database.
-func CreateAndAddMeal(db *sqlx.DB) error {
+// CreateAddMeal creates a new meal and adds it into the database.
+func CreateAddMeal(db *sqlx.DB) error {
 	// Start a new transaction.
 	tx, err := db.Beginx()
 	if err != nil {
@@ -760,9 +760,8 @@ func CreateAndAddMeal(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// SelectAndDeleteMeal selects a meal deletes a meal from the
-// database.
-func SelectAndDeleteMeal(db *sqlx.DB) error {
+// SelectDeleteMeal selects as meal deletes it from the database.
+func SelectDeleteMeal(db *sqlx.DB) error {
 	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
@@ -896,26 +895,21 @@ func updateMealFoodPrefs(tx *sqlx.Tx, pref *MealFoodPref) error {
 	return err
 }
 
-// GetUserInputAddMealFood prompts the user for existing meal and food
-// to add to the meal and then inserts the new meal food into the
-// database.
-func GetUserInputAddMealFood(db *sqlx.DB) error {
-	// Start a new transaction
+// PromptAddMealFood prompts for existing meal and food to add to the
+// meal and then inserts the new meal food into the database.
+func PromptAddMealFood(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	// Select existing meal.
 	meal, err := selectMeal(tx)
 	if err != nil {
 		return err
 	}
 
-	// Select a food.
 	food, err := selectFood(tx)
 	if err != nil {
 		if errors.Is(err, ErrDone) {
@@ -959,19 +953,16 @@ func GetUserInputAddMealFood(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// SelectAndDeleteMealFood prompts user to select a meal and a food to
-// remove.
-func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
-	// Start a new transaction
+// SelectDeleteMealFood prompts user to select a meal and then select
+// one of its food to remove.
+func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	// Select meal.
 	meal, err := selectMeal(tx)
 	if err != nil {
 		return err
@@ -995,7 +986,7 @@ func SelectAndDeleteFoodMealFood(db *sqlx.DB) error {
 		fmt.Printf("Enter index of food to remove: ")
 		response, err := reader.ReadString('\n')
 		if err != nil {
-			log.Fatalf("SelectAndDeleteFoodMealFood: %v\n", err)
+			log.Fatalf("SelectDeleteFoodMealFood: %v\n", err)
 		}
 		// Remove the newline character at the end of the string
 		response = strings.TrimSpace(response)
