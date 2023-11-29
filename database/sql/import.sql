@@ -237,3 +237,9 @@ BEGIN
   DELETE FROM foods_fts
   WHERE food_id = OLD.food_id;
 END;
+
+
+------------------------- [ Index ] ----------------------------------
+
+-- This index enables reasonable food search.
+CREATE INDEX IF NOT EXISTS idx_food_nutrient ON food_nutrients(food_id, nutrient_id);
