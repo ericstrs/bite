@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	SearchLimit       = 100
 	weightSearchLimit = 10
 	dateFormatTime    = "15:04:05"
 	fullBlock         = "\u2588"
@@ -61,8 +62,8 @@ type DailyFoodCount struct {
 	Count int `db:"count"`
 }
 
-// GetAllEntries returns all the user's entries from the database.
-func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
+// AllEntries returns all the user's entries from the database.
+func AllEntries(db *sqlx.DB) (*[]Entry, error) {
 	query := `
 	SELECT
 		dw.date,
@@ -80,7 +81,7 @@ func GetAllEntries(db *sqlx.DB) (*[]Entry, error) {
 	var entries []Entry
 	err := db.Select(&entries, query)
 	if err != nil {
-		log.Fatalf("GetAllEntries: %v\n", err)
+		log.Fatalf("AllEntries: %v\n", err)
 	}
 
 	return &entries, nil
@@ -454,20 +455,17 @@ func checkWeightExists(tx *sqlx.Tx, date time.Time) (bool, error) {
 
 // LogFood lets the user log multiple foods.
 func LogFood(db *sqlx.DB) error {
-	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
 	var selectedFoods []Food
 	// While user wants to keep logging foods.
 OuterLoop:
 	for {
-		// Get selected food
-		food, err := selectFood(tx)
+		food, err := selectFood(db)
 		if err != nil {
 			// If user has indicated they are done logging foods, then break
 			if errors.Is(err, ErrDone) {
@@ -480,8 +478,7 @@ OuterLoop:
 		// Get any existing preferences for the selected food.
 		f, err := getFoodPref(tx, food.ID)
 		if err != nil {
-			log.Println(err)
-			return err
+			return fmt.Errorf("couldn't get food preferences: %v", err)
 		}
 
 		// Display any existing preferences for the selected food.
@@ -519,7 +516,7 @@ OuterLoop:
 		}
 
 		// Get food with up to date food preferences.
-		foodWithPref, err := getFoodWithPref(tx, food.ID)
+		foodWithPref, err := GetFoodWithPref(db, food.ID)
 		if err != nil {
 			return err
 		}
@@ -540,7 +537,7 @@ OuterLoop:
 	for _, selectedFoodWithPref := range selectedFoods {
 		// Log selected food to the food log database table. Taking into
 		// account food preferences.
-		if err := addFoodEntry(tx, &selectedFoodWithPref, date); err != nil {
+		if err := AddFoodEntry(tx, &selectedFoodWithPref, date); err != nil {
 			log.Println(err)
 			return err
 		}
@@ -555,11 +552,11 @@ OuterLoop:
 // foods, prompts user to enter an index to select a food or another
 // serach term for a different food. This repeats until user enters a
 // valid index.
-func selectFood(tx *sqlx.Tx) (Food, error) {
+func selectFood(db *sqlx.DB) (Food, error) {
 	fmt.Println("Recently logged foods:")
 
 	// Get most recently logged foods.
-	recentFoods, err := getRecentlyLoggedFoods(tx, searchLimit)
+	recentFoods, err := GetRecentlyLoggedFoods(db, SearchLimit)
 	if err != nil {
 		log.Println(err)
 		return Food{}, err
@@ -596,20 +593,20 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 	// While user response is not an integer
 	for {
 		// Get filtered foods.
-		filteredFoods, err := searchFoods(tx, response)
+		filteredFoods, err := SearchFoods(db, response)
 		if err != nil {
-			return Food{}, err
+			return Food{}, fmt.Errorf("couldn't search for a food: %v", err)
 		}
 
 		// If no matches found,
-		if len(*filteredFoods) == 0 {
+		if len(filteredFoods) == 0 {
 			fmt.Println("No matches found. Please try again.")
 			response = promptSelectResponse("food")
 			continue
 		}
 
 		// Print foods.
-		for i, food := range *filteredFoods {
+		for i, food := range filteredFoods {
 			brandDetail := ""
 			if food.BrandName != "" {
 				brandDetail = " (Brand: " + food.BrandName + ")"
@@ -623,64 +620,161 @@ func selectFood(tx *sqlx.Tx) (Food, error) {
 		// While response is an integer
 		for err == nil {
 			// If integer is invalid,
-			if 1 > idx || idx > len(*filteredFoods) {
+			if 1 > idx || idx > len(filteredFoods) {
 				fmt.Println("Number must be between 0 and number of foods. Please try again.")
 				response = promptSelectResponse("food")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
 			// Otherwise, return food at valid index.
-			return (*filteredFoods)[idx-1], nil
+			return (filteredFoods)[idx-1], nil
 		}
 		// User response was a search term. Continue to next loop.
 	}
 }
 
-// getRecentlyLoggedFoods retrieves most recently logged foods.
-func getRecentlyLoggedFoods(tx *sqlx.Tx, limit int) ([]Food, error) {
-	const query = `
-  SELECT f.*
-  FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
-    FROM daily_foods
-  ) AS df
-  INNER JOIN foods f ON df.food_id = f.food_id
-  WHERE df.rn = 1
-  ORDER BY df.date DESC
-  LIMIT $1;
-`
+// GetRecentlyLoggedFoods retrieves most recently logged foods.
+func GetRecentlyLoggedFoods(db *sqlx.DB, limit int) ([]Food, error) {
+	const (
+		allSQL = `
+    SELECT f.*
+    FROM (
+	    SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
+	    FROM daily_foods
+    ) AS df
+    INNER JOIN foods f ON df.food_id = f.food_id
+    WHERE df.rn = 1
+    ORDER BY df.date DESC
+    LIMIT $1
+  `
+		// Override existing serving size and number of servings if there
+		// exists a matching entry in the food_prefs table for the food id.
+		query = `
+      SELECT
+        COALESCE(fp.serving_size, 100) AS serving_size,
+        COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+        CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+      FROM foods f
+      LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
+      WHERE f.food_id = $1
+      LIMIT 1
+    `
+		calSQL = `
+      SELECT amount
+      FROM food_nutrients
+      WHERE food_id = $1 AND nutrient_id = 1008
+      LIMIT 1
+    `
+	)
 
 	var foods []Food
-	if err := tx.Select(&foods, query, limit); err != nil {
+	if err := db.Select(&foods, allSQL, limit); err != nil {
 		return nil, err
+	}
+
+	// For each matching food, find its serving size and number of
+	// servings, calories, and macros. Taking into account any user
+	// preferences for each food.
+	for i := 0; i < len(foods); i++ {
+		if err := db.Get(&foods[i], query, foods[i].ID); err != nil {
+			return nil, fmt.Errorf("couldn't get serving size and number of servings for %q: %v", foods[i].Name, err)
+		}
+
+		if err := db.Get(&foods[i].Calories, calSQL, foods[i].ID); err != nil {
+			return nil, fmt.Errorf("couldn't get portion calories for %q: %v", foods[i].Name, err)
+		}
+		var err error
+		foods[i].FoodMacros = &FoodMacros{}
+		foods[i].FoodMacros, err = getFoodMacros(db, foods[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
+		}
+
+		// If a preference was found (either in food_prefs),
+		// adjust nutrient values based on the serving size and number of servings.
+		if foods[i].HasPreference {
+			ratio := foods[i].ServingSize / 100
+			foods[i].Calories *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
+			foods[i].Price *= ratio * foods[i].NumberOfServings
+		}
 	}
 
 	return foods, nil
 }
 
-// searchFoods searchs through all foods and returns food that contain
-// the search term.
-func searchFoods(tx *sqlx.Tx, response string) (*[]Food, error) {
-	var foods []Food
+// SearchFoods searches through all foods and returns food that contain
+// the search term. The matching foods have associated preferences,
+// calorie, and macros.
+func SearchFoods(db *sqlx.DB, term string) ([]Food, error) {
+	const (
+		searchSQL = `
+			SELECT f.*
+			FROM foods f
+			INNER JOIN foods_fts s ON s.food_id = f.food_id
+			WHERE foods_fts MATCH $1
+			ORDER BY bm25(foods_fts)
+			LIMIT $2`
 
-	// Prioritize exact match, then match foods where `food_name` starts
-	// with the search term, and finally any foods where the `food_name`
-	// contains the search term.
-	query := `
-				SELECT f.*
-				FROM
-				foods f
-				INNER JOIN foods_fts s ON s.food_id = f.food_id
-				WHERE foods_fts MATCH $1
-				ORDER BY bm25(foods_fts)
-        LIMIT $2`
+		// Override existing serving size and number of servings if there
+		// exists a matching entry in the food_prefs table for the food id.
+		query = `
+      SELECT
+        COALESCE(fp.serving_size, 100) AS serving_size,
+        COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+        CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+      FROM foods f
+      LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
+      WHERE f.food_id = $1
+      LIMIT 1
+    `
+		calSQL = `
+			SELECT amount
+			FROM food_nutrients
+			WHERE food_id = $1 AND nutrient_id = 1008
+			LIMIT 1
+		`
+	)
+	foods := []Food{}
 
-	if err := tx.Select(&foods, query, response, searchLimit); err != nil {
-		log.Printf("Search for foods failed: %v\n", err)
-		return nil, err
+	// Get all matching foods.
+	if err := db.Select(&foods, searchSQL, term, SearchLimit); err != nil {
+		return nil, fmt.Errorf("couldn't get result foods: %v", err)
 	}
 
-	return &foods, nil
+	// For each matching food, find its serving size and number of
+	// servings, calories, and macros. Taking into account any user
+	// preferences for each food.
+	for i := 0; i < len(foods); i++ {
+		if err := db.Get(&foods[i], query, foods[i].ID); err != nil {
+			return nil, fmt.Errorf("couldn't get serving size and number of servings for %q: %v", foods[i].Name, err)
+		}
+
+		if err := db.Get(&foods[i].Calories, calSQL, foods[i].ID); err != nil {
+			return nil, fmt.Errorf("couldn't get portion calories for %q: %v", foods[i].Name, err)
+		}
+		var err error
+		foods[i].FoodMacros = &FoodMacros{}
+		foods[i].FoodMacros, err = getFoodMacros(db, foods[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
+		}
+
+		// If a preference was found (either in food_prefs),
+		// adjust nutrient values based on the serving size and number of servings.
+		if foods[i].HasPreference {
+			ratio := foods[i].ServingSize / 100
+			foods[i].Calories *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
+			foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
+			foods[i].Price *= ratio * foods[i].NumberOfServings
+		}
+	}
+
+	return foods, nil
 }
 
 // promptSelectResponse prompts and returns meal to select or a search term.
@@ -699,22 +793,20 @@ func promptSelectResponse(item string) string {
 // getFoodPref gets the food preferences for the given food.
 func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 	const query = `
-    SELECT
-      f.food_id,
-			f.serving_size AS default_serving_size,
-      COALESCE(fp.serving_size, 100) AS serving_size,
-			f.household_serving,
-			COALESCE(fp.number_of_servings, 1) AS number_of_servings,
-			f.serving_unit
-    FROM foods f
-    LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
-    WHERE f.food_id = $1
-  `
+	SELECT
+		f.food_id,
+		f.serving_size AS default_serving_size,
+		COALESCE(fp.serving_size, 100) AS serving_size,
+		f.household_serving,
+		COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+		f.serving_unit
+	FROM foods f
+	LEFT JOIN food_prefs fp ON f.food_id = fp.food_id
+	WHERE f.food_id = $1
+`
 
 	var pref FoodPref
-	err := tx.Get(&pref, query, foodID)
-
-	if err != nil {
+	if err := tx.Get(&pref, query, foodID); err != nil {
 		// Handle a case when no preference found
 		if err == sql.ErrNoRows {
 			// If no rows are found, return an empty FoodPref struct with a custom error
@@ -792,11 +884,11 @@ func getMealFoodPrefUserInput(foodID int, mealID int64, servingSize, numServings
 func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 	// Execute the update statement
 	_, err := tx.NamedExec(`
-			INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
-      VALUES (:food_id, :number_of_servings, :serving_size)
-      ON CONFLICT(food_id) DO UPDATE SET
-      number_of_servings = :number_of_servings,
-      serving_size = :serving_size`,
+		INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
+		VALUES (:food_id, :number_of_servings, :serving_size)
+		ON CONFLICT(food_id) DO UPDATE SET
+		number_of_servings = :number_of_servings,
+		serving_size = :serving_size`,
 		pref)
 
 	// If there was an error executing the query, return the error
@@ -808,12 +900,12 @@ func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 	return nil
 }
 
-// addFoodEntry inserts a food entry into the database.
-func addFoodEntry(tx *sqlx.Tx, f *Food, date time.Time) error {
+// AddFoodEntry inserts a food entry into the database.
+func AddFoodEntry(tx *sqlx.Tx, f *Food, date time.Time) error {
 	const query = `
-		INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs, price)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		`
+	INSERT INTO daily_foods (food_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs, price)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`
 	_, err := tx.Exec(query, f.ID, date.Format(dateFormat), date.Format(dateFormatTime),
 		f.ServingSize, f.NumberOfServings, f.Calories, f.FoodMacros.Protein,
 		f.FoodMacros.Fat, f.FoodMacros.Carbs, f.Price)
@@ -852,7 +944,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	}
 
 	// Get food with up to date food preferences.
-	foodWithPref, err := getFoodWithPref(tx, entry.FoodID)
+	foodWithPref, err := GetFoodWithPref(db, entry.FoodID)
 	if err != nil {
 		return err
 	}
@@ -873,7 +965,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 // user enters a valid index.
 func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	// Get most recently logged foods.
-	recentFoods, err := getRecentFoodEntries(tx, searchLimit)
+	recentFoods, err := getRecentFoodEntries(tx, SearchLimit)
 	if err != nil {
 		log.Println(err)
 		return DailyFood{}, err
@@ -951,16 +1043,16 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-  SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
-	df.number_of_servings, f.food_name, f.serving_unit
-  FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
-    FROM daily_foods
-  ) AS df
-  INNER JOIN foods f ON df.food_id = f.food_id
-  WHERE df.rn = 1
-  ORDER BY df.date DESC
-  LIMIT $1;
+SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+df.number_of_servings, f.food_name, f.serving_unit
+FROM (
+	SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
+	FROM daily_foods
+) AS df
+INNER JOIN foods f ON df.food_id = f.food_id
+WHERE df.rn = 1
+ORDER BY df.date DESC
+LIMIT $1;
 `
 
 	var entries []DailyFood
@@ -983,12 +1075,12 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
-				df.number_of_servings, f.food_name, f.serving_unit
-    		FROM daily_foods df
-    		JOIN foods f ON df.food_id = f.food_id
-    		WHERE df.date = $1
-  	`
+			SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+			df.number_of_servings, f.food_name, f.serving_unit
+			FROM daily_foods df
+			JOIN foods f ON df.food_id = f.food_id
+			WHERE df.date = $1
+	`
 
 	var entries []DailyFood
 	// Search for food entries in the database for given date.
@@ -1004,11 +1096,11 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 // updateFoodEntry updates the given food entry in the database.
 func updateFoodEntry(tx *sqlx.Tx, entryID int, f Food) error {
 	const query = `
-        UPDATE daily_foods
-        SET serving_size = $1, number_of_servings = $2, calories = $3,
-				protein = $4, fat = $5, carbs = $6, price = $7
-        WHERE id = $8
-    `
+			UPDATE daily_foods
+			SET serving_size = $1, number_of_servings = $2, calories = $3,
+			protein = $4, fat = $5, carbs = $6, price = $7
+			WHERE id = $8
+	`
 
 	// Execute the update statement
 	_, err := tx.Exec(query, f.ServingSize, f.NumberOfServings, f.Calories,
@@ -1054,9 +1146,9 @@ func DeleteFoodEntry(db *sqlx.DB) error {
 func deleteOneFoodEntry(tx *sqlx.Tx, entryID int) error {
 	// Execute the delete statement
 	_, err := tx.Exec(`
-      DELETE FROM daily_foods
-      WHERE id = $1
-      `, entryID)
+		DELETE FROM daily_foods
+		WHERE id = $1
+		`, entryID)
 
 	// If there was an error executing the query, return the error
 	if err != nil {
@@ -1104,14 +1196,14 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT 
-				df.id, df.food_id, df.meal_id, df.date, df.serving_size,
-				df.number_of_servings, df.calories, df.price, f.food_name,
-				f.serving_unit
-        FROM daily_foods df
-        INNER JOIN foods f ON df.food_id = f.food_id
-        ORDER BY df.date DESC
-    `
+			SELECT 
+			df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+			df.number_of_servings, df.calories, df.price, f.food_name,
+			f.serving_unit
+			FROM daily_foods df
+			INNER JOIN foods f ON df.food_id = f.food_id
+			ORDER BY df.date DESC
+	`
 	var entries []DailyFood
 	if err := tx.Select(&entries, query); err != nil {
 		log.Println("Failed to get main details from daily food entries.")
@@ -1119,9 +1211,9 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 	}
 
 	const macrosQuery = `
-    SELECT protein, fat, carbs
-    FROM daily_foods
-    WHERE id = $1
+	SELECT protein, fat, carbs
+	FROM daily_foods
+	WHERE id = $1
 `
 
 	for i, entry := range entries {
@@ -1139,22 +1231,20 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 
 // LogMeal allows the user to create a new meal entry.
 func LogMeal(db *sqlx.DB) error {
-	// Start a new transaction
 	tx, err := db.Beginx()
+	defer tx.Rollback()
 	if err != nil {
 		return err
 	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
 
 	// Get selected meal.
-	meal, err := selectMeal(tx)
+	meal, err := selectMeal(db)
 	if err != nil {
 		return err
 	}
 
 	// Get the foods that make up the meal.
-	mealFoods, err := getMealFoodsWithPref(tx, meal.ID)
+	mealFoods, err := getMealFoodsWithPref(db, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1199,7 +1289,7 @@ func LogMeal(db *sqlx.DB) error {
 	}
 
 	// Get the updated foods that make up the meal.
-	updatedMealFoods, err := getMealFoodsWithPref(tx, meal.ID)
+	updatedMealFoods, err := getMealFoodsWithPref(db, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1230,9 +1320,9 @@ func LogMeal(db *sqlx.DB) error {
 
 // selectMeal prints the user's meals, prompts them to select a meal,
 // and returns the selected meal.
-func selectMeal(tx *sqlx.Tx) (Meal, error) {
+func selectMeal(db *sqlx.DB) (Meal, error) {
 	// Get recently logged meals
-	meals, err := getMealsWithRecentFirst(tx)
+	meals, err := GetMealsWithRecentFirst(db)
 	if err != nil {
 		return Meal{}, err
 	}
@@ -1260,23 +1350,23 @@ func selectMeal(tx *sqlx.Tx) (Meal, error) {
 	}
 	// User response was a search term.
 
-	// While user reponse is not an integer
+	// While user response is not an integer
 	for {
 		// Get the filtered meals.
-		filteredMeals, err := searchMeals(tx, response)
+		filteredMeals, err := SearchMeals(db, response)
 		if err != nil {
 			return Meal{}, err
 		}
 
 		// If no matches found,
-		if len(*filteredMeals) == 0 {
+		if len(filteredMeals) == 0 {
 			fmt.Println("No matches found. Please try again.")
 			response = promptSelectResponse("meal")
 			continue
 		}
 
 		// Print meals.
-		for i, meal := range *filteredMeals {
+		for i, meal := range filteredMeals {
 			fmt.Printf("[%d] %s\n", i+1, meal.Name)
 		}
 
@@ -1286,77 +1376,76 @@ func selectMeal(tx *sqlx.Tx) (Meal, error) {
 		// While response is an integer
 		for err == nil {
 			// If integer is invalid,
-			if 1 > idx || idx > len(*filteredMeals) {
+			if 1 > idx || idx > len(filteredMeals) {
 				fmt.Println("Number must be between 0 and number of meals. Please try again.")
 				response = promptSelectResponse("meal")
 				idx, err = strconv.Atoi(response)
 				continue
 			}
 			// Otherwise, return food at valid index.
-			return (*filteredMeals)[idx-1], nil
+			return filteredMeals[idx-1], nil
 		}
 		// User response was a search term. Continue to next loop.
 	}
 }
 
-// getMealsWithRecentFirst retrieves the meals that have been logged
+// GetMealsWithRecentFirst retrieves the meals that have been logged
 // recently first and then retrieves the remaining meals.
-func getMealsWithRecentFirst(tx *sqlx.Tx) ([]Meal, error) {
+func GetMealsWithRecentFirst(db *sqlx.DB) ([]Meal, error) {
 	const query = `
-		SELECT meals.*
-		FROM meals
-		LEFT JOIN (
-			SELECT meal_id, MAX(date) AS latest_date
-			FROM daily_meals
-			GROUP BY meal_id
-		) AS dm
-		ON meals.meal_id = dm.meal_id
-		ORDER BY dm.latest_date DESC, meals.meal_id;
-	`
+	SELECT meals.*
+	FROM meals
+	LEFT JOIN (
+		SELECT meal_id, MAX(date) AS latest_date
+		FROM daily_meals
+		GROUP BY meal_id
+	) AS dm
+	ON meals.meal_id = dm.meal_id
+	ORDER BY dm.latest_date DESC, meals.meal_id;
+`
 
 	var meals []Meal
-	if err := tx.Select(&meals, query); err != nil {
+	if err := db.Select(&meals, query); err != nil {
 		return nil, err
 	}
 
 	return meals, nil
 }
 
-// searchMeals searches through meals slice and returns meals that
+// SearchMeals searches through meals slice and returns meals that
 // contain the search term.
-func searchMeals(tx *sqlx.Tx, response string) (*[]Meal, error) {
+func SearchMeals(db *sqlx.DB, response string) ([]Meal, error) {
 	var meals []Meal
 
 	// Prioritize exact match, then match meals where `meal_name` starts
 	// with the search term, and finally any meals where the `meal_name`
 	// contains the search term.
-	query := `
-        SELECT * FROM meals
-        WHERE meal_name LIKE $1
-        ORDER BY
-            CASE
-                WHEN meal_name = $2 THEN 1
-                WHEN meal_name LIKE $3 THEN 2
-                ELSE 3
-            END
-        LIMIT $4`
+	const query = `
+			SELECT * FROM meals
+			WHERE meal_name LIKE $1
+			ORDER BY
+					CASE
+							WHEN meal_name = $2 THEN 1
+							WHEN meal_name LIKE $3 THEN 2
+							ELSE 3
+					END
+			LIMIT $4`
 
 	// Search for meals in the database
-	err := tx.Select(&meals, query, "%"+response+"%", response, response+"%", searchLimit)
+	err := db.Select(&meals, query, "%"+response+"%", response, response+"%", SearchLimit)
 	if err != nil {
-		log.Printf("Search for meals failed: %v\n", err)
 		return nil, err
 	}
 
-	return &meals, nil
+	return meals, nil
 }
 
 // getMealFoodsWithPref retrieves all the foods that make up a meal.
-func getMealFoodsWithPref(tx *sqlx.Tx, mealID int) ([]*MealFood, error) {
+func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
+	const query = `SELECT food_id FROM meal_foods WHERE meal_id = $1`
 	// First, get all the food IDs for the given meal.
 	var foodIDs []int
-	query := `SELECT food_id FROM meal_foods WHERE meal_id = $1`
-	err := tx.Select(&foodIDs, query, mealID)
+	err := db.Select(&foodIDs, query, mealID)
 	if err != nil {
 		return nil, err
 	}
@@ -1364,7 +1453,7 @@ func getMealFoodsWithPref(tx *sqlx.Tx, mealID int) ([]*MealFood, error) {
 	// Now, for each food ID, get the full food details and preferences.
 	var mealFoods []*MealFood
 	for _, foodID := range foodIDs {
-		mf, err := getMealFoodWithPref(tx, foodID, int64(mealID))
+		mf, err := getMealFoodWithPref(db, foodID, int64(mealID))
 		if err != nil {
 			return nil, err
 		}
@@ -1376,31 +1465,31 @@ func getMealFoodsWithPref(tx *sqlx.Tx, mealID int) ([]*MealFood, error) {
 
 // getMealFoodWithPref retrieves one of the foods for a given meal,
 // along its preferences.
-func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, error) {
+func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, error) {
 	mf := MealFood{}
 
 	// Get the food details
-	err := tx.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = $1", foodID)
+	err := db.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = $1", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
 		return nil, err
 	}
 
 	// Get the serving size and number of servings, preferring meal_food_prefs and then food_prefs and then default
-	query := `
-        SELECT
-            COALESCE(mfp.serving_size, fp.serving_size, 100) AS serving_size,
-            COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
-						CASE WHEN mfp.serving_size IS NOT NULL OR fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
-        FROM foods f
-        LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
-        LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
-        WHERE f.food_id = $2
-        LIMIT 1
-    `
+	const query = `
+			SELECT
+					COALESCE(mfp.serving_size, fp.serving_size, 100) AS serving_size,
+					COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
+					CASE WHEN mfp.serving_size IS NOT NULL OR fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+			FROM foods f
+			LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
+			LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
+			WHERE f.food_id = $2
+			LIMIT 1
+	`
 
 	// Execute the SQL query and assign the result to the MealFood struct
-	err = tx.Get(&mf, query, mealID, foodID)
+	err = db.Get(&mf, query, mealID, foodID)
 	if err != nil {
 		log.Println("Failed to select serving size and number of servings.")
 		return nil, err
@@ -1408,14 +1497,14 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 
 	// Execute the SQL query and assign the result to the calories field
 	// in the MealFood struct
-	err = tx.Get(&mf.Food.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = db.Get(&mf.Food.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		log.Println("Failed to select portion calories.")
 		return nil, err
 	}
 
 	// Get the macros for the food
-	mf.Food.FoodMacros, err = getFoodMacros(tx, foodID)
+	mf.Food.FoodMacros, err = getFoodMacros(db, foodID)
 	if err != nil {
 		log.Println("Failed to get food macros.")
 		return nil, err
@@ -1424,7 +1513,7 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 	// If a preference was found (either in meal_food_prefs or food_prefs),
 	// adjust nutrient values based on the serving size and number of servings.
 	if mf.HasPreference {
-		// 100 is for porition size which nutrient amounts represent.
+		// 100 is for portion size which nutrient amounts represent.
 		ratio := mf.ServingSize / 100
 		mf.Food.Calories *= ratio * mf.NumberOfServings
 		mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
@@ -1436,12 +1525,12 @@ func getMealFoodWithPref(tx *sqlx.Tx, foodID int, mealID int64) (*MealFood, erro
 	return &mf, nil
 }
 
-// getFoodWithPref retrieves one food, along its preferences.
-func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
+// GetFoodWithPref retrieves one food, along its preferences.
+func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 	f := Food{}
 
 	// Get the food details.
-	err := tx.Get(&f, "SELECT * FROM foods WHERE food_id = $1", foodID)
+	err := db.Get(&f, "SELECT * FROM foods WHERE food_id = $1", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
 		return nil, err
@@ -1461,7 +1550,7 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
     `
 
 	// Execute the SQL query and assign the result to the Food struct
-	err = tx.Get(&f, query, foodID)
+	err = db.Get(&f, query, foodID)
 	if err != nil {
 		log.Println("Failed to select serving size and number of servings.")
 		return nil, err
@@ -1469,14 +1558,14 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 
 	// Execute the SQL query and assign the result to the calories field
 	// in the Food struct
-	err = tx.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM  nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
+	err = db.Get(&f.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM  nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		log.Println("Failed to select portion calories.")
 		return nil, err
 	}
 
 	// Get the macros for the food.
-	f.FoodMacros, err = getFoodMacros(tx, foodID)
+	f.FoodMacros, err = getFoodMacros(db, foodID)
 	if err != nil {
 		log.Println("Failed to get food macros.")
 		return nil, err
@@ -1485,7 +1574,7 @@ func getFoodWithPref(tx *sqlx.Tx, foodID int) (*Food, error) {
 	// If a preference was found (either in food_prefs),
 	// adjust nutrient values based on the serving size and number of servings.
 	if f.HasPreference {
-		// 100 is for porition size which nutrient amounts represent.
+		// 100 is for portion size which nutrient amounts represent.
 		ratio := f.ServingSize / 100
 		f.Calories *= ratio * f.NumberOfServings
 		f.FoodMacros.Protein *= ratio * f.NumberOfServings
@@ -1700,13 +1789,13 @@ func getFoodEntriesForDate(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// queury excludes the time field from the selected records.
 	const query = `
-        SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
-				df.number_of_servings, df.calories, df.price, f.food_name, f.serving_unit
-        FROM daily_foods df
-        INNER JOIN foods f ON df.food_id = f.food_id
-				WHERE date = $1
-        ORDER BY df.date DESC
-    `
+    SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+	    df.number_of_servings, df.calories, df.price, f.food_name, f.serving_unit
+    FROM daily_foods df
+    INNER JOIN foods f ON df.food_id = f.food_id
+	  WHERE date = $1
+    ORDER BY df.date DESC
+  `
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
