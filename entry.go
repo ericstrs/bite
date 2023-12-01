@@ -503,8 +503,7 @@ OuterLoop:
 				// Get updated food preferences.
 				f = getFoodPrefUserInput(food.ID, f.ServingSize, f.NumberOfServings)
 				// Make database update for food preferences.
-				err := updateFoodPrefs(tx, f)
-				if err != nil {
+				if err := UpdateFoodPrefs(tx, f); err != nil {
 					return err
 				}
 				break UserInputLoop
@@ -879,9 +878,9 @@ func getMealFoodPrefUserInput(foodID int, mealID int64, servingSize, numServings
 	return pref
 }
 
-// updateFoodPrefs updates the user's preferences for a given
+// UpdateFoodPrefs updates the user's preferences for a given
 // food.
-func updateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
+func UpdateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 	// Execute the update statement
 	_, err := tx.NamedExec(`
 		INSERT INTO food_prefs (food_id, number_of_servings, serving_size)
@@ -939,7 +938,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	pref := getFoodPrefUserInput(entry.FoodID, entry.ServingSize, entry.NumberOfServings)
 
 	// Make database update for food preferences.
-	if err := updateFoodPrefs(tx, pref); err != nil {
+	if err := UpdateFoodPrefs(tx, pref); err != nil {
 		return err
 	}
 
@@ -950,8 +949,7 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	}
 
 	// Update food entry.
-	err = updateFoodEntry(tx, entry.ID, *foodWithPref)
-	if err != nil {
+	if err := updateFoodEntry(tx, entry.ID, *foodWithPref); err != nil {
 		return err
 	}
 	fmt.Println("Updated food entry.")
