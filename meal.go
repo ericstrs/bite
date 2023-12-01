@@ -207,14 +207,14 @@ func getFoodNutrientsUserInput(db *sqlx.DB) (*FoodMacros, float64, error) {
 		}
 	}
 
-	cals := calculateCalories(foodMacros.Protein, foodMacros.Carbs, foodMacros.Fat)
+	cals := CalculateCalories(foodMacros.Protein, foodMacros.Carbs, foodMacros.Fat)
 
 	return &foodMacros, cals, nil
 }
 
-// calculateCalories calculates the calories of a food given
+// CalculateCalories calculates the calories of a food given
 // macronutrient amounts.
-func calculateCalories(protein, carbs, fats float64) float64 {
+func CalculateCalories(protein, carbs, fats float64) float64 {
 	return (protein * calsInProtein) + (carbs * calsInCarbs) + (fats * calsInFats)
 }
 
@@ -317,9 +317,7 @@ func UpdateFood(db *sqlx.DB) error {
 	defer tx.Rollback()
 
 	// Make update to foods table
-	err = updateFoodTable(tx, &food)
-	if err != nil {
-		log.Println(err)
+	if err := UpdateFoodTable(tx, &food); err != nil {
 		return err
 	}
 
@@ -333,7 +331,7 @@ func UpdateFood(db *sqlx.DB) error {
 	updateFoodNutrientsUserInput(&food)
 
 	// Make update to food nutrients table
-	err = updateFoodNutrients(db, tx, &food)
+	err = UpdateFoodNutrients(db, tx, &food)
 	if err != nil {
 		return err
 	}
@@ -431,8 +429,8 @@ func updateFoodPriceUserInput(existingFoodPrice float64) float64 {
 	}
 }
 
-// updateFoodTable updates one food from the foods table
-func updateFoodTable(tx *sqlx.Tx, food *Food) error {
+// UpdateFoodTable updates one food from the foods table
+func UpdateFoodTable(tx *sqlx.Tx, food *Food) error {
 	const query = `
 	UPDATE foods SET
 	food_name = $1, serving_size = $2, serving_unit = $3,
@@ -505,13 +503,13 @@ OuterLoop:
 		}
 	}
 
-	f.Calories = calculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+	f.Calories = CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
 
 	return nil
 }
 
-// updateFoodNutrients updates the food nutrients for a given food.
-func updateFoodNutrients(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
+// UpdateFoodNutrients updates the food nutrients for a given food.
+func UpdateFoodNutrients(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
 	// Nutrients and corresponding amounts.
 	nutrients := map[string]float64{
 		"Protein":                     food.FoodMacros.Protein,
@@ -571,8 +569,7 @@ func SelectDeleteFood(db *sqlx.DB) error {
 	}
 	defer tx.Rollback()
 
-	err = deleteFood(tx, food.ID)
-	if err != nil {
+	if err := DeleteFood(tx, food.ID); err != nil {
 		return err
 	}
 	fmt.Println("Deleted food.")
@@ -580,8 +577,8 @@ func SelectDeleteFood(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// deleteFood deletes a food from the database.
-func deleteFood(tx *sqlx.Tx, foodID int) error {
+// DeleteFood deletes a food from the database.
+func DeleteFood(tx *sqlx.Tx, foodID int) error {
 	// Execute the delete statement
 	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
