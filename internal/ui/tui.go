@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,11 +15,15 @@ import (
 
 const (
 	dateFormat = "2006-01-02"
+	resultsFmt = "%-5.1f %-2s x %-2.1f serving |%-3.0f cals|protein: %.1fg, carbs: %.1fg, fat: %.1fg\n"
 )
 
 type SearchUI struct {
 	// app is a reference to the tview application
 	app *tview.Application
+
+	// pages supports pop up forms.
+	pages *tview.Pages
 
 	// inputField is a UI element for text input, allowing users to enter
 	// their search queries. The entered text is used for search operations.
@@ -93,7 +99,11 @@ func (sui *SearchUI) setupUI(query string) {
 		SetDirection(tview.FlexRow).
 		AddItem(sui.inputField, 1, 0, true).
 		AddItem(sui.list, 0, 1, false)
-	sui.app.SetRoot(flex, true)
+
+	sui.pages = tview.NewPages().
+		AddPage("", flex, true, true)
+
+	sui.app.SetRoot(sui.pages, true)
 }
 
 func (sui *SearchUI) setupFoodUI(query string) {
@@ -281,10 +291,26 @@ func (sui *SearchUI) performFoodSearch(query string) []bite.Food {
 		return []bite.Food{}
 	}
 
-	foods, err := bite.SearchFoods(sui.db, query)
+	var err error
+	var foods []bite.Food
+	recent := strings.HasPrefix(query, `recent:`)
+	switch recent {
+	case false:
+		foods, err = bite.SearchFoods(sui.db, query)
+	case true:
+		var recent []bite.Food
+		recent, err = bite.GetRecentlyLoggedFoods(sui.db, bite.SearchLimit)
+		query = strings.TrimSpace(query[len("recent:"):])
+		for _, f := range recent {
+			// Case-insensitive search for food names
+			if strings.Contains(strings.ToLower(f.Name), strings.ToLower(query)) {
+				foods = append(foods, f)
+			}
+		}
+	}
+
 	if err != nil {
-		log.Println(err)
-		foods = []bite.Food{bite.Food{Name: `Incorrect syntax`}}
+		foods = []bite.Food{bite.Food{Name: `Incorrect syntax`, FoodMacros: &bite.FoodMacros{}}}
 	}
 	return foods
 }
@@ -316,8 +342,9 @@ func (sui *SearchUI) updateFoodsList(foods []bite.Food) {
 		list.SetCell(row, 0, tview.NewTableCell(s).
 			SetReference(&f))
 		row++
-		line := fmt.Sprintf("%-5.1f %-2s x %-2.1f serving |%-3.0f cals|protein: %.1fg, carbs: %.1fg, fat: %.1fg|\n",
-			f.ServingSize, f.ServingUnit, f.NumberOfServings, f.Calories, f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+		line := fmt.Sprintf(resultsFmt, f.ServingSize, f.ServingUnit,
+			f.NumberOfServings, f.Calories, f.FoodMacros.Protein,
+			f.FoodMacros.Carbs, f.FoodMacros.Fat)
 		list.SetCell(row, 0, tview.NewTableCell(line).
 			SetSelectable(false))
 		row++
@@ -343,29 +370,6 @@ func (sui *SearchUI) updateMealsList(meals []bite.Meal) {
 		list.SetCell(row, 0, tview.NewTableCell(s).
 			SetReference(&m))
 		row++
-		/*
-		   // Add body snippet
-		   if z.BodySnippet != "" {
-		     lines := tview.WordWrap(z.BodySnippet, sui.screenWidth)
-		     for _, line := range lines {
-		       if line == "" {
-		         continue
-		       }
-		       list.SetCell(row, 0, tview.NewTableCell(line).
-		         SetSelectable(false))
-		       row++
-		     }
-		   }
-		   // Add tags snippet
-		   if z.TagsSnippet != "" {
-		     hashedTags := "    #" + strings.ReplaceAll(z.TagsSnippet, " ", " #")
-		     list.SetCell(row, 0, tview.NewTableCell(hashedTags).
-		       SetSelectable(false))
-		     row++
-		   }
-		   list.SetCell(row, 0, tview.NewTableCell("").SetSelectable(false))
-		   row++
-		*/
 	}
 	sui.list.ScrollToBeginning()
 }
@@ -376,6 +380,8 @@ func (sui *SearchUI) updateMealsList(meals []bite.Meal) {
 // actions:
 //
 //   - enter: Log selected item.
+//   - e: edit selected item.
+//   - d: delete selected item.
 //   - ESC, q: Exits the search interface.
 //   - H: Move to the top of the visible window.
 //   - M: Move to the center of the visible window.
@@ -391,38 +397,27 @@ func (sui *SearchUI) listInput() {
 		case tcell.KeyEnter:
 			row, col := sui.list.GetSelection()
 			cell := sui.list.GetCell(row, col)
-			switch i := cell.GetReference().(type) {
+			switch f := cell.GetReference().(type) {
 			case *bite.Food:
-				/*
-					f, err := bite.GetFoodWithPref(sui.db, i.ID)
-					if err != nil {
-						log.Println("couldn't get food details: ", err)
-						return nil
-					}
-				*/
 				tx, err := sui.db.Beginx()
 				defer tx.Rollback()
 				if err != nil {
 					log.Println("couldn't create transaction: ", err)
 					return nil
 				}
-
-				// Get date of food entry.
 				date := time.Now()
-
 				// Log selected food to the food log database table. Taking into
 				// account food preferences.
-				if err := bite.AddFoodEntry(tx, i, date); err != nil {
+				if err := bite.AddFoodEntry(tx, f, date); err != nil {
 					log.Println("couldn't add food log: ", err)
 					return nil
 				}
-
 				tx.Commit()
 				return nil
 			case *bite.Meal:
 				// TODO: log selected meal
 			default:
-				log.Printf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", i)
+				log.Printf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f)
 			}
 			return nil
 		case tcell.KeyEscape:
@@ -455,6 +450,29 @@ func (sui *SearchUI) listInput() {
 				sui.list.SetOffset(newRow, 0)
 				sui.list.Select(newRow, 0)
 				return nil
+			case 'e': // Edit
+				row, col := sui.list.GetSelection()
+				cell := sui.list.GetCell(row, col)
+				switch f := cell.GetReference().(type) {
+				case *bite.Food:
+					form := sui.editFoodForm(f)
+					sui.showModal(form)
+					return nil
+				case *bite.Meal:
+					// TODO: edit selected meal
+					return nil
+				default:
+					log.Printf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f)
+				}
+			case 'd': // delete
+				row, col := sui.list.GetSelection()
+				cell := sui.list.GetCell(row, col)
+				switch f := cell.GetReference().(type) {
+				case *bite.Food:
+					form := sui.confirmFoodDeletion(f)
+					sui.showModal(form)
+				case *bite.Meal:
+				}
 			case 'q': // quit app
 				sui.app.Stop()
 			case 'k':
@@ -467,6 +485,201 @@ func (sui *SearchUI) listInput() {
 		}
 		return event
 	})
+}
+
+// editFoodForm creates and returns a tview form for editing a food.
+func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Edit Food")
+
+	name := f.Name
+	brandName := f.BrandName
+	price := f.Price
+	protein := f.FoodMacros.Protein
+	carbs := f.FoodMacros.Carbs
+	fat := f.FoodMacros.Fat
+	hhServing := f.HouseholdServing
+
+	servingSize := f.ServingSize
+	numServings := f.NumberOfServings
+
+	// Define the input fields for the forms and update field variables if
+	// user makes any changes to the default values.
+	form.AddInputField("Name", name, 20, nil, func(text string) {
+		f.Name = text
+	})
+	form.AddInputField("Brand Name", brandName, 20, nil, func(text string) {
+		f.BrandName = text
+	})
+	form.AddInputField("Serving Size", fmt.Sprintf("%.1f", servingSize), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.ServingSize = num
+	})
+	form.AddInputField("Num Servings", fmt.Sprintf("%.1f", numServings), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.NumberOfServings = num
+	})
+
+	form.AddInputField("Protein", fmt.Sprintf("%.1f", protein), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.FoodMacros.Protein = num
+	})
+	form.AddInputField("Carbs", fmt.Sprintf("%.1f", carbs), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.FoodMacros.Carbs = num
+	})
+	form.AddInputField("Fat", fmt.Sprintf("%.1f", fat), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.FoodMacros.Fat = num
+	})
+	if hhServing != "" {
+		form.AddInputField("Household Serving", hhServing, 20, nil, func(text string) {
+			f.HouseholdServing = text
+		})
+	}
+	form.AddInputField("Price", fmt.Sprintf("%.1f", price), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return
+		}
+		f.Price = num
+	})
+
+	form.AddButton("Save", func() {
+		tx, err := sui.db.Beginx()
+		defer tx.Rollback()
+		if err != nil {
+			log.Println("couldn't create transaction: ", err)
+			return
+		}
+
+		if err := updateFoodTable(tx, *f); err != nil {
+			log.Println("couldn't update food table: ", err)
+			return
+		}
+		fp := &bite.FoodPref{}
+		fp.FoodID = f.ID
+		fp.ServingSize = f.ServingSize
+		fp.NumberOfServings = f.NumberOfServings
+
+		// Update food prefs table
+		if err := bite.UpdateFoodPrefs(tx, fp); err != nil {
+			log.Println("couldn't update food preferences: ", err)
+			return
+		}
+
+		f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+		if err := bite.UpdateFoodNutrients(sui.db, tx, f); err != nil {
+			log.Println("couldn't update food nutrients: ", err)
+			return
+		}
+		tx.Commit()
+
+		sui.updateSelectedFood(*f)
+
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
+}
+
+func (sui *SearchUI) confirmFoodDeletion(f *bite.Food) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Confirm Food Deletion")
+
+	form.AddButton("Confirm", func() {
+		tx, err := sui.db.Beginx()
+		defer tx.Rollback()
+		if err != nil {
+			log.Println("couldn't create transaction: ", err)
+			return
+		}
+		if err := bite.DeleteFood(tx, f.ID); err != nil {
+			log.Println("couldn't delete food: ", err)
+			return
+		}
+		tx.Commit()
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
+}
+
+// updateFoodTable partially updates one food from the foods table
+func updateFoodTable(tx *sqlx.Tx, food bite.Food) error {
+	const query = `
+  UPDATE foods SET
+  food_name = $1, serving_size = $2, serving_unit = $3
+  WHERE food_id = $4
+  `
+	_, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit,
+		food.ID)
+	if err != nil {
+		return fmt.Errorf("Failed to update food: %v", err)
+	}
+
+	return nil
+}
+
+// updateSelectedFood updates the selected food in the results list.
+func (sui *SearchUI) updateSelectedFood(f bite.Food) {
+	row, col := sui.list.GetSelection()
+	cell := sui.list.GetCell(row, col)
+	s := "[powderblue]" + f.Name + "[white]"
+	cell.SetText(s)
+	line := fmt.Sprintf(resultsFmt, f.ServingSize, f.ServingUnit,
+		f.NumberOfServings, f.Calories, f.FoodMacros.Protein,
+		f.FoodMacros.Carbs, f.FoodMacros.Fat)
+	descCell := sui.list.GetCell(row+1, col)
+	descCell.SetText(line)
+
+}
+
+// closeModal removes the modal page
+func (sui *SearchUI) closeModal() {
+	sui.pages.RemovePage("modal")
+	sui.app.SetFocus(sui.list)
+}
+
+// showModal sets up a modal grid for the given form and displays it.
+func (sui *SearchUI) showModal(form *tview.Form) {
+	// Returns a new primitive which puts the provided primitive in the center and
+	// sets its size to the given width and height.
+	modal := func(p tview.Primitive, width, height int) tview.Primitive {
+		return tview.NewGrid().
+			SetColumns(0, width, 0).
+			SetRows(0, height, 0).
+			AddItem(p, 1, 1, 1, 1, 0, 0, true)
+	}
+
+	m := modal(form, 40, 30)
+	sui.pages.AddPage("modal", m, true, true)
+	sui.app.SetFocus(m)
 }
 
 // Run starts the TUI application.
