@@ -42,6 +42,9 @@ type SearchUI struct {
 
 	// Item being searched for.
 	item string
+
+	// messages stores log messages that will get printed to stdout.
+	messages []string
 }
 
 // NewSearchUI creates and initializes a new SearchUI.
@@ -53,6 +56,7 @@ func NewSearchUI(db *sqlx.DB, query, item string) *SearchUI {
 		db:          db,
 		item:        item,
 		screenWidth: 50,
+		messages:    []string{},
 	}
 
 	sui.setupUI(query)
@@ -184,15 +188,12 @@ func (sui *SearchUI) globalInput() {
 func (sui *SearchUI) ipInputFood(foods *[]bite.Food) {
 	var debounceTimer *time.Timer
 	sui.inputField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		/*
-			// If ctrl+enter pressed,
-			if event.Modifiers() == 2 && event.Rune() == 10 {
-				text := sui.inputField.GetText()
-				_ = text
-				sui.app.Stop()
-				// TODO: Create new food with current input field text.
-			}
-		*/
+		// If ctrl+enter pressed,
+		if event.Modifiers() == 2 && event.Rune() == 10 {
+			text := sui.inputField.GetText()
+			form := sui.addFoodForm(text)
+			sui.showModal(form)
+		}
 		return event
 	})
 	sui.inputField.SetChangedFunc(func(text string) {
@@ -394,7 +395,7 @@ func (sui *SearchUI) updateMealsList(meals []bite.Meal) {
 func (sui *SearchUI) listInput() {
 	sui.list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
-		case tcell.KeyEnter:
+		case tcell.KeyEnter: // Log item
 			row, col := sui.list.GetSelection()
 			cell := sui.list.GetCell(row, col)
 			switch f := cell.GetReference().(type) {
@@ -402,26 +403,32 @@ func (sui *SearchUI) listInput() {
 				tx, err := sui.db.Beginx()
 				defer tx.Rollback()
 				if err != nil {
-					log.Println("couldn't create transaction: ", err)
+					form := sui.errorForm("couldn't create transaction: ", err)
+					sui.showModal(form)
 					return nil
 				}
 				date := time.Now()
 				// Log selected food to the food log database table. Taking into
 				// account food preferences.
 				if err := bite.AddFoodEntry(tx, f, date); err != nil {
-					log.Println("couldn't add food log: ", err)
+					form := sui.errorForm("couldn't add food log", err)
+					sui.showModal(form)
 					return nil
 				}
 				tx.Commit()
-				return nil
+				sui.messages = append(sui.messages, "Logged food \""+f.Name+"\"")
 			case *bite.Meal:
 				// TODO: log selected meal
 			default:
-				log.Printf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f)
+				form := sui.errorForm(fmt.Sprintf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f), nil)
+				sui.showModal(form)
 			}
 			return nil
 		case tcell.KeyEscape:
 			sui.app.Stop()
+			for _, message := range sui.messages {
+				fmt.Println(message)
+			}
 		default:
 			switch event.Rune() {
 			case 'H': // move to top of the visible window
@@ -462,7 +469,8 @@ func (sui *SearchUI) listInput() {
 					// TODO: edit selected meal
 					return nil
 				default:
-					log.Printf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f)
+					form := sui.errorForm(fmt.Sprintf("Table cell doesn't reference bite.Food or bite.Meal: %T\n", f), nil)
+					sui.showModal(form)
 				}
 			case 'd': // delete
 				row, col := sui.list.GetSelection()
@@ -475,6 +483,9 @@ func (sui *SearchUI) listInput() {
 				}
 			case 'q': // quit app
 				sui.app.Stop()
+				for _, message := range sui.messages {
+					fmt.Println(message)
+				}
 			case 'k':
 				row, _ := sui.list.GetSelection()
 				if row == 0 {
@@ -507,61 +518,70 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 	// Define the input fields for the forms and update field variables if
 	// user makes any changes to the default values.
 	form.AddInputField("Name", name, 20, nil, func(text string) {
-		f.Name = text
+		name = text
 	})
 	form.AddInputField("Brand Name", brandName, 20, nil, func(text string) {
-		f.BrandName = text
+		brandName = text
 	})
 	form.AddInputField("Serving Size", fmt.Sprintf("%.1f", servingSize), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.ServingSize = num
+		servingSize = num
 	})
 	form.AddInputField("Num Servings", fmt.Sprintf("%.1f", numServings), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.NumberOfServings = num
+		numServings = num
 	})
-
 	form.AddInputField("Protein", fmt.Sprintf("%.1f", protein), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.FoodMacros.Protein = num
+		protein = num
 	})
 	form.AddInputField("Carbs", fmt.Sprintf("%.1f", carbs), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.FoodMacros.Carbs = num
+		carbs = num
 	})
 	form.AddInputField("Fat", fmt.Sprintf("%.1f", fat), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.FoodMacros.Fat = num
+		fat = num
 	})
 	if hhServing != "" {
 		form.AddInputField("Household Serving", hhServing, 20, nil, func(text string) {
-			f.HouseholdServing = text
+			hhServing = text
 		})
 	}
 	form.AddInputField("Price", fmt.Sprintf("%.1f", price), 20, nil, func(text string) {
 		num, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return
+			num = 0
 		}
-		f.Price = num
+		price = num
 	})
 
 	form.AddButton("Save", func() {
+		f.Name = name
+		f.BrandName = brandName
+		f.Price = price
+		f.FoodMacros.Protein = protein
+		f.FoodMacros.Carbs = carbs
+		f.FoodMacros.Fat = fat
+		f.HouseholdServing = hhServing
+		f.ServingSize = servingSize
+		f.NumberOfServings = numServings
+
 		tx, err := sui.db.Beginx()
 		defer tx.Rollback()
 		if err != nil {
@@ -630,6 +650,141 @@ func (sui *SearchUI) confirmFoodDeletion(f *bite.Food) *tview.Form {
 	return form
 }
 
+func (sui *SearchUI) addFoodForm(name string) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Add New Food")
+
+	showingErr := false
+	f := bite.Food{FoodMacros: &bite.FoodMacros{}}
+
+	brandName := ""
+	price := 0.0
+	protein := 0.0
+	carbs := 0.0
+	fat := 0.0
+	hhServing := ""
+	servingUnit := "g"
+	servingSize := 0.0
+	numServings := 1.0
+
+	// Define the input fields for the forms and update field variables if
+	// user makes any changes to the default values.
+	form.AddInputField("Name", name, 20, nil, func(text string) {
+		name = text
+	})
+	form.AddInputField("Brand Name", brandName, 20, nil, func(text string) {
+		brandName = text
+	})
+	form.AddInputField("Serving Size", fmt.Sprintf("%.1f", servingSize), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		servingSize = num
+	})
+	form.AddInputField("Serving Unit", servingUnit, 20, nil, func(text string) {
+		servingUnit = text
+	})
+	form.AddInputField("Num Servings", fmt.Sprintf("%.1f", numServings), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		numServings = num
+	})
+
+	form.AddInputField("Protein", fmt.Sprintf("%.1f", protein), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		protein = num
+	})
+	form.AddInputField("Carbs", fmt.Sprintf("%.1f", carbs), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		carbs = num
+	})
+	form.AddInputField("Fat", fmt.Sprintf("%.1f", fat), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		fat = num
+	})
+	if hhServing != "" {
+		form.AddInputField("Household Serving", hhServing, 20, nil, func(text string) {
+			hhServing = text
+		})
+	}
+	form.AddInputField("Price", fmt.Sprintf("%.1f", price), 20, nil, func(text string) {
+		num, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			num = 0
+		}
+		price = num
+	})
+
+	form.AddButton("Save", func() {
+		if !showingErr {
+			if name == "" || servingSize == 0 || servingUnit == "" || numServings == 0 {
+				errorMsg := "Please enter non-zero values for fields: Name, Serving Size, Serving Unit, and Num Serving."
+				showingErr = true
+				form.AddFormItem(tview.NewTextView().SetText(errorMsg).SetTextAlign(tview.AlignCenter))
+			}
+			return
+		}
+
+		f.Name = name
+		f.BrandName = brandName
+		f.Price = price
+		f.FoodMacros.Protein = protein
+		f.FoodMacros.Carbs = carbs
+		f.FoodMacros.Fat = fat
+		f.HouseholdServing = hhServing
+		f.ServingSize = servingSize
+		f.ServingUnit = servingUnit
+		f.NumberOfServings = numServings
+		f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+
+		tx, err := sui.db.Beginx()
+		if err != nil {
+			log.Printf("couldn't start new transaction: %v\n", err)
+			sui.closeModal()
+			return
+		}
+		defer tx.Rollback()
+
+		// Insert food into the foods table.
+		f.ID, err = bite.InsertFood(tx, f)
+		if err != nil {
+			log.Printf("couldn't insert new food: %v\n", err)
+			sui.closeModal()
+			return
+		}
+
+		// Insert food nutrients into the food_nutrients table.
+		if err := bite.InsertNutrients(sui.db, tx, f); err != nil {
+			log.Printf("failed to insert food nutrients into database: %v\n", err)
+			sui.closeModal()
+			return
+		}
+
+		tx.Commit()
+		sui.messages = append(sui.messages, "Created new food \""+f.Name+"\"")
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
+}
+
 // updateFoodTable partially updates one food from the foods table
 func updateFoodTable(tx *sqlx.Tx, food bite.Food) error {
 	const query = `
@@ -658,6 +813,27 @@ func (sui *SearchUI) updateSelectedFood(f bite.Food) {
 	descCell := sui.list.GetCell(row+1, col)
 	descCell.SetText(line)
 
+}
+
+func (sui *SearchUI) errorForm(msg string, err error) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Error")
+
+	errorTextView := tview.NewTextView().
+		SetText(fmt.Sprintf("%s: %v", msg, err)).
+		SetTextAlign(tview.AlignCenter).
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter).
+		SetTextAlign(tview.AlignCenter)
+	form.AddFormItem(errorTextView)
+
+	form.AddButton("Ok", func() {
+		// Close the form when the "Ok" button is clicked
+		sui.closeModal()
+	})
+
+	return form
 }
 
 // closeModal removes the modal page
