@@ -21,6 +21,11 @@ type Meal struct {
 	ID        int    `db:"meal_id"`
 	Name      string `db:"meal_name"`
 	Frequency int
+	Foods     []MealFood
+	Cals      float64 // Total meal calories
+	Protein   float64 // Total meal protein
+	Carbs     float64 // Total meal carbs
+	Fats      float64 // Total meal fats
 }
 
 type Food struct {
@@ -105,13 +110,13 @@ func CreateAddFood(db *sqlx.DB) error {
 	defer tx.Rollback()
 
 	// Insert food into the foods table.
-	newFood.ID, err = insertFood(tx, newFood)
+	newFood.ID, err = InsertFood(tx, *newFood)
 	if err != nil {
 		return err
 	}
 
 	// Insert food nutrients into the food_nutrients table.
-	if err = insertFoodNutrientsIntoDB(db, tx, newFood); err != nil {
+	if err = InsertNutrients(db, tx, *newFood); err != nil {
 		return fmt.Errorf("failed to insert food nutrients into database: %v", err)
 	}
 
@@ -218,12 +223,12 @@ func CalculateCalories(protein, carbs, fats float64) float64 {
 	return (protein * calsInProtein) + (carbs * calsInCarbs) + (fats * calsInFats)
 }
 
-// insertFood inserts a food into the database and returns the id of the newly inserted food.
-func insertFood(tx *sqlx.Tx, food *Food) (int, error) {
+// InsertFood inserts a food into the database and returns the id of the newly inserted food.
+func InsertFood(tx *sqlx.Tx, food Food) (int, error) {
 	query := `INSERT INTO foods (food_name, serving_size, serving_unit, household_serving) VALUES ($1, $2, $3, $4)`
 	res, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit, food.HouseholdServing)
 	if err != nil {
-		return 0, fmt.Errorf("insertFood: %w", err)
+		return 0, fmt.Errorf("InsertFood: %w", err)
 	}
 
 	id, err := res.LastInsertId()
@@ -255,8 +260,8 @@ func insertNutrient(db *sqlx.DB, nutrientID int, foodID int, amount float64) err
 	return nil
 }
 
-// insertFoodNutrientsIntoDB inserts the nutrients of a food into the food_nutrients table.
-func insertFoodNutrientsIntoDB(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
+// InsertNutrients inserts the nutrients of a food into the food_nutrients table.
+func InsertNutrients(db *sqlx.DB, tx *sqlx.Tx, food Food) error {
 	// Nutrients and corresponding amounts.
 	nutrients := map[string]float64{
 		"Protein":                     food.FoodMacros.Protein,
@@ -945,7 +950,7 @@ func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	}
 
 	// Get the foods that make up the meal.
-	mealFoods, err := getMealFoodsWithPref(db, meal.ID)
+	mealFoods, err := GetMealFoodsWithPref(db, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err

@@ -1242,7 +1242,7 @@ func LogMeal(db *sqlx.DB) error {
 	}
 
 	// Get the foods that make up the meal.
-	mealFoods, err := getMealFoodsWithPref(db, meal.ID)
+	mealFoods, err := GetMealFoodsWithPref(db, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1250,8 +1250,8 @@ func LogMeal(db *sqlx.DB) error {
 
 	// If meal does not contain any foods, then return early
 	if len(mealFoods) == 0 {
-		log.Printf("Meal \"%s\" does not contain any foods.\n", meal.Name)
-		return fmt.Errorf("Meal \"%s\" does not contain any foods.\n", meal.Name)
+		log.Printf("Meal %q does not contain any foods.\n", meal.Name)
+		return fmt.Errorf("Meal %q does not contain any foods.\n", meal.Name)
 	}
 
 	// Print the foods that make up the meal and their preferences.
@@ -1287,7 +1287,7 @@ func LogMeal(db *sqlx.DB) error {
 	}
 
 	// Get the updated foods that make up the meal.
-	updatedMealFoods, err := getMealFoodsWithPref(db, meal.ID)
+	updatedMealFoods, err := GetMealFoodsWithPref(db, meal.ID)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1298,14 +1298,13 @@ func LogMeal(db *sqlx.DB) error {
 
 	// Log selected meal to the meal log database table. Taking into
 	// account food preferences.
-	err = addMealEntry(tx, meal, date)
-	if err != nil {
+	if err := AddMealEntry(tx, meal, date); err != nil {
 		log.Println(err)
 		return err
 	}
 
 	// Bulk insert the foods that make up the meal into the daily_foods table.
-	err = addMealFoodEntries(tx, meal.ID, updatedMealFoods, date)
+	err = AddMealFoodEntries(tx, meal.ID, updatedMealFoods, date)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -1407,7 +1406,38 @@ func GetMealsWithRecentFirst(db *sqlx.DB) ([]Meal, error) {
 		return nil, err
 	}
 
+	for i, _ := range meals {
+		m := &meals[i]
+		mealFoods, err := GetMealFoodsWithPref(db, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		m.Foods = mealFoods
+		m.Cals = totalCals(mealFoods)
+		m.Protein, m.Carbs, m.Fats = totalMacros(mealFoods)
+	}
+
 	return meals, nil
+}
+
+// totalCals returns the total calories for a given slice of meal foods.
+func totalCals(foods []MealFood) float64 {
+	var total float64
+	for _, mf := range foods {
+		total += mf.Calories
+	}
+	return total
+}
+
+// totalCals returns the total macros for a given slice of meal foods.
+func totalMacros(foods []MealFood) (float64, float64, float64) {
+	var protein, carbs, fats float64
+	for _, mf := range foods {
+		protein += mf.Food.FoodMacros.Protein
+		carbs += mf.Food.FoodMacros.Carbs
+		fats += mf.Food.FoodMacros.Fat
+	}
+	return protein, carbs, fats
 }
 
 // SearchMeals searches through meals slice and returns meals that
@@ -1435,11 +1465,22 @@ func SearchMeals(db *sqlx.DB, response string) ([]Meal, error) {
 		return nil, err
 	}
 
+	for i, _ := range meals {
+		m := &meals[i]
+		mealFoods, err := GetMealFoodsWithPref(db, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		m.Foods = mealFoods
+		m.Cals = totalCals(mealFoods)
+		m.Protein, m.Carbs, m.Fats = totalMacros(mealFoods)
+	}
+
 	return meals, nil
 }
 
-// getMealFoodsWithPref retrieves all the foods that make up a meal.
-func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
+// GetMealFoodsWithPref retrieves all the foods that make up a meal.
+func GetMealFoodsWithPref(db *sqlx.DB, mealID int) ([]MealFood, error) {
 	const query = `SELECT food_id FROM meal_foods WHERE meal_id = $1`
 	// First, get all the food IDs for the given meal.
 	var foodIDs []int
@@ -1449,7 +1490,7 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 	}
 
 	// Now, for each food ID, get the full food details and preferences.
-	var mealFoods []*MealFood
+	var mealFoods []MealFood
 	for _, foodID := range foodIDs {
 		mf, err := getMealFoodWithPref(db, foodID, int64(mealID))
 		if err != nil {
@@ -1463,14 +1504,14 @@ func getMealFoodsWithPref(db *sqlx.DB, mealID int) ([]*MealFood, error) {
 
 // getMealFoodWithPref retrieves one of the foods for a given meal,
 // along its preferences.
-func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, error) {
+func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error) {
 	mf := MealFood{}
 
 	// Get the food details
 	err := db.Get(&mf.Food, "SELECT * FROM foods WHERE food_id = $1", foodID)
 	if err != nil {
 		log.Println("Failed to get food.")
-		return nil, err
+		return MealFood{}, err
 	}
 
 	// Get the serving size and number of servings, preferring meal_food_prefs and then food_prefs and then default
@@ -1490,7 +1531,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 	err = db.Get(&mf, query, mealID, foodID)
 	if err != nil {
 		log.Println("Failed to select serving size and number of servings.")
-		return nil, err
+		return MealFood{}, err
 	}
 
 	// Execute the SQL query and assign the result to the calories field
@@ -1498,14 +1539,14 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 	err = db.Get(&mf.Food.Calories, "SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)", foodID)
 	if err != nil {
 		log.Println("Failed to select portion calories.")
-		return nil, err
+		return MealFood{}, err
 	}
 
 	// Get the macros for the food
 	mf.Food.FoodMacros, err = getFoodMacros(db, foodID)
 	if err != nil {
 		log.Println("Failed to get food macros.")
-		return nil, err
+		return MealFood{}, err
 	}
 
 	// If a preference was found (either in meal_food_prefs or food_prefs),
@@ -1520,7 +1561,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (*MealFood, erro
 		mf.Food.Price *= ratio * mf.NumberOfServings
 	}
 
-	return &mf, nil
+	return mf, nil
 }
 
 // GetFoodWithPref retrieves one food, along its preferences.
@@ -1585,7 +1626,7 @@ func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 }
 
 // printMealDetails prints the foods that make up the meal and their preferences.
-func printMealDetails(mealFoods []*MealFood) {
+func printMealDetails(mealFoods []MealFood) {
 	var priceTotal float64
 	for i, mf := range mealFoods {
 		fmt.Printf("[%d] ", i+1)
@@ -1596,7 +1637,7 @@ func printMealDetails(mealFoods []*MealFood) {
 }
 
 // printMealFood prints details of a given MealFood object.
-func printMealFood(mealFood *MealFood) {
+func printMealFood(mealFood MealFood) {
 	fmt.Printf("%s: %.2f %s x %.2f serving, %.2f cals ($%.2f)\n",
 		mealFood.Food.Name, mealFood.ServingSize, mealFood.Food.ServingUnit,
 		mealFood.NumberOfServings, mealFood.Food.Calories, mealFood.Food.Price)
@@ -1618,8 +1659,8 @@ func promptUserEditDecision() string {
 	return response
 }
 
-// addMealEntry inserts a meal entry into the database.
-func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
+// AddMealEntry inserts a meal entry into the database.
+func AddMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 	const query = `
     INSERT INTO daily_meals (meal_id, date, time)
     VALUES ($1, $2, $3)
@@ -1632,14 +1673,14 @@ func addMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
 
 	// If there was an error executing the query, return the error
 	if err != nil {
-		return fmt.Errorf("addMealEntry: %w", err)
+		return fmt.Errorf("AddMealEntry: %w", err)
 	}
 
 	return nil
 }
 
-// addMealFoodEntries bulk inserts foods that make up the meal into the database.
-func addMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []*MealFood, date time.Time) error {
+// AddMealFoodEntries bulk inserts foods that make up the meal into the database.
+func AddMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []MealFood, date time.Time) error {
 	// Prepare a statement for bulk insert
 	stmt, err := tx.Preparex("INSERT INTO daily_foods (food_id, meal_id, date, time, serving_size, number_of_servings, calories, protein, fat, carbs, price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)")
 	if err != nil {
