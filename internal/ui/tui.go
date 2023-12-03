@@ -558,7 +558,8 @@ func (sui *SearchUI) listInput() {
 					form := sui.editFoodForm(i)
 					sui.showModal(form)
 				case *bite.Meal:
-					// TODO: allow user to edit meal name
+					form := sui.editMealForm(i)
+					sui.showModal(form)
 				case *bite.MealFood:
 					form := sui.editMealFoodForm(i)
 					sui.showModal(form)
@@ -789,6 +790,48 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 	})
 
 	return form
+}
+
+// editMealForm creates and returns a tview form for editing a meal.
+func (sui *SearchUI) editMealForm(m *bite.Meal) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Edit Meal")
+
+	name := m.Name
+
+	// Define the input fields for the forms and update field variables if
+	// user makes any changes to the default values.
+	form.AddInputField("Name", name, 20, nil, func(text string) {
+		name = text
+	})
+
+	form.AddButton("Save", func() {
+		m.Name = name
+
+		tx, err := sui.db.Beginx()
+		defer tx.Rollback()
+		if err != nil {
+			log.Println("couldn't create transaction: ", err)
+			return
+		}
+
+		if err := bite.UpdateMeal(tx, *m); err != nil {
+			log.Println("couldn't update meal: ", err)
+			return
+		}
+		tx.Commit()
+
+		sui.updateSelectedMeal(*m)
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
+
 }
 
 // editMealFoodForm creates and returns a tview form for editing a food.
@@ -1162,6 +1205,14 @@ func (sui *SearchUI) updateSelectedFood(f bite.Food) {
 		f.FoodMacros.Carbs, f.FoodMacros.Fat)
 	descCell := sui.list.GetCell(row+1, col)
 	descCell.SetText(line)
+}
+
+// updateSelectedMeal updates the selected meal in the results list.
+func (sui *SearchUI) updateSelectedMeal(m bite.Meal) {
+	row, col := sui.list.GetSelection()
+	cell := sui.list.GetCell(row, col)
+	s := "[powderblue]" + m.Name + "[white]"
+	cell.SetText(s)
 }
 
 // updateSelectedMealFood updates the selected meal food in the results
