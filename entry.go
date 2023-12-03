@@ -1268,6 +1268,9 @@ func LogMeal(db *sqlx.DB) error {
 		}
 
 		idx, err := strconv.Atoi(response)
+		if err != nil {
+			return fmt.Errorf("couldn't convert response to integer: %v", err)
+		}
 
 		// If user enters an invalid integer,
 		if 1 > idx || idx > len(mealFoods) {
@@ -1279,8 +1282,7 @@ func LogMeal(db *sqlx.DB) error {
 		f := getMealFoodPrefUserInput(mealFoods[idx-1].Food.ID, int64(meal.ID), mealFoods[idx-1].ServingSize, mealFoods[idx-1].NumberOfServings)
 
 		// Make database update to meal food preferences.
-		err = updateMealFoodPrefs(tx, f)
-		if err != nil {
+		if err := UpdateMealFoodPrefs(tx, *f); err != nil {
 			return err
 		}
 		fmt.Println("Updated food.")
@@ -1298,7 +1300,7 @@ func LogMeal(db *sqlx.DB) error {
 
 	// Log selected meal to the meal log database table. Taking into
 	// account food preferences.
-	if err := AddMealEntry(tx, meal, date); err != nil {
+	if err := AddMealEntry(tx, meal.ID, date); err != nil {
 		log.Println(err)
 		return err
 	}
@@ -1496,6 +1498,7 @@ func GetMealFoodsWithPref(db *sqlx.DB, mealID int) ([]MealFood, error) {
 		if err != nil {
 			return nil, err
 		}
+		mf.MealID = mealID
 		mealFoods = append(mealFoods, mf)
 	}
 
@@ -1660,13 +1663,13 @@ func promptUserEditDecision() string {
 }
 
 // AddMealEntry inserts a meal entry into the database.
-func AddMealEntry(tx *sqlx.Tx, meal Meal, date time.Time) error {
+func AddMealEntry(tx *sqlx.Tx, mealID int, date time.Time) error {
 	const query = `
     INSERT INTO daily_meals (meal_id, date, time)
     VALUES ($1, $2, $3)
     `
 
-	_, err := tx.Exec(query, meal.ID, date.Format(dateFormat), date.Format(dateFormatTime))
+	_, err := tx.Exec(query, mealID, date.Format(dateFormat), date.Format(dateFormatTime))
 	if err != nil {
 		return err
 	}
