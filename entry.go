@@ -1508,7 +1508,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error
 	const query = `
 			SELECT
 					COALESCE(mfp.serving_size, fp.serving_size, f.serving_size, 100) AS serving_size,
-					COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
+					COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings
 			FROM foods f
 			LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
 			LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
