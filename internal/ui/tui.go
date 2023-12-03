@@ -203,11 +203,19 @@ func (sui *SearchUI) setupMealUI(query string) {
 }
 
 // globalInput handles input capture for the application.
+//
+// It interprets the following key bindings and triggers corresponding
+// actions:
+//
+//   - Esc: Exits the search interface.
 func (sui *SearchUI) globalInput() {
 	sui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyEscape:
 			sui.app.Stop()
+			for _, message := range sui.messages {
+				fmt.Println(message)
+			}
 		}
 		return event
 	})
@@ -220,7 +228,6 @@ func (sui *SearchUI) globalInput() {
 //
 //   - Enter: Sets focus to results list.
 //   - Ctrl+Enter: Uses current search query as title for new zettel.
-//   - Esc: Exits the search interface.
 func (sui *SearchUI) ipInputFood(foods *[]bite.Food) {
 	var debounceTimer *time.Timer
 	sui.inputField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -511,11 +518,6 @@ func (sui *SearchUI) listInput() {
 				sui.showModal(form)
 			}
 			return nil
-		case tcell.KeyEscape:
-			sui.app.Stop()
-			for _, message := range sui.messages {
-				fmt.Println(message)
-			}
 		default:
 			switch event.Rune() {
 			case 'H': // move to top of the visible window
@@ -549,7 +551,8 @@ func (sui *SearchUI) listInput() {
 				case *bite.Food:
 					form := sui.editFoodForm(i)
 					sui.showModal(form)
-				case *bite.Meal: // Do nothing
+				case *bite.Meal:
+					// TODO: allow user to edit meal name
 				case *bite.MealFood:
 					form := sui.editMealFoodForm(i)
 					sui.showModal(form)
@@ -561,8 +564,7 @@ func (sui *SearchUI) listInput() {
 				row, col := sui.list.GetSelection()
 				cell := sui.list.GetCell(row, col)
 				switch i := cell.GetReference().(type) {
-				case *bite.Meal:
-					// TODO: search and select food.
+				case *bite.Meal: // Search and select food to add.
 					ssui := &SearchUI{
 						app:          sui.app,
 						pages:        sui.pages,
@@ -626,7 +628,6 @@ func (sui *SearchUI) listInput() {
 
 					flex := ssui.setupSelectUI()
 					sui.pages.AddAndSwitchToPage("select", flex, true)
-					_ = i
 				}
 			case 'd': // delete
 				row, col := sui.list.GetSelection()
@@ -639,7 +640,6 @@ func (sui *SearchUI) listInput() {
 					form := sui.confirmMealDeletion(i)
 					sui.showModal(form)
 				case *bite.MealFood:
-					// TODO: test meal food deletion
 					form := sui.mealFoodDeleteForm(i)
 					sui.showModal(form)
 				}
