@@ -47,6 +47,7 @@ type Food struct {
 // MealFood extends Food with additional fields to represent a food
 // as part of a meal.
 type MealFood struct {
+	MealID int
 	Food
 	// NumberOfServings represents the amount of the food that is part of the meal.
 	// The value is derived based on the following order:
@@ -688,7 +689,7 @@ func CreateAddMeal(db *sqlx.DB) error {
 	mealName := promptMealName()
 
 	// Insert the meal into the meals table.
-	mealID, err := insertMeal(tx, mealName)
+	mealID, err := InsertMeal(tx, mealName)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -707,8 +708,7 @@ func CreateAddMeal(db *sqlx.DB) error {
 		}
 
 		// Insert food into meal food table.
-		err = insertMealFood(tx, int(mealID), food.ID)
-		if err != nil {
+		if err := InsertMealFood(tx, int(mealID), food.ID); err != nil {
 			return err
 		}
 
@@ -731,8 +731,7 @@ func CreateAddMeal(db *sqlx.DB) error {
 			// Get updated food preferences.
 			mf := getMealFoodPrefUserInput(food.ID, mealID, f.ServingSize, f.NumberOfServings)
 			// Make database entry for meal food preferences.
-			err := updateMealFoodPrefs(tx, mf)
-			if err != nil {
+			if err := UpdateMealFoodPrefs(tx, *mf); err != nil {
 				return err
 			}
 		}
@@ -762,8 +761,7 @@ func SelectDeleteMeal(db *sqlx.DB) error {
 	mealName := m.Name
 
 	// Remove meal from the database.
-	err = deleteMeal(tx, m.ID)
-	if err != nil {
+	if err := DeleteMeal(tx, m.ID); err != nil {
 		return err
 	}
 
@@ -771,8 +769,8 @@ func SelectDeleteMeal(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// deleteMeal deletes a meal from the database.
-func deleteMeal(tx *sqlx.Tx, mealID int) error {
+// DeleteMeal deletes a meal from the database.
+func DeleteMeal(tx *sqlx.Tx, mealID int) error {
 	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
       WHERE meal_id = $1
@@ -825,13 +823,13 @@ func deleteMeal(tx *sqlx.Tx, mealID int) error {
 	return nil
 }
 
-// insertMeal inserts a meal into the database and returns the id of the
+// InsertMeal inserts a meal into the database and returns the id of the
 // newly inserted meal.
-func insertMeal(tx *sqlx.Tx, mealName string) (int64, error) {
+func InsertMeal(tx *sqlx.Tx, mealName string) (int64, error) {
 	query := `INSERT INTO meals (meal_name) VALUES ($1)`
 	res, err := tx.Exec(query, mealName)
 	if err != nil {
-		return 0, fmt.Errorf("insertMeal: %w", err)
+		return 0, fmt.Errorf("InsertMeal: %w", err)
 	}
 
 	id, err := res.LastInsertId()
@@ -841,9 +839,9 @@ func insertMeal(tx *sqlx.Tx, mealName string) (int64, error) {
 	return id, nil
 }
 
-// insertMealFood inserts a food that is part of a meal into the
+// InsertMealFood inserts a food that is part of a meal into the
 // database.
-func insertMealFood(tx *sqlx.Tx, mealID, foodID int) error {
+func InsertMealFood(tx *sqlx.Tx, mealID, foodID int) error {
 	// Execute the insert query
 	_, err := tx.Exec(`
         INSERT INTO meal_foods (meal_id, food_id)
@@ -857,9 +855,9 @@ func insertMealFood(tx *sqlx.Tx, mealID, foodID int) error {
 	return nil
 }
 
-// updateMealFoodPrefs inserts or updates the user's preferences for a
+// UpdateMealFoodPrefs inserts or updates the user's preferences for a
 // given food that is part of a meal.
-func updateMealFoodPrefs(tx *sqlx.Tx, pref *MealFoodPref) error {
+func UpdateMealFoodPrefs(tx *sqlx.Tx, pref MealFoodPref) error {
 	// Execute the update statement
 	_, err := tx.NamedExec(`
 			INSERT INTO meal_food_prefs (meal_id, food_id, number_of_servings, serving_size)
@@ -867,11 +865,6 @@ func updateMealFoodPrefs(tx *sqlx.Tx, pref *MealFoodPref) error {
       ON CONFLICT(meal_id, food_id) DO UPDATE SET
       number_of_servings = :number_of_servings,
       serving_size = :serving_size`, pref)
-
-	// If there was an error executing the query, return the error
-	if err != nil {
-		return err
-	}
 
 	return err
 }
@@ -900,8 +893,7 @@ func PromptAddMealFood(db *sqlx.DB) error {
 	}
 
 	// Insert food into meal food table.
-	err = insertMealFood(tx, meal.ID, food.ID)
-	if err != nil {
+	if err := InsertMealFood(tx, meal.ID, food.ID); err != nil {
 		return err
 	}
 
@@ -924,8 +916,7 @@ func PromptAddMealFood(db *sqlx.DB) error {
 		// Get updated food preferences.
 		mf := getMealFoodPrefUserInput(food.ID, int64(meal.ID), mealFood.ServingSize, mealFood.NumberOfServings)
 		// Make database entry for meal food preferences.
-		err := updateMealFoodPrefs(tx, mf)
-		if err != nil {
+		if err := UpdateMealFoodPrefs(tx, *mf); err != nil {
 			return err
 		}
 	}
@@ -983,8 +974,7 @@ func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	}
 
 	// Using selected food ID, remove it from the meal.
-	err = deleteMealFood(tx, meal.ID, mealFoods[idx-1].Food.ID)
-	if err != nil {
+	if err := DeleteMealFood(tx, meal.ID, mealFoods[idx-1].Food.ID); err != nil {
 		return err
 	}
 
@@ -992,9 +982,9 @@ func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
-// deleteMealFood removes a food that is part of a meal from the
+// DeleteMealFood removes a food that is part of a meal from the
 // database.
-func deleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
+func DeleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
 	_, err := tx.Exec(`
       DELETE FROM meal_food_prefs
       WHERE meal_id = $1 AND food_id = $2
@@ -1009,7 +999,6 @@ func deleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
       DELETE FROM meal_foods
       WHERE meal_id = $1 AND food_id = $2
       `, mealID, foodID)
-	// If there was an error executing the query, return the error
 	if err != nil {
 		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
 		return err
@@ -1018,7 +1007,6 @@ func deleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
 	// Set any `meal_id` in the daily_foods table for any entries for this
 	// meal food to NULL.
 	_, err = tx.Exec(`UPDATE daily_foods SET meal_id = NULL WHERE meal_id = $1 AND food_id =$2`, mealID, foodID)
-	// If there was an error executing the query, return the error
 	if err != nil {
 		log.Printf("Failed to update daily_foods: %v\n", err)
 		return err
