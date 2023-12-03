@@ -387,7 +387,13 @@ func (sui *SearchUI) updateFoodsList(foods []bite.Food) {
 	row := 0
 	for i := 0; i < len(foods); i++ {
 		f := foods[i]
-		s := "[powderblue]" + f.Name + "[white]"
+		var s string
+		switch f.BrandName == "" {
+		case true:
+			s = fmt.Sprintf("[powderblue]%s[white]", f.Name)
+		case false:
+			s = fmt.Sprintf("[powderblue]%s (%s)[white]", f.Name, f.BrandName)
+		}
 		list.SetCell(row, 0, tview.NewTableCell(s).
 			SetReference(&f))
 		row++
