@@ -39,9 +39,8 @@ type Food struct {
 	FoodMacros       *FoodMacros
 	// Indicates if there is a serving size preference set for this food in
 	// the meal (in food_prefs).
-	HasPreference bool    `db:"has_preference"`
-	BrandName     string  `db:"brand_name"`
-	Price         float64 `db:"cost"`
+	BrandName string  `db:"brand_name"`
+	Price     float64 `db:"cost"`
 }
 
 // MealFood extends Food with additional fields to represent a food
@@ -63,16 +62,14 @@ type MealFood struct {
 
 	// Indicates if there is a serving size preference set for this food in
 	// the meal (either in meal_food_prefs or food_prefs).
-	HasPreference bool `db:"has_preference"`
 }
 
 type FoodPref struct {
-	FoodID             int     `db:"food_id"`
-	NumberOfServings   float64 `db:"number_of_servings"`
-	DefaultServingSize float64 `db:"default_serving_size"`
-	ServingSize        float64 `db:"serving_size"`
-	ServingUnit        string  `db:"serving_unit"`
-	HouseholdServing   string  `db:"household_serving"`
+	FoodID           int     `db:"food_id"`
+	NumberOfServings float64 `db:"number_of_servings"`
+	ServingSize      float64 `db:"serving_size"`
+	ServingUnit      string  `db:"serving_unit"`
+	HouseholdServing string  `db:"household_serving"`
 }
 
 type MealFoodPref struct {
@@ -226,7 +223,10 @@ func CalculateCalories(protein, carbs, fats float64) float64 {
 
 // InsertFood inserts a food into the database and returns the id of the newly inserted food.
 func InsertFood(tx *sqlx.Tx, food Food) (int, error) {
-	query := `INSERT INTO foods (food_name, serving_size, serving_unit, household_serving) VALUES ($1, $2, $3, $4)`
+	const query = `
+	INSERT INTO foods (food_name, serving_size, serving_unit, household_serving)
+	VALUES ($1, $2, $3, $4)
+	`
 	res, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit, food.HouseholdServing)
 	if err != nil {
 		return 0, fmt.Errorf("InsertFood: %w", err)
@@ -240,19 +240,18 @@ func InsertFood(tx *sqlx.Tx, food Food) (int, error) {
 }
 
 // insertNutrient inserts a nutrient into the food_nutrients table.
-// nutrientID: The ID of the nutrient.
-// foodID: The ID of the food.
-// amount: The amount of the nutrient.
 func insertNutrient(db *sqlx.DB, nutrientID int, foodID int, amount float64) error {
-	// This is a constant for the food_nutrient_derivation id indicating
-	// the nutrient value is for the portion size.
-	const derivationID = 71
+	const (
+		// SQL statement for inserting a nutrient.
+		nutrientSQL = `INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id)
+		VALUES (?, ?, ?, ?)
+	`
+		// This is a constant for the food_nutrient_derivation id indicating
+		// the nutrient value is for the portion size.
+		derivationID = 71
+	)
 
-	// SQL statement for inserting a nutrient.
-	insertNutrientSQL := `INSERT INTO food_nutrients (food_id, nutrient_id, amount, derivation_id) VALUES (?, ?, ?, ?)`
-
-	// Insert nutrient.
-	_, err := db.Exec(insertNutrientSQL, foodID, nutrientID, amount, derivationID)
+	_, err := db.Exec(nutrientSQL, foodID, nutrientID, amount, derivationID)
 	if err != nil {
 		fmt.Printf("Failed to insert nutrient with ID %d: %v\n", nutrientID, err)
 		return err
@@ -291,8 +290,7 @@ func InsertNutrients(db *sqlx.DB, tx *sqlx.Tx, food Food) error {
 			"derivation_id": derivationIdPortion,
 		}
 
-		_, err = tx.NamedExec(insertFoodNutrientsSQL, params)
-		if err != nil {
+		if _, err = tx.NamedExec(insertFoodNutrientsSQL, params); err != nil {
 			return err
 		}
 	}
@@ -438,14 +436,13 @@ func updateFoodPriceUserInput(existingFoodPrice float64) float64 {
 // UpdateFoodTable updates one food from the foods table
 func UpdateFoodTable(tx *sqlx.Tx, food *Food) error {
 	const query = `
-	UPDATE foods SET
-	food_name = $1, serving_size = $2, serving_unit = $3,
-	household_serving = $4, brand_name = $5, cost = $6
-	WHERE food_id = $7
+		UPDATE foods SET
+		food_name = $1, serving_size = $2, serving_unit = $3,
+		household_serving = $4, brand_name = $5, cost = $6
+		WHERE food_id = $7
 	`
 	_, err := tx.Exec(query, food.Name, food.ServingSize, food.ServingUnit,
 		food.HouseholdServing, food.BrandName, food.Price, food.ID)
-
 	if err != nil {
 		return fmt.Errorf("Failed to update food: %v", err)
 	}
@@ -743,6 +740,17 @@ func CreateAddMeal(db *sqlx.DB) error {
 	return tx.Commit()
 }
 
+// UpdateMeal updates an existing meal.
+func UpdateMeal(tx *sqlx.Tx, m Meal) error {
+	const updateSQL = `
+		UPDATE meals
+    SET meal_name = $1
+    WHERE meal_id = $2
+	`
+	_, err := tx.Exec(updateSQL, m.Name, m.ID)
+	return err
+}
+
 // SelectDeleteMeal selects as meal deletes it from the database.
 func SelectDeleteMeal(db *sqlx.DB) error {
 	tx, err := db.Beginx()
@@ -865,7 +873,6 @@ func UpdateMealFoodPrefs(tx *sqlx.Tx, pref MealFoodPref) error {
       ON CONFLICT(meal_id, food_id) DO UPDATE SET
       number_of_servings = :number_of_servings,
       serving_size = :serving_size`, pref)
-
 	return err
 }
 

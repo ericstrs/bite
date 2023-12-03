@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +20,12 @@ const (
 	dateFormatTime    = "15:04:05"
 	fullBlock         = "\u2588"
 	lightBlock        = "\u2592"
+
+	// portionSize sets the portion size for a food. It should be noted
+	// that the recorded serving size in the foods table does not align
+	// with the recorded nutrients for the same food. For all foods, the
+	// nutrients amount correspond to serving size of 100.
+	portionSize = 100
 )
 
 var ErrDone = errors.New("done")
@@ -650,9 +655,8 @@ func GetRecentlyLoggedFoods(db *sqlx.DB, limit int) ([]Food, error) {
 		// exists a matching entry in the food_prefs table for the food id.
 		query = `
       SELECT
-        COALESCE(fp.serving_size, 100) AS serving_size,
-        COALESCE(fp.number_of_servings, 1) AS number_of_servings,
-        CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+        COALESCE(fp.serving_size, f.serving_size, 100) AS serving_size,
+        COALESCE(fp.number_of_servings, 1) AS number_of_servings
       FROM foods f
       LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
       WHERE f.food_id = $1
@@ -689,16 +693,12 @@ func GetRecentlyLoggedFoods(db *sqlx.DB, limit int) ([]Food, error) {
 			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
 		}
 
-		// If a preference was found (either in food_prefs),
-		// adjust nutrient values based on the serving size and number of servings.
-		if foods[i].HasPreference {
-			ratio := foods[i].ServingSize / 100
-			foods[i].Calories *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
-			foods[i].Price *= ratio * foods[i].NumberOfServings
-		}
+		ratio := foods[i].ServingSize / portionSize
+		foods[i].Calories *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
+		foods[i].Price *= ratio * foods[i].NumberOfServings
 	}
 
 	return foods, nil
@@ -721,9 +721,8 @@ func SearchFoods(db *sqlx.DB, term string) ([]Food, error) {
 		// exists a matching entry in the food_prefs table for the food id.
 		query = `
       SELECT
-        COALESCE(fp.serving_size, 100) AS serving_size,
-        COALESCE(fp.number_of_servings, 1) AS number_of_servings,
-        CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
+        COALESCE(fp.serving_size, f.serving_size, 100) AS serving_size,
+        COALESCE(fp.number_of_servings, 1) AS number_of_servings
       FROM foods f
       LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
       WHERE f.food_id = $1
@@ -761,16 +760,12 @@ func SearchFoods(db *sqlx.DB, term string) ([]Food, error) {
 			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
 		}
 
-		// If a preference was found (either in food_prefs),
-		// adjust nutrient values based on the serving size and number of servings.
-		if foods[i].HasPreference {
-			ratio := foods[i].ServingSize / 100
-			foods[i].Calories *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
-			foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
-			foods[i].Price *= ratio * foods[i].NumberOfServings
-		}
+		ratio := foods[i].ServingSize / portionSize
+		foods[i].Calories *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
+		foods[i].FoodMacros.Carbs *= ratio * foods[i].NumberOfServings
+		foods[i].Price *= ratio * foods[i].NumberOfServings
 	}
 
 	return foods, nil
@@ -795,7 +790,7 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 	SELECT
 		f.food_id,
 		f.serving_size AS default_serving_size,
-		COALESCE(fp.serving_size, 100) AS serving_size,
+		COALESCE(fp.serving_size, f.serving_size, 100) AS serving_size,
 		f.household_serving,
 		COALESCE(fp.number_of_servings, 1) AS number_of_servings,
 		f.serving_unit
@@ -819,13 +814,8 @@ func getFoodPref(tx *sqlx.Tx, foodID int) (*FoodPref, error) {
 
 // printFoodPref prints the perferences for a food.
 func printFoodPref(pref FoodPref) {
-	householdStr := ""
-	if pref.HouseholdServing != "" {
-		householdStr = fmt.Sprintf("(%s)", pref.HouseholdServing)
-	}
-	fmt.Printf("Suggested Serving Size: %.2f %s %s\n", pref.DefaultServingSize, pref.ServingUnit, householdStr)
-	fmt.Printf("Current Serving Size: %.2f %s\n", math.Round(100*pref.ServingSize)/100, pref.ServingUnit)
-	fmt.Printf("Number of Servings: %.1f\n", math.Round(10*pref.NumberOfServings)/10)
+	fmt.Printf("Current Serving Size: %.2f %s\n", pref.ServingSize, pref.ServingUnit)
+	fmt.Printf("Number of Servings: %.1f\n", pref.NumberOfServings)
 }
 
 // getFoodPrefUserInput prompts user for food perferences, validates their
@@ -833,11 +823,9 @@ func printFoodPref(pref FoodPref) {
 // valid response.
 func getFoodPrefUserInput(foodID int, servingSize, numOfServings float64) *FoodPref {
 	pref := &FoodPref{}
-
 	pref.FoodID = foodID
 	pref.ServingSize = updateServingSizeUserInput(servingSize)
 	pref.NumberOfServings = updateNumServingsUserInput(numOfServings)
-
 	return pref
 }
 
@@ -1041,21 +1029,21 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 	// Since DailyFood struct does not currently support time field, the
 	// query excludes the time field from the selected records.
 	const query = `
-SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
-df.number_of_servings, f.food_name, f.serving_unit
-FROM (
-	SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
-	FROM daily_foods
-) AS df
-INNER JOIN foods f ON df.food_id = f.food_id
-WHERE df.rn = 1
-ORDER BY df.date DESC
-LIMIT $1;
-`
+		SELECT df.id, df.food_id, df.meal_id, df.date, df.serving_size,
+		df.number_of_servings, f.food_name, f.serving_unit
+		FROM (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY food_id ORDER BY date DESC) AS rn
+			FROM daily_foods
+		) AS df
+		INNER JOIN foods f ON df.food_id = f.food_id
+		WHERE df.rn = 1
+		ORDER BY df.date DESC
+		LIMIT $1;
+	`
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, limit); err != nil {
-		return nil, err
+		return entries, err
 	}
 
 	return entries, nil
@@ -1080,10 +1068,9 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 			WHERE df.date = $1
 	`
 
-	var entries []DailyFood
 	// Search for food entries in the database for given date.
-	err := tx.Select(&entries, query, date.Format(dateFormat))
-	if err != nil {
+	var entries []DailyFood
+	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
 		log.Printf("Search for food entries failed: %v\n", err)
 		return nil, err
 	}
@@ -1520,9 +1507,8 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error
 	// Get the serving size and number of servings, preferring meal_food_prefs and then food_prefs and then default
 	const query = `
 			SELECT
-					COALESCE(mfp.serving_size, fp.serving_size, 100) AS serving_size,
+					COALESCE(mfp.serving_size, fp.serving_size, f.serving_size, 100) AS serving_size,
 					COALESCE(mfp.number_of_servings, fp.number_of_servings, 1) AS number_of_servings,
-					CASE WHEN mfp.serving_size IS NOT NULL OR fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
 			FROM foods f
 			LEFT JOIN meal_food_prefs mfp ON mfp.food_id = f.food_id AND mfp.meal_id = $1
 			LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
@@ -1531,8 +1517,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error
 	`
 
 	// Execute the SQL query and assign the result to the MealFood struct
-	err = db.Get(&mf, query, mealID, foodID)
-	if err != nil {
+	if err := db.Get(&mf, query, mealID, foodID); err != nil {
 		log.Println("Failed to select serving size and number of servings.")
 		return MealFood{}, err
 	}
@@ -1552,17 +1537,12 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error
 		return MealFood{}, err
 	}
 
-	// If a preference was found (either in meal_food_prefs or food_prefs),
-	// adjust nutrient values based on the serving size and number of servings.
-	if mf.HasPreference {
-		// 100 is for portion size which nutrient amounts represent.
-		ratio := mf.ServingSize / 100
-		mf.Food.Calories *= ratio * mf.NumberOfServings
-		mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
-		mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
-		mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
-		mf.Food.Price *= ratio * mf.NumberOfServings
-	}
+	ratio := mf.ServingSize / portionSize
+	mf.Food.Calories *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
+	mf.Food.FoodMacros.Carbs *= ratio * mf.NumberOfServings
+	mf.Food.Price *= ratio * mf.NumberOfServings
 
 	return mf, nil
 }
@@ -1582,9 +1562,8 @@ func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 	// exists a matching entry in the food_prefs table for the food id.
 	query := `
         SELECT
-            COALESCE(fp.serving_size, 100) AS serving_size,
+            COALESCE(fp.serving_size, f.serving_size, 100) AS serving_size,
             COALESCE(fp.number_of_servings, 1) AS number_of_servings,
-            CASE WHEN fp.serving_size IS NOT NULL THEN TRUE ELSE FALSE END as has_preference
         FROM foods f
         LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
         WHERE f.food_id = $1
@@ -1613,17 +1592,12 @@ func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 		return nil, err
 	}
 
-	// If a preference was found (either in food_prefs),
-	// adjust nutrient values based on the serving size and number of servings.
-	if f.HasPreference {
-		// 100 is for portion size which nutrient amounts represent.
-		ratio := f.ServingSize / 100
-		f.Calories *= ratio * f.NumberOfServings
-		f.FoodMacros.Protein *= ratio * f.NumberOfServings
-		f.FoodMacros.Fat *= ratio * f.NumberOfServings
-		f.FoodMacros.Carbs *= ratio * f.NumberOfServings
-		f.Price *= ratio * f.NumberOfServings
-	}
+	ratio := f.ServingSize / portionSize
+	f.Calories *= ratio * f.NumberOfServings
+	f.FoodMacros.Protein *= ratio * f.NumberOfServings
+	f.FoodMacros.Fat *= ratio * f.NumberOfServings
+	f.FoodMacros.Carbs *= ratio * f.NumberOfServings
+	f.Price *= ratio * f.NumberOfServings
 
 	return &f, nil
 }
