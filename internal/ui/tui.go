@@ -743,13 +743,16 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 	form.AddButton("Save", func() {
 		f.Name = name
 		f.BrandName = brandName
-		f.Price = price
-		f.FoodMacros.Protein = protein
-		f.FoodMacros.Carbs = carbs
-		f.FoodMacros.Fat = fat
 		f.HouseholdServing = hhServing
 		f.ServingSize = servingSize
 		f.NumberOfServings = numServings
+
+		// If price was updated,
+		if price != f.Price {
+			// "Undo" any scaling that took place during food retrieval.
+			ratio := f.ServingSize / bite.PortionSize
+			f.Price /= ratio * f.NumberOfServings
+		}
 
 		tx, err := sui.db.Beginx()
 		defer tx.Rollback()
@@ -773,14 +776,35 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 			return
 		}
 
-		f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
-		if err := bite.UpdateFoodNutrients(sui.db, tx, f); err != nil {
-			log.Println("couldn't update food nutrients: ", err)
-			return
+		// If any macro was updated, then update food nutrients in database.
+		if protein != f.FoodMacros.Protein || carbs != f.FoodMacros.Carbs || fat != f.FoodMacros.Fat {
+			// "Undo" any scaling that took place during food retrieval.
+			ratio := f.ServingSize / bite.PortionSize
+			f.Calories /= ratio * f.NumberOfServings
+			f.FoodMacros.Protein /= ratio * f.NumberOfServings
+			f.FoodMacros.Fat /= ratio * f.NumberOfServings
+			f.FoodMacros.Carbs /= ratio * f.NumberOfServings
+
+			f.FoodMacros.Protein = protein
+			f.FoodMacros.Carbs = carbs
+			f.FoodMacros.Fat = fat
+
+			f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+			if err := bite.UpdateFoodNutrients(sui.db, tx, f); err != nil {
+				log.Println("couldn't update food nutrients: ", err)
+				return
+			}
 		}
+
 		tx.Commit()
 
-		sui.updateSelectedFood(*f)
+		uf, err := bite.GetFoodWithPref(sui.db, f.ID)
+		if err != nil {
+			log.Println("couldn't get updated food: ", err)
+			return
+		}
+
+		sui.updateSelectedFood(*uf)
 
 		sui.closeModal()
 	})
