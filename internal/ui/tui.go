@@ -498,6 +498,9 @@ func (sui *SearchUI) listInput() {
 				tx.Commit()
 				sui.messages = append(sui.messages, "Logged food \""+i.Name+"\"")
 			case *bite.Meal:
+				if len(i.Foods) == 0 {
+					return nil
+				}
 				// Log selected meal to the meal log database table. Taking into
 				// account food preferences.
 				if err := bite.AddMealEntry(tx, i.ID, date); err != nil {
