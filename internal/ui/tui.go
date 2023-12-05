@@ -150,7 +150,7 @@ func (sui *SearchUI) setupFoodUI(query string) {
 	foods := []bite.Food{bite.Food{Name: t, FoodMacros: &bite.FoodMacros{}}}
 	go func() {
 		var err error
-		foods, err = bite.GetRecentlyLoggedFoods(sui.db, bite.SearchLimit)
+		foods, err = bite.RecentlyLoggedFoods(sui.db, bite.SearchLimit)
 		if err != nil {
 			log.Printf("couldn't get recently logged foods: %v\n", err)
 			return
@@ -178,7 +178,7 @@ func (sui *SearchUI) setupMealUI(query string) {
 	meals := []bite.Meal{bite.Meal{Name: t}}
 	go func() {
 		var err error
-		meals, err = bite.GetMealsWithRecentFirst(sui.db)
+		meals, err = bite.MealsWithRecentFirst(sui.db)
 		if err != nil {
 			form := sui.errorForm("couldn't get recently logged meals", err)
 			sui.showModal(form)
@@ -299,7 +299,7 @@ func (sui *SearchUI) ipInputMeal(meals *[]bite.Meal) {
 			var meals []bite.Meal
 			switch text == "" {
 			case true:
-				meals, err = bite.GetMealsWithRecentFirst(sui.db)
+				meals, err = bite.MealsWithRecentFirst(sui.db)
 				if err != nil {
 					form := sui.errorForm("couldn't get recently logged meals", err)
 					sui.showModal(form)
@@ -348,7 +348,7 @@ func (sui *SearchUI) performFoodSearch(query string) []bite.Food {
 		foods, err = bite.SearchFoods(sui.db, query)
 	case true:
 		var recent []bite.Food
-		recent, err = bite.GetRecentlyLoggedFoods(sui.db, bite.SearchLimit)
+		recent, err = bite.RecentlyLoggedFoods(sui.db, bite.SearchLimit)
 		query = strings.TrimSpace(query[len("recent:"):])
 		for _, f := range recent {
 			// Case-insensitive search for food names
@@ -636,7 +636,7 @@ func (sui *SearchUI) listInput() {
 						text := sui.inputField.GetText()
 						switch text == "" {
 						case true:
-							meals, err = bite.GetMealsWithRecentFirst(sui.db)
+							meals, err = bite.MealsWithRecentFirst(sui.db)
 							if err != nil {
 								form := sui.errorForm("couldn't get recently logged meals", err)
 								sui.showModal(form)
@@ -929,7 +929,7 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 			f.FoodMacros.Carbs = carbs
 			f.FoodMacros.Fat = fat
 
-			f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+			f.Calories = bite.CalcCals(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
 			if err := bite.UpdateFoodNutrients(sui.db, tx, f); err != nil {
 				log.Println("couldn't update food nutrients: ", err)
 				return
@@ -938,7 +938,7 @@ func (sui *SearchUI) editFoodForm(f *bite.Food) *tview.Form {
 
 		tx.Commit()
 
-		uf, err := bite.GetFoodWithPref(sui.db, f.ID)
+		uf, err := bite.FoodWithPref(sui.db, f.ID)
 		if err != nil {
 			log.Println("couldn't get updated food: ", err)
 			return
@@ -1083,7 +1083,7 @@ func (sui *SearchUI) confirmFoodDeletion(f *bite.Food) *tview.Form {
 		text := sui.inputField.GetText()
 		switch text == "" {
 		case true:
-			foods, err = bite.GetRecentlyLoggedFoods(sui.db, bite.SearchLimit)
+			foods, err = bite.RecentlyLoggedFoods(sui.db, bite.SearchLimit)
 			if err != nil {
 				log.Printf("couldn't get recently logged foods: %v\n", err)
 				return
@@ -1128,7 +1128,7 @@ func (sui *SearchUI) confirmMealDeletion(m *bite.Meal) *tview.Form {
 		text := sui.inputField.GetText()
 		switch text == "" {
 		case true:
-			meals, err = bite.GetMealsWithRecentFirst(sui.db)
+			meals, err = bite.MealsWithRecentFirst(sui.db)
 			if err != nil {
 				form := sui.errorForm("couldn't get recently logged meals", err)
 				sui.showModal(form)
@@ -1172,7 +1172,7 @@ func (sui *SearchUI) mealFoodDeleteForm(mf *bite.MealFood) *tview.Form {
 		text := sui.inputField.GetText()
 		switch text == "" {
 		case true:
-			meals, err = bite.GetMealsWithRecentFirst(sui.db)
+			meals, err = bite.MealsWithRecentFirst(sui.db)
 			if err != nil {
 				form := sui.errorForm("couldn't get recently logged meals", err)
 				sui.showModal(form)
@@ -1290,7 +1290,7 @@ func (sui *SearchUI) addFoodForm(name string) *tview.Form {
 		f.ServingSize = servingSize
 		f.ServingUnit = servingUnit
 		f.NumberOfServings = numServings
-		f.Calories = bite.CalculateCalories(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
+		f.Calories = bite.CalcCals(f.FoodMacros.Protein, f.FoodMacros.Carbs, f.FoodMacros.Fat)
 
 		tx, err := sui.db.Beginx()
 		if err != nil {
@@ -1322,7 +1322,7 @@ func (sui *SearchUI) addFoodForm(name string) *tview.Form {
 		text := sui.inputField.GetText()
 		switch text == "" {
 		case true:
-			foods, err = bite.GetRecentlyLoggedFoods(sui.db, bite.SearchLimit)
+			foods, err = bite.RecentlyLoggedFoods(sui.db, bite.SearchLimit)
 			if err != nil {
 				log.Printf("couldn't get recently logged foods: %v\n", err)
 				return
@@ -1406,7 +1406,6 @@ func (sui *SearchUI) errorForm(msg string, err error) *tview.Form {
 	form.AddFormItem(errorTextView)
 
 	form.AddButton("Ok", func() {
-		// Close the form when the "Ok" button is clicked
 		sui.closeModal()
 	})
 

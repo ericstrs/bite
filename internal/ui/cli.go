@@ -301,7 +301,7 @@ func SummaryCmd(args []string) error {
 		// If there is an active diet,
 		if status == "active" {
 			// Subset the log for the active diet phase.
-			activeLog = bite.GetValidLog(c, entries)
+			activeLog = bite.ValidLog(c, entries)
 
 			// Get user progress.
 			if err := bite.CheckProgress(db, c, activeLog); err != nil {
