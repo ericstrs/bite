@@ -34,8 +34,7 @@ const (
 	updateUsage = `USAGE
 
 	bite update food - Update food information.
-	bite update meal - Update meal information.
-	bite update user - Update user information.
+	bite update weight - Update user information.
 `
 	summaryUsage = `USAGE
 
@@ -70,12 +69,18 @@ func LogCmd(args []string) error {
 
 	switch strings.ToLower(args[2]) {
 	case `meal`:
-		if err := bite.LogMeal(db); err != nil {
-			return err
+		if err := NewSearchUI(db, "", `meal`).Run(); err != nil {
+			return fmt.Errorf("couldn't run search ui: %v", err)
+		}
+		if err := SummaryCmd([]string{`zet`, `summary`, `diet`, `day`}); err != nil {
+			return fmt.Errorf("couldn't get daily summary: %v", err)
 		}
 	case `food`:
-		if err := bite.LogFood(db); err != nil {
-			return err
+		if err := NewSearchUI(db, "", `food`).Run(); err != nil {
+			return fmt.Errorf("couldn't run search ui: %v", err)
+		}
+		if err := SummaryCmd([]string{`zet`, `summary`, `diet`, `day`}); err != nil {
+			return fmt.Errorf("couldn't get daily summary: %v", err)
 		}
 	case `weight`:
 		if err := bite.LogWeight(c, db); err != nil {
@@ -119,7 +124,7 @@ func LogCmd(args []string) error {
 		}
 		switch strings.ToLower(args[3]) {
 		case `all`:
-			entries, err := bite.GetAllEntries(db)
+			entries, err := bite.AllEntries(db)
 			if err != nil {
 				return err
 			}
@@ -160,11 +165,11 @@ func CreateCmd(args []string) error {
 
 	switch strings.ToLower(args[2]) {
 	case `meal`:
-		if err := bite.CreateAndAddMeal(db); err != nil {
+		if err := bite.CreateAddMeal(db); err != nil {
 			return err
 		}
 	case `food`:
-		if err := bite.CreateAndAddFood(db); err != nil {
+		if err := bite.CreateAddFood(db); err != nil {
 			return err
 		}
 	case `help`:
@@ -192,11 +197,11 @@ func DeleteCmd(args []string) error {
 
 	switch strings.ToLower(args[2]) {
 	case `meal`:
-		if err := bite.SelectAndDeleteMeal(db); err != nil {
+		if err := bite.SelectDeleteMeal(db); err != nil {
 			return err
 		}
 	case `food`:
-		if err := bite.SelectAndDeleteFood(db); err != nil {
+		if err := bite.SelectDeleteFood(db); err != nil {
 			return err
 		}
 	case `help`:
@@ -241,11 +246,11 @@ func UpdateCmd(args []string) error {
 		}
 		switch strings.ToLower(args[3]) {
 		case `add`: // Adds a food to an existing meal.
-			if err := bite.GetUserInputAddMealFood(db); err != nil {
+			if err := bite.PromptAddMealFood(db); err != nil {
 				return err
 			}
 		case `delete`: // Deletes a food from an existing meal.
-			if err := bite.SelectAndDeleteFoodMealFood(db); err != nil {
+			if err := bite.SelectDeleteFoodMealFood(db); err != nil {
 				return err
 			}
 		default:
@@ -287,7 +292,7 @@ func SummaryCmd(args []string) error {
 		}
 
 		// Read user entries.
-		entries, err := bite.GetAllEntries(db)
+		entries, err := bite.AllEntries(db)
 		if err != nil {
 			return err
 		}
