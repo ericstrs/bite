@@ -1187,7 +1187,7 @@ func getAllFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 			f.serving_unit
 			FROM daily_foods df
 			INNER JOIN foods f ON df.food_id = f.food_id
-			ORDER BY df.date DESC
+			ORDER BY df.date ASC
 	`
 	var entries []DailyFood
 	if err := tx.Select(&entries, query); err != nil {
