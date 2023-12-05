@@ -21,11 +21,11 @@ const (
 	fullBlock         = "\u2588"
 	lightBlock        = "\u2592"
 
-	// portionSize sets the portion size for a food. It should be noted
+	// PortionSize sets the portion size for a food. It should be noted
 	// that the recorded serving size in the foods table does not align
 	// with the recorded nutrients for the same food. For all foods, the
 	// nutrients amount correspond to serving size of 100.
-	portionSize = 100
+	PortionSize = 100
 )
 
 var ErrDone = errors.New("done")
@@ -177,7 +177,7 @@ func getDateNotPast(s string) (date time.Time) {
 
 		// Ensure user response is a date.
 		var err error
-		date, err = validateDateStr(r)
+		date, err = ValidateDateStr(r)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
@@ -330,7 +330,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 	// While user response is not an integer,
 	for {
 		// Validate user response.
-		date, err := validateDateStr(response)
+		date, err := ValidateDateStr(response)
 		if err != nil {
 			fmt.Printf("%v. Please try again.", err)
 			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD): ")
@@ -693,7 +693,7 @@ func GetRecentlyLoggedFoods(db *sqlx.DB, limit int) ([]Food, error) {
 			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
 		}
 
-		ratio := foods[i].ServingSize / portionSize
+		ratio := foods[i].ServingSize / PortionSize
 		foods[i].Calories *= ratio * foods[i].NumberOfServings
 		foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
 		foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
@@ -760,7 +760,7 @@ func SearchFoods(db *sqlx.DB, term string) ([]Food, error) {
 			return nil, fmt.Errorf("couldn't get macros for %q: %v", foods[i].Name, err)
 		}
 
-		ratio := foods[i].ServingSize / portionSize
+		ratio := foods[i].ServingSize / PortionSize
 		foods[i].Calories *= ratio * foods[i].NumberOfServings
 		foods[i].FoodMacros.Protein *= ratio * foods[i].NumberOfServings
 		foods[i].FoodMacros.Fat *= ratio * foods[i].NumberOfServings
@@ -981,7 +981,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	// While user response is a date,
 	for {
 		// Validate user response.
-		date, err := validateDateStr(response)
+		date, err := ValidateDateStr(response)
 		if err != nil {
 			fmt.Printf("%v. Please try again.", err)
 			response = promptSelectEntry("Enter entry index to select or date to search (YYYY-MM-DD)")
@@ -1038,7 +1038,7 @@ func getRecentFoodEntries(tx *sqlx.Tx, limit int) ([]DailyFood, error) {
 		INNER JOIN foods f ON df.food_id = f.food_id
 		WHERE df.rn = 1
 		ORDER BY df.date DESC
-		LIMIT $1;
+		LIMIT $1
 	`
 
 	var entries []DailyFood
@@ -1537,7 +1537,7 @@ func getMealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error
 		return MealFood{}, err
 	}
 
-	ratio := mf.ServingSize / portionSize
+	ratio := mf.ServingSize / PortionSize
 	mf.Food.Calories *= ratio * mf.NumberOfServings
 	mf.Food.FoodMacros.Protein *= ratio * mf.NumberOfServings
 	mf.Food.FoodMacros.Fat *= ratio * mf.NumberOfServings
@@ -1563,7 +1563,7 @@ func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 	query := `
         SELECT
             COALESCE(fp.serving_size, f.serving_size, 100) AS serving_size,
-            COALESCE(fp.number_of_servings, 1) AS number_of_servings,
+            COALESCE(fp.number_of_servings, 1) AS number_of_servings
         FROM foods f
         LEFT JOIN food_prefs fp ON fp.food_id = f.food_id
         WHERE f.food_id = $1
@@ -1592,7 +1592,7 @@ func GetFoodWithPref(db *sqlx.DB, foodID int) (*Food, error) {
 		return nil, err
 	}
 
-	ratio := f.ServingSize / portionSize
+	ratio := f.ServingSize / PortionSize
 	f.Calories *= ratio * f.NumberOfServings
 	f.FoodMacros.Protein *= ratio * f.NumberOfServings
 	f.FoodMacros.Fat *= ratio * f.NumberOfServings
