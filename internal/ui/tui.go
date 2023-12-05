@@ -529,6 +529,18 @@ func (sui *SearchUI) listInput() {
 			return nil
 		default:
 			switch event.Rune() {
+			case 'l': // Prompt for date and log
+				row, col := sui.list.GetSelection()
+				cell := sui.list.GetCell(row, col)
+
+				switch i := cell.GetReference().(type) {
+				case *bite.Food:
+					form := sui.promptLogFoodForm(i)
+					sui.showModal(form)
+				case *bite.Meal:
+					form := sui.promptLogMealForm(i)
+					sui.showModal(form)
+				}
 			case 'H': // move to top of the visible window
 				row, _ := sui.list.GetOffset()
 				sui.list.Select(row, 0)
@@ -668,6 +680,131 @@ func (sui *SearchUI) listInput() {
 		}
 		return event
 	})
+}
+
+// promptLogFoodForm prompts user for date before logging the food.
+func (sui *SearchUI) promptLogFoodForm(f *bite.Food) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Log Food")
+
+	showingErr := false
+	date := time.Now().Format("2006-01-02")
+	// Define the input fields for the forms and update field variables if
+	// user makes any changes to the default values.
+	form.AddInputField("Enter Date (YYYY-MM-DD):", date, 20, nil, func(text string) {
+		date = text
+	})
+
+	form.AddButton("Save", func() {
+		d, err := bite.ValidateDateStr(date)
+
+		if err != nil {
+			if !showingErr {
+				errorMsg := "Please enter valid date: YYYY-MM-DD"
+				showingErr = true
+				form.AddFormItem(tview.NewTextView().SetText(errorMsg).SetTextAlign(tview.AlignCenter))
+			}
+			return
+		}
+
+		tx, err := sui.db.Beginx()
+		defer tx.Rollback()
+		if err != nil {
+			log.Println("couldn't create transaction: ", err)
+			return
+		}
+
+		if sui.selecting {
+			return
+		}
+		// Log selected food to the food log database table. Taking into
+		// account food preferences.
+		if err := bite.AddFoodEntry(tx, f, d); err != nil {
+			log.Printf("couldn't add food log: %v\n", err)
+			return
+		}
+		tx.Commit()
+		sui.messages = append(sui.messages, "Logged food \""+f.Name+"\"")
+
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
+}
+
+// promptLogMealForm prompts user for date before logging the meal.
+func (sui *SearchUI) promptLogMealForm(m *bite.Meal) *tview.Form {
+	form := tview.NewForm()
+	form.SetBorder(true)
+	form.SetTitle("Log Meal")
+
+	showingErr := false
+	date := time.Now().Format("2006-01-02")
+	// Define the input fields for the forms and update field variables if
+	// user makes any changes to the default values.
+	form.AddInputField("Enter Date (YYYY-MM-DD):", date, 20, nil, func(text string) {
+		date = text
+	})
+
+	form.AddButton("Save", func() {
+		if len(m.Foods) == 0 {
+			if !showingErr {
+				showingErr = true
+				errorMsg := "Meal has no foods."
+				form.AddFormItem(tview.NewTextView().SetText(errorMsg).SetTextAlign(tview.AlignCenter))
+			}
+			return
+		}
+
+		d, err := bite.ValidateDateStr(date)
+
+		if err != nil {
+			if !showingErr {
+				showingErr = true
+				errorMsg := "Please enter valid date: YYYY-MM-DD"
+				form.AddFormItem(tview.NewTextView().SetText(errorMsg).SetTextAlign(tview.AlignCenter))
+			}
+			return
+		}
+
+		tx, err := sui.db.Beginx()
+		defer tx.Rollback()
+		if err != nil {
+			log.Println("couldn't create transaction: ", err)
+			return
+		}
+
+		// Log selected meal to the meal log database table. Taking into
+		// account food preferences.
+		if err := bite.AddMealEntry(tx, m.ID, d); err != nil {
+			log.Println(err)
+			return
+		}
+
+		// Bulk insert the foods that make up the meal into the daily_foods table.
+		if err := bite.AddMealFoodEntries(tx, m.ID, m.Foods, d); err != nil {
+			log.Println(err)
+			return
+		}
+
+		tx.Commit()
+		for _, mf := range m.Foods {
+			sui.messages = append(sui.messages, "Logged food \""+mf.Name+"\"")
+		}
+
+		sui.closeModal()
+	})
+
+	form.AddButton("Cancel", func() {
+		sui.closeModal()
+	})
+
+	return form
 }
 
 // editFoodForm creates and returns a tview form for editing a food.
@@ -1134,13 +1271,13 @@ func (sui *SearchUI) addFoodForm(name string) *tview.Form {
 	})
 
 	form.AddButton("Save", func() {
-		if !showingErr {
-			if name == "" || servingSize == 0 || servingUnit == "" || numServings == 0 {
+		if name == "" || servingSize == 0 || servingUnit == "" || numServings == 0 {
+			if !showingErr {
 				errorMsg := "Please enter non-zero values for fields: Name, Serving Size, Serving Unit, and Num Serving."
 				showingErr = true
 				form.AddFormItem(tview.NewTextView().SetText(errorMsg).SetTextAlign(tview.AlignCenter))
-				return
 			}
+			return
 		}
 
 		f.Name = name
