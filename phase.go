@@ -1420,7 +1420,7 @@ func getStartDate(u *UserInfo) (date time.Time) {
 
 		// Ensure user response is a date.
 		var err error
-		date, err = validateDateStr(r)
+		date, err = ValidateDateStr(r)
 		if err != nil {
 			fmt.Printf("%v. Please try again.\n", err)
 			continue
@@ -1488,7 +1488,7 @@ func promptDate(promptStr string) string {
 // valid.
 func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 	// Ensure user response is a date.
-	d, err := validateDateStr(r)
+	d, err := ValidateDateStr(r)
 	if err != nil {
 		return time.Time{}, 0, errors.New("Invalid date.")
 	}
@@ -1516,9 +1516,9 @@ func validateEndDate(r string, u *UserInfo) (time.Time, float64, error) {
 	return d, dur, nil
 }
 
-// validateDateStr validates the given date string and returns date if
+// ValidateDateStr validates the given date string and returns date if
 // valid.
-func validateDateStr(dateStr string) (time.Time, error) {
+func ValidateDateStr(dateStr string) (time.Time, error) {
 	// Validate user response.
 	date, err := time.Parse(dateFormat, dateStr)
 	if err != nil {
