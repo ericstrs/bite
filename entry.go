@@ -1327,19 +1327,19 @@ func MealsWithRecentFirst(db *sqlx.DB) ([]Meal, error) {
 		GROUP BY meal_id
 	) AS dm
 	ON meals.meal_id = dm.meal_id
-	ORDER BY dm.latest_date DESC, meals.meal_id;
+	ORDER BY dm.latest_date DESC, meals.meal_id
 `
 
 	var meals []Meal
 	if err := db.Select(&meals, query); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't get all meals: %v", err)
 	}
 
 	for i, _ := range meals {
 		m := &meals[i]
 		mealFoods, err := MealFoodsWithPref(db, m.ID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't get foods for meal: %v", err)
 		}
 		m.Foods = mealFoods
 		m.Cals = totalCals(mealFoods)
@@ -1419,7 +1419,7 @@ func MealFoodsWithPref(db *sqlx.DB, mealID int) ([]MealFood, error) {
 	// First, get all the food IDs for the given meal.
 	var foodIDs []int
 	if err := db.Select(&foodIDs, query, mealID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("couldn't get all food IDs for meal: %v", err)
 	}
 
 	// Now, for each food ID, get the full food details and preferences.
@@ -1427,7 +1427,7 @@ func MealFoodsWithPref(db *sqlx.DB, mealID int) ([]MealFood, error) {
 	for _, foodID := range foodIDs {
 		mf, err := mealFoodWithPref(db, foodID, int64(mealID))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("couldn't get all food details and prefs: %v", err)
 		}
 		mf.MealID = mealID
 		mealFoods = append(mealFoods, mf)
@@ -1441,8 +1441,8 @@ func MealFoodsWithPref(db *sqlx.DB, mealID int) ([]MealFood, error) {
 func mealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error) {
 	const (
 		selectSQL = `
-		SELECT * FROM foods
-		WHERE food_id = $1"
+		  SELECT * FROM foods
+		  WHERE food_id = $1
 `
 		// Get the serving size and number of servings, preferring
 		// meal_food_prefs and then food_prefs and then default
@@ -1457,36 +1457,36 @@ func mealFoodWithPref(db *sqlx.DB, foodID int, mealID int64) (MealFood, error) {
 			LIMIT 1
 	`
 		nutrientSQL = `
- 	SELECT amount FROM food_nutrients WHERE food_id = ? AND nutrient_id IN (SELECT nutrient_id FROM nutrients WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL' LIMIT 1)
+ 	    SELECT amount FROM food_nutrients
+			WHERE food_id = ? AND nutrient_id IN (
+			  SELECT nutrient_id FROM nutrients
+				WHERE nutrient_name = 'Energy' AND unit_name = 'KCAL'
+				LIMIT 1
+			)
 	`
 	)
 	mf := MealFood{}
 
 	// Get the food details
 	if err := db.Get(&mf.Food, selectSQL, foodID); err != nil {
-		log.Println("Failed to get food.")
-		return MealFood{}, err
+		return MealFood{}, fmt.Errorf("Failed to get food: %v", err)
 	}
 
-	// Execute the SQL query and assign the result to the MealFood struct
-	if err := db.Get(&mf, selectSQL, mealID, foodID); err != nil {
-		log.Println("Failed to select serving size and number of servings.")
-		return MealFood{}, err
+	// Get serving size and number of servings preference.
+	if err := db.Get(&mf, servingSQL, mealID, foodID); err != nil {
+		return MealFood{}, fmt.Errorf("Failed mealID = %d foodID = %d: %v", mealID, foodID, err)
 	}
 
-	// Execute the SQL query and assign the result to the calories field
-	// in the MealFood struct
+	// Get meal food calories
 	if err := db.Get(&mf.Food.Calories, nutrientSQL, foodID); err != nil {
-		log.Println("Failed to select portion calories.")
-		return MealFood{}, err
+		return MealFood{}, fmt.Errorf("Failed to select portion calories: %v", err)
 	}
 
 	// Get the macros for the food
 	var err error
 	mf.Food.FoodMacros, err = foodMacros(db, foodID)
 	if err != nil {
-		log.Println("Failed to get food macros.")
-		return MealFood{}, err
+		return MealFood{}, fmt.Errorf("Failed to get food macros: %v", err)
 	}
 
 	ratio := mf.ServingSize / PortionSize
