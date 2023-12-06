@@ -84,9 +84,8 @@ func AllEntries(db *sqlx.DB) (*[]Entry, error) {
 	`
 
 	var entries []Entry
-	err := db.Select(&entries, query)
-	if err != nil {
-		log.Fatalf("AllEntries: %v\n", err)
+	if err := db.Select(&entries, query); err != nil {
+		return &entries, err
 	}
 
 	return &entries, nil
@@ -318,7 +317,7 @@ func selectWeightEntry(db *sqlx.DB) (WeightEntry, error) {
 		// Get the filtered entries.
 		entry, err := searchWeightLog(db, date)
 		if err != nil {
-			return WeightEntry{}, err
+			return WeightEntry{}, fmt.Errorf("couldn't search weight log: %v", err)
 		}
 
 		// If no match found,
@@ -411,13 +410,11 @@ func searchWeightLog(db *sqlx.DB, d time.Time) (*WeightEntry, error) {
 		SELECT id, date, weight FROM daily_weights
 		ORDER by date = $1
 		LIMIT 1
-		`
+	`
 	var entry WeightEntry
 	if err := db.Get(&entry, query, d.Format(dateFormat)); err != nil {
-		log.Printf("Search for weight entry failed: %v\n", err)
 		return nil, err
 	}
-
 	return &entry, nil
 }
 
@@ -453,7 +450,6 @@ OuterLoop:
 			if errors.Is(err, ErrDone) {
 				break
 			}
-			log.Println(err)
 			return err
 		}
 
@@ -505,7 +501,7 @@ OuterLoop:
 		selectedFoods = append(selectedFoods, *foodWithPref)
 	}
 
-	// When user indictes they are done before logging a single food,
+	// When user indicates they are done before logging a single food,
 	// return early.
 	if len(selectedFoods) == 0 {
 		fmt.Println("No food selected.")
@@ -519,13 +515,11 @@ OuterLoop:
 		// Log selected food to the food log database table. Taking into
 		// account food preferences.
 		if err := AddFoodEntry(tx, &f, date); err != nil {
-			log.Println(err)
-			return err
+			return fmt.Errorf("couldn't add food entry: %v", err)
 		}
 	}
 
 	fmt.Println("Successfully added food entry.")
-
 	return tx.Commit()
 }
 
@@ -536,8 +530,7 @@ OuterLoop:
 func selectFood(db *sqlx.DB) (Food, error) {
 	recentFoods, err := RecentlyLoggedFoods(db, SearchLimit)
 	if err != nil {
-		log.Println(err)
-		return Food{}, err
+		return Food{}, fmt.Errorf("couldn't get recently logged foods: %v", err)
 	}
 
 	fmt.Println("Recently logged foods:")
@@ -844,11 +837,8 @@ func UpdateFoodPrefs(tx *sqlx.Tx, pref *FoodPref) error {
 		number_of_servings = :number_of_servings,
 		serving_size = :serving_size
 `
-	if _, err := tx.NamedExec(insertSQL, pref); err != nil {
-		log.Printf("Failed to update food prefs: %v\n", err)
-		return err
-	}
-	return nil
+	_, err := tx.NamedExec(insertSQL, pref)
+	return err
 }
 
 // AddFoodEntry inserts a food entry into the database.
@@ -862,8 +852,7 @@ func AddFoodEntry(tx *sqlx.Tx, f *Food, date time.Time) error {
 		f.FoodMacros.Fat, f.FoodMacros.Carbs, f.Price)
 	// If there was an error executing the query, return the error
 	if err != nil {
-		log.Println("Failed to insert food entry into daily_foods.")
-		return err
+		return fmt.Errorf("couldn't insert food entry: %v", err)
 	}
 	return nil
 }
@@ -879,24 +868,24 @@ func UpdateFoodLog(db *sqlx.DB) error {
 	// Let user select food entry to update.
 	entry, err := selectFoodEntry(tx)
 	if err != nil {
-		return err
+		return fmt.Errorf("couldn't select food entry: %v", err)
 	}
 
 	// Get new food preferences.
 	pref := promptFoodPref(entry.FoodID, entry.ServingSize, entry.NumberOfServings)
 	// Make database update for food preferences.
 	if err := UpdateFoodPrefs(tx, pref); err != nil {
-		return err
+		return fmt.Errorf("couldn't update food preferences: %v", err)
 	}
 
 	// Get food with up to date food preferences.
 	foodWithPref, err := FoodWithPref(db, entry.FoodID)
 	if err != nil {
-		return err
+		return fmt.Errorf("couldn't get food with preferences: %v", err)
 	}
 	// Update food entry.
 	if err := updateFoodEntry(tx, entry.ID, *foodWithPref); err != nil {
-		return err
+		return fmt.Errorf("couldn't update food entry: %v", err)
 	}
 
 	fmt.Println("Updated food entry.")
@@ -911,8 +900,7 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 	// Get most recently logged foods.
 	recentFoods, err := recentFoodEntries(tx, SearchLimit)
 	if err != nil {
-		log.Println(err)
-		return DailyFood{}, err
+		return DailyFood{}, fmt.Errorf("couldn't get recently logged food entries: %v", err)
 	}
 
 	// Print recent food entries.
@@ -949,7 +937,6 @@ func selectFoodEntry(tx *sqlx.Tx) (DailyFood, error) {
 		// Get the filtered entries.
 		filteredEntries, err := searchFoodLog(tx, date)
 		if err != nil {
-			log.Println(err)
 			return DailyFood{}, err
 		}
 
@@ -1025,7 +1012,6 @@ func searchFoodLog(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 	`
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
-		log.Printf("Search for food entries failed: %v\n", err)
 		return nil, err
 	}
 	return entries, nil
@@ -1042,8 +1028,7 @@ func updateFoodEntry(tx *sqlx.Tx, entryID int, f Food) error {
 	_, err := tx.Exec(query, f.ServingSize, f.NumberOfServings, f.Calories,
 		f.FoodMacros.Protein, f.FoodMacros.Fat, f.FoodMacros.Carbs, f.Price, entryID)
 	if err != nil {
-		log.Println("Failed to update entry in daily_foods.")
-		return fmt.Errorf("updateFoodEntry: %w", err)
+		return err
 	}
 	return nil
 }
@@ -1052,7 +1037,6 @@ func updateFoodEntry(tx *sqlx.Tx, entryID int, f Food) error {
 func DeleteFoodEntry(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -1079,7 +1063,6 @@ func deleteOneFoodEntry(tx *sqlx.Tx, entryID int) error {
 		WHERE id = $1
 `
 	if _, err := tx.Exec(query, entryID); err != nil {
-		log.Println(err)
 		return err
 	}
 	return nil
@@ -1089,7 +1072,6 @@ func deleteOneFoodEntry(tx *sqlx.Tx, entryID int) error {
 func ShowFoodLog(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -1137,16 +1119,13 @@ func allFoodEntries(tx *sqlx.Tx) ([]DailyFood, error) {
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query); err != nil {
-		log.Println("Failed to get main details from daily food entries.")
-		return nil, err
+		return nil, fmt.Errorf("couldn't get details: %v", err)
 	}
 
 	for i, entry := range entries {
 		macros := &FoodMacros{}
-		err := tx.Get(macros, macrosQuery, entry.ID)
-		if err != nil {
-			log.Printf("Failed to get macros from daily foods entries: %v\n", err)
-			return nil, err
+		if err := tx.Get(macros, macrosQuery, entry.ID); err != nil {
+			return nil, fmt.Errorf("couldn't get macros: %v", err)
 		}
 		entries[i].FoodMacros = macros
 	}
@@ -1171,14 +1150,12 @@ func LogMeal(db *sqlx.DB) error {
 	// Get the foods that make up the meal.
 	mealFoods, err := MealFoodsWithPref(db, meal.ID)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
 	// If meal does not contain any foods, then return early
 	if len(mealFoods) == 0 {
-		log.Printf("Meal %q does not contain any foods.\n", meal.Name)
-		return fmt.Errorf("Meal %q does not contain any foods.\n", meal.Name)
+		return fmt.Errorf("meal %q does not contain any foods.", meal.Name)
 	}
 
 	// Print the foods that make up the meal and their preferences.
@@ -1218,7 +1195,6 @@ func LogMeal(db *sqlx.DB) error {
 	// Get the updated foods that make up the meal.
 	updatedMealFoods, err := MealFoodsWithPref(db, meal.ID)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -1228,19 +1204,16 @@ func LogMeal(db *sqlx.DB) error {
 	// Log selected meal to the meal log database table. Taking into
 	// account food preferences.
 	if err := AddMealEntry(tx, meal.ID, date); err != nil {
-		log.Println(err)
 		return err
 	}
 
 	// Bulk insert the foods that make up the meal into the daily_foods table.
 	err = AddMealFoodEntries(tx, meal.ID, updatedMealFoods, date)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
 	fmt.Println("Successfully added meal entry.")
-
 	return tx.Commit()
 }
 
@@ -1529,28 +1502,24 @@ WHERE food_id = $1
 	f := Food{}
 
 	if err := db.Get(&f, selectSQL, foodID); err != nil {
-		log.Println("Failed to get food.")
-		return nil, err
+		return nil, fmt.Errorf("couldn't get food: %v", err)
 	}
 
 	if err := db.Get(&f, servingSQL, foodID); err != nil {
-		log.Println("Failed to select serving size and number of servings.")
-		return nil, err
+		return nil, fmt.Errorf("couldn't get serving size and number of servings: %v", err)
 	}
 
 	// Execute the SQL query and assign the result to the calories field
 	// in the Food struct
 	if err := db.Get(&f.Calories, calSQL, foodID); err != nil {
-		log.Println("Failed to select portion calories.")
-		return nil, err
+		return nil, fmt.Errorf("couldn't get portion calories: %v", err)
 	}
 
 	// Get the macros for the food.
 	var err error
 	f.FoodMacros, err = foodMacros(db, foodID)
 	if err != nil {
-		log.Println("Failed to get food macros.")
-		return nil, err
+		return nil, fmt.Errorf("couldn't get food macros: %v", err)
 	}
 
 	ratio := f.ServingSize / PortionSize
@@ -1621,10 +1590,12 @@ func AddMealFoodEntries(tx *sqlx.Tx, mealID int, mealFoods []MealFood, date time
 
 	// Iterate over each food and insert into the database
 	for _, mf := range mealFoods {
-		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat), date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings, mf.Food.Calories, mf.Food.FoodMacros.Protein, mf.Food.FoodMacros.Fat, mf.Food.FoodMacros.Carbs, mf.Food.Price)
+		_, err = stmt.Exec(mf.Food.ID, mealID, date.Format(dateFormat),
+			date.Format(dateFormatTime), mf.ServingSize, mf.NumberOfServings,
+			mf.Food.Calories, mf.Food.FoodMacros.Protein, mf.Food.FoodMacros.Fat,
+			mf.Food.FoodMacros.Carbs, mf.Food.Price)
 		if err != nil {
-			log.Println("Failed to execute bulk meal food insert.")
-			return err
+			return fmt.Errorf("couldn't insert bulk meal foods: %v", err)
 		}
 	}
 
@@ -1642,16 +1613,14 @@ func FoodLogSummary(db *sqlx.DB) error {
 	// Get total amount of foods logged in the database.
 	total, err := totalFoodsLogged(tx)
 	if err != nil {
-		log.Printf("Failed to get total amount of foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't get total amount of foods: %v\n", err)
 	}
 	fmt.Printf("\nTotal Foods Logged: %d\n", total)
 
 	// Get most frequently consumed foods.
 	foods, err := frequentFoods(tx, 10)
 	if err != nil {
-		log.Printf("Failed to get frequent foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't get frequent foods: %v\n", err)
 	}
 
 	fmt.Println("\nMost Frequently Consumed Foods:")
@@ -1775,16 +1744,14 @@ func foodEntriesForDate(tx *sqlx.Tx, date time.Time) ([]DailyFood, error) {
 
 	var entries []DailyFood
 	if err := tx.Select(&entries, query, date.Format(dateFormat)); err != nil {
-		log.Printf("Failed to get main details from daily food entries: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("couldn't get daily food entries details: %vn", err)
 	}
 
 	// Retrieve the macros.
 	for i, entry := range entries {
 		macros := &FoodMacros{}
 		if err := tx.Get(macros, macrosQuery, entry.ID); err != nil {
-			log.Printf("Failed to get macros from daily foods entries: %v\n", err)
-			return nil, err
+			return nil, fmt.Errorf("couldn't get macros: %vn", err)
 		}
 		entries[i].FoodMacros = macros
 	}

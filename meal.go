@@ -315,7 +315,6 @@ func UpdateFood(db *sqlx.DB) error {
 
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -542,8 +541,7 @@ func UpdateFoodNutrients(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
 		}
 
 		if _, err := tx.NamedExec(updateFoodNutrientsSQL, params); err != nil {
-			log.Println("Failed to update food nutrients:", err)
-			return err
+			return fmt.Errorf("couldn't update food nutrients: %v", err)
 		}
 	}
 
@@ -564,7 +562,6 @@ func SelectDeleteFood(db *sqlx.DB) error {
 
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -583,8 +580,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
       WHERE food_id = $1
       `, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal food pref entry: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -592,8 +588,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 			WHERE food_id = $1
 			`, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete food pref entry: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -601,8 +596,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 			WHERE food_id = $1
 			`, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal food entries: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -610,8 +604,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 			WHERE food_id = $1
 			`, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete food nutrients: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -619,26 +612,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 			WHERE food_id = $1
 			`, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from daily_foods: %v\n", err)
-		return err
-	}
-
-	_, err = tx.Exec(`
-			DELETE FROM food_nutrients
-			WHERE food_id = $1
-			`, foodID)
-	if err != nil {
-		log.Printf("Couldn't delete entry from food_nutrients: %v\n", err)
-		return err
-	}
-
-	_, err = tx.Exec(`
-			DELETE FROM food_nutrients
-			WHERE food_id = $1
-			`, foodID)
-	if err != nil {
-		log.Printf("Couldn't delete entry from food_nutrients: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete daily foods: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -646,8 +620,7 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 			WHERE food_id = $1
 			`, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete food entry: %v", err)
 	}
 
 	return nil
@@ -657,7 +630,6 @@ func DeleteFood(tx *sqlx.Tx, foodID int) error {
 func CreateAddMeal(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 	}
 	defer tx.Rollback()
 
@@ -667,8 +639,7 @@ func CreateAddMeal(db *sqlx.DB) error {
 	// Insert the meal into the meals table.
 	mealID, err := InsertMeal(tx, mealName)
 	if err != nil {
-		log.Println(err)
-		return err
+		return fmt.Errorf("couldn't insert meal: %v", err)
 	}
 
 	// Now prompt the user to enter the foods that make up the meal.
@@ -685,14 +656,13 @@ func CreateAddMeal(db *sqlx.DB) error {
 
 		// Insert food into meal food table.
 		if err := InsertMealFood(tx, int(mealID), food.ID); err != nil {
-			return err
+			return fmt.Errorf("couldn't insert meal food: %v", err)
 		}
 
 		// Get any existing preferences for the selected food.
 		f, err := mealFoodWithPref(db, food.ID, mealID)
 		if err != nil {
-			log.Println(err)
-			return err
+			return fmt.Errorf("couldn't get meal food preferences: %v", err)
 		}
 
 		// Display any existing preferences for the selected food.
@@ -708,7 +678,7 @@ func CreateAddMeal(db *sqlx.DB) error {
 			mf := promptMealFoodPref(food.ID, mealID, f.ServingSize, f.NumberOfServings)
 			// Make database entry for meal food preferences.
 			if err := UpdateMealFoodPrefs(tx, *mf); err != nil {
-				return err
+				return fmt.Errorf("couldn't update meal food preferences: %v", err)
 			}
 		}
 	}
@@ -736,7 +706,6 @@ func UpdateMeal(tx *sqlx.Tx, m Meal) error {
 func SelectDeleteMeal(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -765,8 +734,7 @@ func DeleteMeal(tx *sqlx.Tx, mealID int) error {
       WHERE meal_id = $1
       `, mealID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal food pref entries: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -774,16 +742,14 @@ func DeleteMeal(tx *sqlx.Tx, mealID int) error {
       WHERE meal_id = $1
       `, mealID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal food entries: %v", err)
 	}
 
 	// Set any `meal_id` in the daily_foods table for any entries that
 	// were apart of this meal to NULL.
 	_, err = tx.Exec(`UPDATE daily_foods SET meal_id = NULL WHERE meal_id = ?`, mealID)
 	if err != nil {
-		log.Printf("Failed to update daily_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't update daily foods: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -791,8 +757,7 @@ func DeleteMeal(tx *sqlx.Tx, mealID int) error {
       WHERE meal_id = $1
       `, mealID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from daily_meals: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete daily meals entries: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -800,8 +765,7 @@ func DeleteMeal(tx *sqlx.Tx, mealID int) error {
       WHERE meal_id = $1
       `, mealID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meals: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meals entry: %v\n", err)
 	}
 
 	return nil
@@ -852,7 +816,6 @@ func UpdateMealFoodPrefs(tx *sqlx.Tx, pref MealFoodPref) error {
 func PromptAddMealFood(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -878,7 +841,6 @@ func PromptAddMealFood(db *sqlx.DB) error {
 	// Get any existing preferences for the selected food.
 	mealFood, err := mealFoodWithPref(db, food.ID, int64(meal.ID))
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -908,7 +870,6 @@ func PromptAddMealFood(db *sqlx.DB) error {
 func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	tx, err := db.Beginx()
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	defer tx.Rollback()
@@ -921,7 +882,6 @@ func SelectDeleteFoodMealFood(db *sqlx.DB) error {
 	// Get the foods that make up the meal.
 	mealFoods, err := MealFoodsWithPref(db, meal.ID)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -968,8 +928,7 @@ func DeleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
       WHERE meal_id = $1 AND food_id = $2
       `, mealID, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_food_prefs: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal food prefs entry: %v", err)
 	}
 
 	_, err = tx.Exec(`
@@ -977,16 +936,14 @@ func DeleteMealFood(tx *sqlx.Tx, mealID, foodID int) error {
       WHERE meal_id = $1 AND food_id = $2
       `, mealID, foodID)
 	if err != nil {
-		log.Printf("Couldn't delete entry from meal_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't delete meal foods entry: %v", err)
 	}
 
 	// Set any `meal_id` in the daily_foods table for any entries for this
 	// meal food to NULL.
 	_, err = tx.Exec(`UPDATE daily_foods SET meal_id = NULL WHERE meal_id = $1 AND food_id =$2`, mealID, foodID)
 	if err != nil {
-		log.Printf("Failed to update daily_foods: %v\n", err)
-		return err
+		return fmt.Errorf("couldn't update daily foods: %v", err)
 	}
 
 	return nil
@@ -1112,7 +1069,7 @@ func foodMacros(db *sqlx.DB, foodID int) (*FoodMacros, error) {
 		`
 	stmt, err := db.Preparex(nutrientSQL)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("couldn't prepare sql statement: %v", err)
 	}
 	defer stmt.Close()
 
