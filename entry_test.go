@@ -171,7 +171,7 @@ func ExampleGetAllEntries() {
 			`)
 
 	// Get all entries
-	entries, err := GetAllEntries(db)
+	entries, err := AllEntries(db)
 	if err != nil {
 		panic(err)
 	}
@@ -544,7 +544,7 @@ func ExampleGetRecentFoodEntries() {
 		return
 	}
 
-	dailyFoods, err := getRecentFoodEntries(tx, 10)
+	dailyFoods, err := recentFoodEntries(tx, 10)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -567,15 +567,7 @@ func ExampleGetMealsWithRecentFirst() {
 	}
 	defer db.Close()
 
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
-	tx.MustExec(`
+	db.MustExec(`
     CREATE TABLE IF NOT EXISTS meals (
         meal_id INTEGER PRIMARY KEY,
         meal_name TEXT NOT NULL
@@ -589,7 +581,7 @@ func ExampleGetMealsWithRecentFirst() {
     );
   `)
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
 	INSERT INTO meals VALUES
 	(1, 'Pie'),
 	(2, 'Shake'),
@@ -599,7 +591,7 @@ func ExampleGetMealsWithRecentFirst() {
 		log.Printf("Failed to insert data into the meals table: %v\n", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
 	INSERT INTO daily_meals VALUES (1, 3, '2023-01-01', '00:00:00:');
 	INSERT INTO daily_meals VALUES (2, 3, '2023-01-01', '00:00:00:');
 	INSERT INTO daily_meals VALUES (3, 2, '2023-01-01', '00:00:00:');
@@ -608,7 +600,7 @@ func ExampleGetMealsWithRecentFirst() {
 		log.Printf("Failed to insert data into the daily meals table: %v\n", err)
 	}
 
-	meals, err := getMealsWithRecentFirst(tx)
+	meals, err := MealsWithRecentFirst(db)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -632,16 +624,8 @@ func ExampleGetMealFoodWithPref() {
 	}
 	defer db.Close()
 
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
 	// Create tables.
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS foods (
 			food_id INTEGER PRIMARY KEY,
 			food_name TEXT NOT NULL,
@@ -703,7 +687,7 @@ func ExampleGetMealFoodWithPref() {
 	}
 
 	// Insert test data.
-	_, err = tx.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+	_, err = db.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
   (1, 'Protein', 'g'),
   (2, 'Total lipid (fat)', 'g'),
   (3, 'Carbohydrate, by difference', 'g'),
@@ -712,7 +696,7 @@ func ExampleGetMealFoodWithPref() {
 		log.Fatalf("failed to insert data into nutrients: %s", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
   INSERT INTO foods VALUES (1, 'Apple', 150, 'g', '1 medium');
   INSERT INTO food_prefs VALUES (1, 160, 1);
   INSERT INTO meal_food_prefs VALUES (1, 1, 180, 2);
@@ -721,7 +705,7 @@ func ExampleGetMealFoodWithPref() {
 		log.Fatalf("failed to insert data into foods, food_prefs, meal_food_prefs: %s", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
   INSERT INTO food_nutrients VALUES (1, 1, 1, 0.3, 71);  -- 0.3g Protein
   INSERT INTO food_nutrients VALUES (2, 1, 2, 0.2, 71);  -- 0.2g Fat
   INSERT INTO food_nutrients VALUES (3, 1, 3, 12, 71);   -- 12g Carbohydrates
@@ -732,15 +716,9 @@ func ExampleGetMealFoodWithPref() {
 	}
 
 	// Test getMealFoodWithPref.
-	mealFood, err := getMealFoodWithPref(tx, 1, 1)
+	mealFood, err := mealFoodWithPref(db, 1, 1)
 	if err != nil {
 		log.Fatalf("getMealFoodWithPref failed: %s", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		fmt.Printf("Failed to commit transaction: %v\n.", err)
-		return
 	}
 
 	// Print the result for verification.
@@ -772,16 +750,8 @@ func ExampleGetFoodWithPref() {
 	}
 	defer db.Close()
 
-	// Start a new transaction
-	tx, err := db.Beginx()
-	if err != nil {
-		return
-	}
-	// If anything goes wrong, rollback the transaction
-	defer tx.Rollback()
-
 	// Create tables.
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
     CREATE TABLE IF NOT EXISTS foods (
       food_id INTEGER PRIMARY KEY,
       food_name TEXT NOT NULL,
@@ -820,7 +790,7 @@ func ExampleGetFoodWithPref() {
 	}
 
 	// Insert test data.
-	_, err = tx.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+	_, err = db.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
   (1, 'Protein', 'g'),
   (2, 'Total lipid (fat)', 'g'),
   (3, 'Carbohydrate, by difference', 'g'),
@@ -829,7 +799,7 @@ func ExampleGetFoodWithPref() {
 		log.Fatalf("failed to insert data into nutrients: %s", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
   INSERT INTO foods VALUES (1, 'Apple', 100, 'g', '1 medium');
   INSERT INTO food_prefs VALUES (1, 160, 1);
 `)
@@ -837,25 +807,20 @@ func ExampleGetFoodWithPref() {
 		log.Fatalf("failed to insert data into foods, food_prefs: %s", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = db.Exec(`
   INSERT INTO food_nutrients VALUES (1, 1, 1, 0.3, 71);  -- 0.3g Protein
   INSERT INTO food_nutrients VALUES (2, 1, 2, 0.2, 71);  -- 0.2g Fat
   INSERT INTO food_nutrients VALUES (3, 1, 3, 12, 71);   -- 12g Carbohydrates
   INSERT INTO food_nutrients VALUES (4, 1, 4, 52, 71);   -- 52KCAL Energy
 `)
 	if err != nil {
-		log.Fatalf("failed to insert data into food_nutrients: %s", err)
+		fmt.Printf("failed to insert data into food_nutrients: %s\n", err)
+		return
 	}
 
-	// Test getFoodWithPref.
-	food, err := getFoodWithPref(tx, 1)
+	food, err := FoodWithPref(db, 1)
 	if err != nil {
-		log.Fatalf("getFoodWithPref failed: %s", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		fmt.Printf("Failed to commit transaction: %v\n.", err)
+		fmt.Println(err)
 		return
 	}
 
@@ -921,15 +886,13 @@ func ExampleAddMealEntry() {
 		Name: "Pie",
 	}
 
-	err = addMealEntry(tx, meal, date)
-	if err != nil {
-		log.Printf("Failed to add meal entry: %v\n", err)
+	if err := AddMealEntry(tx, meal.ID, date); err != nil {
+		fmt.Printf("Failed to add meal entry: %v\n", err)
 		return
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		log.Printf("Failed to commit transaction: %v\n", err)
+	if err := tx.Commit(); err != nil {
+		fmt.Printf("Failed to commit transaction: %v\n", err)
 		return
 	}
 
@@ -937,7 +900,7 @@ func ExampleAddMealEntry() {
 	var mealID float64
 	err = db.Get(&mealID, `SELECT meal_id FROM daily_meals WHERE date = ?`, date.Format(dateFormat))
 	if err != nil {
-		log.Printf("Failed to get meal id from daily meals: %v\n", err)
+		fmt.Printf("Failed to get meal id from daily meals: %v\n", err)
 		return
 	}
 
@@ -1027,7 +990,7 @@ func ExampleAddMealFoodEntries() {
   (1, 'Chicken, rice, and broccoli')
   `)
 
-	mealFoods := []*MealFood{
+	mealFoods := []MealFood{
 		{
 			Food: Food{
 				ID:               1,
@@ -1082,7 +1045,7 @@ func ExampleAddMealFoodEntries() {
 	}
 
 	testDate := time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC)
-	err = addMealFoodEntries(tx, 1, mealFoods, testDate)
+	err = AddMealFoodEntries(tx, 1, mealFoods, testDate)
 	if err != nil {
 		log.Printf("Failed to add meal food entries: %v\n.", err)
 		return
@@ -1148,7 +1111,7 @@ func ExampleGetValidLog() {
 	u.Phase.StartDate = (*entries)[1].Date
 	u.Phase.EndDate = today.AddDate(0, 0, 7)
 
-	subset := GetValidLog(&u, entries)
+	subset := ValidLog(&u, entries)
 	fmt.Println("Weight Calories Date")
 	for _, entry := range *subset {
 		fmt.Println(entry.UserWeight, entry.Calories, entry.Date)
@@ -1204,8 +1167,7 @@ func ExampleUpdateFoodPrefs() {
 	pref.ServingSize = 300
 	pref.NumberOfServings = 1.2
 
-	err = updateFoodPrefs(tx, pref)
-	if err != nil {
+	if err := UpdateFoodPrefs(tx, pref); err != nil {
 		log.Printf("Failed to update food prefs: %v\n", err)
 		return
 	}
@@ -1267,14 +1229,12 @@ func ExampleGetTotalFoodsLogged() {
 	(4, '2023-01-04', '00:00:00', 1)
 	`)
 
-	total, err := getTotalFoodsLogged(tx)
+	total, err := totalFoodsLogged(tx)
 	if err != nil {
-		log.Printf("ExampleGetTotalFoodsLogged failed to get total foods logged: %v\n", err)
+		fmt.Printf("failed to get total foods logged: %v\n", err)
 		return
 	}
-
 	fmt.Println(total)
-
 	tx.Commit()
 
 	// Output:
@@ -1338,7 +1298,7 @@ func ExampleGetFrequentFoods() {
 	`)
 
 	// Call the function to test
-	foods, err := getFrequentFoods(tx, 2)
+	foods, err := frequentFoods(tx, 2)
 	if err != nil {
 		log.Printf("Failed to get frequent foods: %v\n", err)
 		return
@@ -1420,7 +1380,7 @@ func ExampleGetFoodEntriesForDate() {
   `)
 
 	date := time.Date(2023, time.January, 1, 0, 0, 0, 0, time.UTC)
-	entries, err := getFoodEntriesForDate(tx, date)
+	entries, err := foodEntriesForDate(tx, date)
 	if err != nil {
 		log.Println(err)
 		return

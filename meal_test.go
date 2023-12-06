@@ -41,20 +41,21 @@ func ExampleInsertFood() {
 	}
 
 	// Insert food into table.
-	_, err = insertFood(tx, &food)
-	if err != nil {
-		log.Println(err)
+	if _, err = InsertFood(tx, food); err != nil {
+		fmt.Println(err)
 		return
 	}
 
 	// Verify the food was inserted.
 	var newFood Food
 	err = tx.Get(&newFood, `SELECT * FROM foods WHERE food_id = 1`)
+	if err != nil {
+		fmt.Printf("ERROR: couldn't get foods: %v", err)
+	}
 
 	// Commit the transaction.
-	err = tx.Commit()
-	if err != nil {
-		log.Println(err)
+	if err := tx.Commit(); err != nil {
+		fmt.Println(err)
 		return
 	}
 
@@ -117,7 +118,7 @@ func ExampleUpdateFoodTable() {
 		Price:            15,
 	}
 
-	if err := updateFoodTable(tx, updatedFood); err != nil {
+	if err := UpdateFoodTable(tx, updatedFood); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -148,16 +149,20 @@ func ExampleUpdateFoodNutrients() {
 		panic(err)
 	}
 	defer db.Close()
-
-	// Start a new transaction
 	tx, err := db.Beginx()
 	if err != nil {
+		fmt.Println("Failed to start transaction: ", err)
 		return
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
-	tx.MustExec(`
+	_, err = tx.Exec(`
+	CREATE TABLE IF NOT EXISTS nutrients (
+		nutrient_id INTEGER PRIMARY KEY,
+		nutrient_name TEXT NOT NULL,
+		unit_name TEXT NOT NULL
+	);
+
 	CREATE TABLE IF NOT EXISTS food_nutrients (
 		id INTEGER PRIMARY KEY,
 		food_id INTEGER NOT NULL,
@@ -167,12 +172,6 @@ func ExampleUpdateFoodNutrients() {
 		FOREIGN KEY (food_id) REFERENCES foods(food_id),
 		FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
 		FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
-	);
-
-	CREATE TABLE IF NOT EXISTS nutrients (
-		nutrient_id INTEGER PRIMARY KEY,
-		nutrient_name TEXT NOT NULL,
-		unit_name TEXT NOT NULL
 	);
 
 	INSERT INTO nutrients VALUES (1003, 'Protein', 'g');
@@ -185,6 +184,10 @@ func ExampleUpdateFoodNutrients() {
 	INSERT INTO food_nutrients VALUES (3, 1, 1005, 0, 71);
 	INSERT INTO food_nutrients VALUES (4, 1, 1008, 106, 71);
 	`)
+	if err != nil {
+		fmt.Printf("Failed to setup tables: %v\n", err)
+		return
+	}
 
 	food := &Food{
 		ID: 1,
@@ -195,7 +198,7 @@ func ExampleUpdateFoodNutrients() {
 		},
 	}
 
-	if err := updateFoodNutrients(tx, food); err != nil {
+	if err := UpdateFoodNutrients(db, tx, food); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -337,7 +340,9 @@ func ExampleDeleteFood() {
 	(1, 1, 100, 1)
 	`)
 
-	err = deleteFood(tx, 1)
+	if err := DeleteFood(tx, 1); err != nil {
+		fmt.Printf("ERROR: %v", err)
+	}
 
 	tx.Commit()
 
@@ -391,7 +396,7 @@ func ExampleInsertMeal() {
 		);
 	`)
 
-	id, err := insertMeal(tx, "Cereal")
+	id, err := InsertMeal(tx, "Cereal")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -463,8 +468,7 @@ func ExampleInsertMealFood() {
 		return
 	}
 
-	err = insertMealFood(tx, 1, 1)
-	if err != nil {
+	if err := InsertMealFood(tx, 1, 1); err != nil {
 		fmt.Println(err)
 	}
 
@@ -553,8 +557,7 @@ func ExampleUpdateMealFoodPrefs() {
 	pref.ServingSize = 300
 	pref.NumberOfServings = 1
 
-	err = updateMealFoodPrefs(tx, pref)
-	if err != nil {
+	if err := UpdateMealFoodPrefs(tx, *pref); err != nil {
 		log.Printf("Failed to updated meal food prefs: %v\n", err)
 	}
 
@@ -579,7 +582,7 @@ func ExampleDeleteMeal() {
 	// Connect to the test database
 	db, err := sqlx.Connect("sqlite", ":memory:")
 	if err != nil {
-		panic(err)
+		fmt.Printf("ERROR: couldn't connect to test database: %v", err)
 	}
 	defer db.Close()
 
@@ -707,9 +710,8 @@ func ExampleDeleteMeal() {
   (1, 1, 100, 1)
   `)
 
-	err = deleteMeal(tx, 1)
-	if err != nil {
-		log.Printf("Failed to delete meal: %v\n", err)
+	if err := DeleteMeal(tx, 1); err != nil {
+		fmt.Printf("Failed to delete meal: %v\n", err)
 		return
 	}
 
@@ -818,8 +820,7 @@ func ExampleDeleteMealFood() {
   (1, 1, 1.5, 1)
   `)
 
-	err = deleteMealFood(tx, 1, 1)
-	if err != nil {
+	if err := DeleteMealFood(tx, 1, 1); err != nil {
 		log.Println(err)
 		return
 	}
