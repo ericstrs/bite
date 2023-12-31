@@ -22,7 +22,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/oneseIf/bite/internal/ui"
+	"github.com/justericg/bite/internal/ui"
 )
 
 const usage = `USAGE
