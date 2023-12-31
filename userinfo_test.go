@@ -86,7 +86,7 @@ func ExampleReadConfig() {
 	}
 
 	// Call the ReadConfig function
-	u, err := ReadConfig(db)
+	u, err := Config(db)
 	if err != nil {
 		log.Printf("Failed to read config: %v", err)
 		return

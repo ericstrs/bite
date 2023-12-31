@@ -1203,7 +1203,7 @@ func ExampleSummary() {
 
 	Summary(&u, &entries)
 
-	// Output:
+	/// Output:
 	// 0
 }
 
