@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/oneseIf/bite"
+	"github.com/justericg/bite"
 )
 
 const (

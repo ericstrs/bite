@@ -9,7 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/jmoiron/sqlx"
-	"github.com/oneseIf/bite"
+	"github.com/justericg/bite"
 	"github.com/rivo/tview"
 )
 

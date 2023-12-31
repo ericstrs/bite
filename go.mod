@@ -1,4 +1,4 @@
-module github.com/oneseIf/bite
+module github.com/justericg/bite
 
 go 1.19
 
