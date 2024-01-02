@@ -1008,7 +1008,7 @@ func ExampleValidateDateIsNotPast() {
 
 func ExampleValidateDate() {
 	dateStr := "2023-01-23"
-	date, err := validateDateStr(dateStr)
+	date, err := ValidateDateStr(dateStr)
 	fmt.Println(date)
 	fmt.Println(err)
 
@@ -1019,7 +1019,7 @@ func ExampleValidateDate() {
 
 func TestValidateDate_parseError(t *testing.T) {
 	dateStr := "2023 01 23"
-	_, err := validateDateStr(dateStr)
+	_, err := ValidateDateStr(dateStr)
 
 	if err == nil {
 		t.Error("Expected error, but got nil")
