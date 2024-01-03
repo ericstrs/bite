@@ -529,7 +529,8 @@ func UpdateFoodNutrients(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
 		nutrientID, err := getNutrientId(db, nutrientName)
 		if err != nil {
 			log.Println("ERROR: ", err)
-			continue // Skip this nutrient if there was an error retrieving the ID.
+			// Log and skip this nutrient if there was an error retrieving the ID.
+			continue
 		}
 
 		// Create a map with named parameters
