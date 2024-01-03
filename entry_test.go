@@ -567,7 +567,17 @@ func ExampleGetMealsWithRecentFirst() {
 	}
 	defer db.Close()
 
-	db.MustExec(`
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS foods (
+			food_id INTEGER PRIMARY KEY,
+			food_name TEXT NOT NULL,
+			serving_size REAL NOT NULL,
+			serving_unit TEXT NOT NULL,
+			household_serving TEXT NOT NULL,
+			brand_name TEXT DEFAULT '',
+			cost REAL DEFAULT 0
+		);
+
     CREATE TABLE IF NOT EXISTS meals (
         meal_id INTEGER PRIMARY KEY,
         meal_name TEXT NOT NULL
@@ -579,7 +589,77 @@ func ExampleGetMealsWithRecentFirst() {
       date DATE NOT NULL,
       time TIME NOT NULL
     );
+
+		CREATE TABLE IF NOT EXISTS meal_foods (
+  		meal_id INTEGER REFERENCES meals(meal_id),
+  		food_id INTEGER REFERENCES foods(food_id),
+  		PRIMARY KEY (meal_id, food_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS meal_food_prefs (
+			meal_id INTEGER,
+			food_id INTEGER,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			PRIMARY KEY(meal_id, food_id),
+			FOREIGN KEY(food_id) REFERENCES foods(food_id),
+			FOREIGN KEY(meal_id) REFERENCES meals(meal_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS food_prefs (
+			food_id INTEGER PRIMARY KEY,
+			serving_size REAL,
+			number_of_servings REAL DEFAULT 1 NOT NULL,
+			FOREIGN KEY(food_id) REFERENCES foods(food_id)
+		);
+
+  CREATE TABLE food_nutrient_derivation (
+  id INT PRIMARY KEY,
+  code VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL
+  );
+
+		CREATE TABLE IF NOT EXISTS food_nutrients (
+			id INTEGER PRIMARY KEY,
+			food_id INTEGER NOT NULL,
+			nutrient_id INTEGER NOT NULL,
+			amount REAL NOT NULL,
+			derivation_id REAL NOT NULL,
+			FOREIGN KEY (food_id) REFERENCES foods(food_id),
+			FOREIGN KEY (nutrient_id) REFERENCES nutrients(nutrients_id),
+			FOREIGN KEY (derivation_id) REFERENCES food_nutrient_derivation(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS nutrients (
+			nutrient_id INTEGER PRIMARY KEY,
+			nutrient_name TEXT NOT NULL,
+			unit_name TEXT NOT NULL
+		);
+
   `)
+	if err != nil {
+		fmt.Printf("Failed to setup tables: %v\n", err)
+		return
+	}
+
+	// Insert a derivation code and description
+	_, err = db.Exec(`INSERT INTO food_nutrient_derivation (code, description) VALUES (71, "portion size")`)
+	if err != nil {
+		fmt.Printf("Failed to insert food nutrient derivation: %v\n", err)
+		return
+	}
+
+	// Insert nutrients
+	_, err = db.Exec(`INSERT INTO nutrients (nutrient_id, nutrient_name, unit_name) VALUES
+  (1003, 'Protein', 'G'),
+  (1004, 'Total lipid (fat)', 'G'),
+  (1005, 'Carbohydrate, by difference', 'G'),
+  (1008, 'Energy', 'KCAL')
+  `)
+	if err != nil {
+		fmt.Printf("Failed to insert nutrients: %v\n", err)
+		return
+	}
 
 	_, err = db.Exec(`
 	INSERT INTO meals VALUES
@@ -588,7 +668,48 @@ func ExampleGetMealsWithRecentFirst() {
 	(3, 'Pizza')
 	`)
 	if err != nil {
-		log.Printf("Failed to insert data into the meals table: %v\n", err)
+		fmt.Printf("Failed to insert data into the meals table: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`
+	INSERT INTO meal_foods VALUES (1, 1);
+	INSERT INTO meal_foods VALUES (2, 2);
+	INSERT INTO meal_foods VALUES (3, 3);
+	`)
+	if err != nil {
+		fmt.Printf("Failed to insert foods: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`
+	INSERT INTO foods VALUES (1, 'Apple', 100, 'g', '1 medium', '', 0);
+	INSERT INTO foods VALUES (2, 'Milk', 100, 'g', '', '', 0);
+	INSERT INTO foods VALUES (3, 'Tomato', 100, 'g', '', '', 0);
+	`)
+	if err != nil {
+		fmt.Printf("Failed to insert foods: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`
+  INSERT INTO food_prefs VALUES (1, 100, 1);
+  INSERT INTO food_prefs VALUES (2, 100, 1);
+  INSERT INTO food_prefs VALUES (3, 100, 1);
+	`)
+	if err != nil {
+		fmt.Printf("Failed to insert food preferences: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`
+  INSERT INTO meal_food_prefs VALUES (1, 1, 100, 1);
+  INSERT INTO meal_food_prefs VALUES (2, 2, 100, 1);
+  INSERT INTO meal_food_prefs VALUES (3, 3, 120, 1);
+	`)
+	if err != nil {
+		fmt.Printf("Failed to insert meal foods prefs: %v\n", err)
+		return
 	}
 
 	_, err = db.Exec(`
@@ -597,7 +718,26 @@ func ExampleGetMealsWithRecentFirst() {
 	INSERT INTO daily_meals VALUES (3, 2, '2023-01-01', '00:00:00:');
 	`)
 	if err != nil {
-		log.Printf("Failed to insert data into the daily meals table: %v\n", err)
+		fmt.Printf("Failed to insert data into the daily meals table: %v\n", err)
+	}
+
+	_, err = db.Exec(`
+  INSERT INTO food_nutrients VALUES (1, 1, 1003, 0.3, 71);  -- 0.3g Protein
+  INSERT INTO food_nutrients VALUES (2, 1, 1004, 0.2, 71);  -- 0.2g Fat
+  INSERT INTO food_nutrients VALUES (3, 1, 1005, 12, 71);   -- 12g Carbohydrates
+  INSERT INTO food_nutrients VALUES (4, 1, 1008, 52, 71);   -- 52KCAL Energy
+  INSERT INTO food_nutrients VALUES (5, 2, 1003, 0.3, 71);  -- 0.3g Protein
+  INSERT INTO food_nutrients VALUES (6, 2, 1004, 0.2, 71);  -- 0.2g Fat
+  INSERT INTO food_nutrients VALUES (7, 2, 1005, 12, 71);   -- 12g Carbohydrates
+  INSERT INTO food_nutrients VALUES (8, 2, 1008, 52, 71);   -- 52KCAL Energy
+  INSERT INTO food_nutrients VALUES (9, 3, 1003, 0.3, 71);  -- 0.3g Protein
+  INSERT INTO food_nutrients VALUES (10, 3, 1004, 0.2, 71);  -- 0.2g Fat
+  INSERT INTO food_nutrients VALUES (11, 3, 1005, 12, 71);   -- 12g Carbohydrates
+  INSERT INTO food_nutrients VALUES (12, 3, 1008, 52, 71);   -- 52KCAL Energy
+`)
+	if err != nil {
+		fmt.Printf("failed to insert food nutrients: %s", err)
+		return
 	}
 
 	meals, err := MealsWithRecentFirst(db)
