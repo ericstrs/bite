@@ -2,7 +2,7 @@
 
 Food and weight tracker.
 
-This program contains the following features:
+## Features
 
 * Daily calorie and weight tracking.
 * Cut, maintenance, and bulk phase tracker.
@@ -17,7 +17,7 @@ This program contains the following features:
 |Active|Exercise 6-7 days per week|
 |Very active|Exercise 2x per day|
 
-## Command line arguments
+## Usage
 
 cmd
  |
@@ -60,23 +60,6 @@ cmd
  |
  |- Stop/Start
  |      |- phase
-
-## TODO
-
-[] Let user modify current diet:
-  [] Add user capability to stop a diet phase and begin a new one. They shouldn't have to be prompted for user details.
-  [] Add user ability to change macro ratio
-[X] Handle trends that counter the aim of the user (gaining weight/ losing weight)
-[] Handle negative weight trends:
-  [X] Work out how to deal with inconsistent user entries.
-  [X] Work out how you measure whats a week/month.
-[] Summary:
-  [] Streak feature.
-  [] Add Monthly view of adherence.
-  [] Add macros pie chart.
-  [] Are you on track towards reaching your desired weight goal?
-[] Record history
-  [] Add log of completed diet phases with related data.
 
 ## Sources
 
