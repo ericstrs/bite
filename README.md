@@ -1,11 +1,13 @@
 # Bite
 
-Food and weight tracker.
+Bite is a tool to locally track your daily food intake and monitor diet phases.
 
 ## Features
 
-* Daily calorie and weight tracking.
-* Cut, maintenance, and bulk phase tracker.
+* Smart diet phase tracking: Automatically adjust calorie and macro goals based on a given phase (weight loss, weight gain, maintenance).
+* Food and user weight logging.
+* Build custom meals.
+* FTS food search.
 
 ## Finding your activity level
 
@@ -17,49 +19,24 @@ Food and weight tracker.
 |Active|Exercise 6-7 days per week|
 |Very active|Exercise 2x per day|
 
-## Usage
+## Install
 
-cmd
- |
- |- log
- |   |- weight
- |   |- food
- |   |- meal
- |   |- update
- |   |   |- weight
- |   |   |- food
- |   |- delete
- |   |   |- weight
- |   |   |- food
- |   |- show
- |   |   |- all
- |   |   |- weight
- |   |   |- food
- |
- |- add
- |   |- food
- |   |- meal
- |
- |- delete
- |    |- food
- |    |- meal
- |
- |- update
- |    |- user
- |    |- food
- |    |- meal
- |    |  |- add
- |    |  |- delete
- |
- |- summary
- |     |- phase
- |     |- diet
- |     |  |- all
- |     |  |- day
- |     |- user
- |
- |- Stop/Start
- |      |- phase
+Dependencies:
+
+* tview library
+* sqlite3
+* USDA food database: [Full Download of All Data Types, April 2023 Release](https://fdc.nal.usda.gov/download-datasets.html#bkmk-1)
+  * Run `setup.sql` and `import.sql` scripts to create sqlite database tables and import the USDA food data.
+
+The command can be built from source or directly installed:
+
+```
+go install github.com/justericg/bite/cmd/bite@latest
+```
+
+## Embedded Documentation
+
+Usage, controls, and other documentation has been embedded into the source code. See the source or run the application with the `help` command.
 
 ## Sources
 
