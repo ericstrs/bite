@@ -31,8 +31,7 @@ type SearchUI struct {
 	inputField *tview.InputField
 
 	// list represents a table view in the UI, used to display search
-	// results. Each row in the table can correspond to a different zettel
-	// title, tag line, or zettel.
+	// results.
 	list *tview.Table
 
 	// db is the database connection.
@@ -227,7 +226,7 @@ func (sui *SearchUI) globalInput() {
 // actions:
 //
 //   - Enter: Sets focus to results list.
-//   - Ctrl+Enter: Uses current search query as title for new zettel.
+//   - Ctrl+Enter: Uses current search query as title for new food.
 func (sui *SearchUI) ipInputFood(foods *[]bite.Food) {
 	var debounceTimer *time.Timer
 	sui.inputField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -267,7 +266,7 @@ func (sui *SearchUI) ipInputFood(foods *[]bite.Food) {
 // actions:
 //
 //   - Enter: Sets focus to results list.
-//   - Ctrl+Enter: Uses current search query as title for new zettel.
+//   - Ctrl+Enter: Uses current search query as title for new meal.
 //   - Esc: Exits the search interface.
 func (sui *SearchUI) ipInputMeal(meals *[]bite.Meal) {
 	var debounceTimer *time.Timer
@@ -376,7 +375,7 @@ func (sui *SearchUI) performMealSearch(query string) []bite.Meal {
 	return meals
 }
 
-// updateFoodsList updates the results list with a given slice of zettels.
+// updateFoodsList updates the results list with a given slice of food.
 func (sui *SearchUI) updateFoodsList(foods []bite.Food) {
 	list := sui.list
 	list.Clear()
