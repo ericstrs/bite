@@ -51,12 +51,10 @@ type Macros struct {
 
 // Config reads user info from the SQLite database
 func Config(db *sqlx.DB) (*UserInfo, error) {
-	// Start a new transaction.
 	tx, err := db.Beginx()
 	if err != nil {
 		return &UserInfo{}, err
 	}
-	// If anything goes wrong, rollback the transaction
 	defer tx.Rollback()
 
 	u := &UserInfo{}
@@ -92,24 +90,17 @@ func Config(db *sqlx.DB) (*UserInfo, error) {
 	return u, tx.Commit()
 }
 
-// generateAndSaveConfig generates a new config file for the user.
+// generateAndSaveConfig generates a new user configuration file.
 func generateAndSaveConfig(tx *sqlx.Tx) (*UserInfo, error) {
 	fmt.Println("Please provide required information:")
-
 	u := UserInfo{}
-
-	// Get user details.
 	getUserInfo(&u)
-
 	processUserInfo(&u)
-
-	// Save user info.
 	err := saveUserInfo(tx, &u)
 	if err != nil {
 		log.Println("Failed to save user info:", err)
 		return nil, err
 	}
-
 	return &u, nil
 }
 
@@ -120,7 +111,7 @@ func getMacros(tx *sqlx.Tx, macrosID int) (*Macros, error) {
 	return m, err
 }
 
-// getPhaseInfo fetches data from the phase_info table using the phase_id.
+// getPhaseInfo fetches current diet phase information.
 func getPhaseInfo(tx *sqlx.Tx, phaseID int) (*PhaseInfo, error) {
 	p := &PhaseInfo{}
 	err := tx.Get(p, "SELECT * FROM phase_info WHERE phase_id = ?", phaseID)
