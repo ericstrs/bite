@@ -14,37 +14,37 @@ import (
 const (
 	logUsage = `USAGE
 
-	bite log food   - Log food.
-	bite log meal   - Log meal.
-	bite log weight - Log weight.
-	bite log update [weight|food]     - Update food or weight log.
-	bite log delete [weight|food]     - Delete food or weight log.
-	bite log show   [all|weight|food] - Shows food and weight log and full log.
+  bite log food   - Log food.
+  bite log meal   - Log meal.
+  bite log weight - Log weight.
+  bite log update [weight|food]     - Update food or weight log.
+  bite log delete [weight|food]     - Delete food or weight log.
+  bite log show   [all|weight|food] - Shows food and weight log and full log.
 `
 	createUsage = `USAGE
 
-	bite create food - Create new food.
-	bite create meal - Create new meal.
+  bite create food - Create new food.
+  bite create meal - Create new meal.
 `
 	deleteUsage = `USAGE
 
-	bite delete food - Delete existing food.
-	bite delete meal - Delete existing meal.
+  bite delete food - Delete existing food.
+  bite delete meal - Delete existing meal.
 `
 	updateUsage = `USAGE
 
-	bite update food - Update food information.
-	bite update weight - Update user information.
+  bite update food - Update food information.
+  bite update weight - Update user information.
 `
 	summaryUsage = `USAGE
 
-	bite summary phase - Print phase summary.
-	bite summary diet  - Print diet summary.
-	bite summary user  - Print user summary.
+  bite summary phase - Print phase summary.
+  bite summary diet  - Print diet summary.
+  bite summary user  - Print user summary.
 `
 	stopUsage = `USAGE
 
-	bite stop phase - Stop current phase.
+  bite stop phase - Stop current phase.
 `
 )
 
