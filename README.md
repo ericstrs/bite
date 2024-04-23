@@ -1,13 +1,13 @@
 # Bite
 
-Bite is a tool to locally track your daily food intake and monitor diet phases.
+Bite is a tool to locally track daily food intake and monitor diet phases.
 
 ## Features
 
-* Smart diet phase tracking: Automatically adjust calorie and macro goals based on a given phase (weight loss, weight gain, maintenance).
-* Food and user weight logging.
+* Log food and user weight.
 * Build custom meals.
-* FTS food search.
+* Full Text Search (FTS) for foods.
+* Smart diet phase tracking: Automatically adjust calorie and macro goals based on a given phase (weight loss, weight gain, maintenance).
 
 ## Finding your activity level
 
@@ -19,7 +19,7 @@ Bite is a tool to locally track your daily food intake and monitor diet phases.
 |Active|Exercise 6-7 days per week|
 |Very active|Exercise 2x per day|
 
-## Install
+## Installation
 
 Dependencies:
 
