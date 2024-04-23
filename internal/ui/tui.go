@@ -84,7 +84,7 @@ func (sui *SearchUI) setupUI(query string) {
 	case `meal`:
 		sui.setupMealUI(query)
 	default:
-		log.Printf("Item %q not supported\n", sui.item)
+		log.Printf("ERROR: Item %q not supported.\n", sui.item)
 		return
 	}
 
