@@ -1,4 +1,4 @@
-module github.com/justericg/bite
+module github.com/ericstrs/bite
 
 go 1.19
 

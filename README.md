@@ -31,7 +31,7 @@ Dependencies:
 The command can be built from source or directly installed:
 
 ```
-go install github.com/justericg/bite/cmd/bite@latest
+go install github.com/ericstrs/bite/cmd/bite@latest
 ```
 
 ## Embedded Documentation

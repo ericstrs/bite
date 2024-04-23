@@ -534,7 +534,7 @@ func UpdateFoodNutrients(db *sqlx.DB, tx *sqlx.Tx, food *Food) error {
 		}
 
 		// Create a map with named parameters
-		params := map[string]interface{}{
+		params := map[string]any{
 			"food_id":       food.ID,
 			"nutrient_id":   nutrientID,
 			"amount":        amount,

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ericstrs/bite"
 	"github.com/gdamore/tcell/v2"
 	"github.com/jmoiron/sqlx"
-	"github.com/justericg/bite"
 	"github.com/rivo/tview"
 )
 

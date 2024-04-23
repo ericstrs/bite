@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ericstrs/bite"
 	"github.com/jmoiron/sqlx"
-	"github.com/justericg/bite"
 )
 
 const (
