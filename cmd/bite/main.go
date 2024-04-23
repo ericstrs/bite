@@ -29,7 +29,7 @@ const usage = `USAGE
 
 	bite [command]
 
-COMMAND
+COMMANDS
 
 	log     - Manages food, meal, and weight log.
 	create  - Creates food or meal.
@@ -41,6 +41,8 @@ COMMAND
 DESCRIPTION
 
 	Bite is a command-line utility for managing diet phases and food logging.
+
+	Appending "help" after any command will print more command information.
 `
 
 func main() {
@@ -51,7 +53,6 @@ func main() {
 
 func Run() error {
 	args := os.Args
-	// Check if user has at least a single argument.
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, `ERROR: Not enough arguments`)
 		fmt.Fprintf(os.Stderr, usage)
