@@ -22,7 +22,9 @@ import (
 	"os"
 	"strings"
 
+	b "github.com/ericstrs/bite"
 	"github.com/ericstrs/bite/internal/ui"
+	"github.com/jmoiron/sqlx"
 )
 
 const usage = `USAGE
@@ -59,49 +61,47 @@ func Run() error {
 		os.Exit(1)
 	}
 
-	/*
-		dbPath := os.Getenv("BITE_DB_PATH")
-		if dbPath == "" {
-			log.Fatal("Environment variable BITE_DB_PATH must be set")
-		}
+	dbPath := os.Getenv("BITE_DB_PATH")
+	if dbPath == "" {
+		log.Fatal("Environment variable BITE_DB_PATH must be set")
+	}
 
-		// Connect to SQLite database
-		db, err := sqlx.Connect("sqlite", dbPath)
+	// Connect to SQLite database
+	db, err := sqlx.Connect("sqlite", dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Read user's config file.
+	u, err := b.Config(db)
+	if err != nil {
+		return err
+	}
+
+	status, err := b.CheckPhaseStatus(db, u)
+	if err != nil {
+		return err
+	}
+
+	// Read user entries.
+	entries, err := b.AllEntries(db)
+	if err != nil {
+		return err
+	}
+
+	var activeLog *[]b.Entry
+	// If there is an active diet,
+	if status == "active" {
+		// Subset the log for the active diet phase.
+		activeLog = b.ValidLog(u, entries)
+
+		// Get user progress.
+		err = b.CheckProgress(db, u, activeLog)
 		if err != nil {
 			return err
 		}
-		defer db.Close()
-
-		// Read user's config file.
-		u, err := b.Config(db)
-		if err != nil {
-			return err
-		}
-
-		status, err := b.CheckPhaseStatus(db, u)
-		if err != nil {
-			return err
-		}
-
-		// Read user entries.
-		entries, err := b.GetAllEntries(db)
-		if err != nil {
-			return err
-		}
-
-		var activeLog *[]b.Entry
-		// If there is an active diet,
-		if status == "active" {
-			// Subset the log for the active diet phase.
-			activeLog = b.GetValidLog(u, entries)
-
-			// Get user progress.
-			err = b.CheckProgress(db, u, activeLog)
-			if err != nil {
-				return err
-			}
-		}
-	*/
+	}
 
 	switch strings.ToLower(args[1]) {
 	case `log`:
